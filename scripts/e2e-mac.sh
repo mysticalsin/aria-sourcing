@@ -76,6 +76,7 @@ FAKE_PORT="$(free_port)"
 APP_PORT="$(free_port)"
 export NODE_ENV=test
 export ARIA_LINKEDIN_TOKEN_TEST_SESSION=1
+export ARIA_LINKEDIN_TOKEN_RATE_PER_MIN=1000
 export ARIA_E2E=1
 export ARIA_E2E_FIXTURE_TOKEN="fake-li-token-000"
 export ARIA_LINKEDIN_TOKEN_KEY="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64"))')"

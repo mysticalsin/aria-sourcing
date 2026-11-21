@@ -12,18 +12,20 @@ create table if not exists public.linkedin_token_workspace (
   token_ciphertext text,
   paused boolean not null default false,
   pause_reason text,
+  killed boolean not null default false,
   updated_at timestamptz not null default now()
 );
 
 create table if not exists public.linkedin_token_queue (
   id text primary key,
   workspace_id text not null references public.linkedin_token_workspace(workspace_id) on delete cascade,
-  status text not null check (status in ('queued', 'sending', 'sent', 'failed', 'cancelled')),
+  status text not null check (status in ('queued', 'sending', 'sent', 'failed', 'cancelled', 'unknown')),
   recipient text not null,
   subject text not null,
   body text not null,
   nonce text not null,
   sender_id text not null,
+  sent_at timestamptz,
   updated_at timestamptz not null default now()
 );
 

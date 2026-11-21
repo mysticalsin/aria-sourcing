@@ -111,6 +111,7 @@ export type AnswerKind = "ok" | "session" | "throttled" | "challenge" | "warning
 export function classifyAnswer(input: { status: number; body: string; finalUrl?: string | null }): AnswerKind {
   const finalUrl = input.finalUrl ?? "";
   if (finalUrl && /checkpoint|authwall|uas\/login|\/login/i.test(finalUrl)) return "challenge";
+  if (input.status >= 300 && input.status < 400) return "challenge";
   if (input.status === 401 || input.status === 403) return "session";
   if (input.status === 429 || input.status === 999) return "throttled";
   if (input.status < 200 || input.status >= 300) return "error";

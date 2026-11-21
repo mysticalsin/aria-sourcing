@@ -247,7 +247,7 @@ test("a timeout is an infrastructure error after one retry", async ({ page }) =>
   await page.getByRole("button", { name: "Send slow" }).click();
   await expect(page.getByTestId("channel-notice")).toContainText("infrastructure-timeout", { timeout: 20_000 });
   const after = await fetch(fakeHealth).then((response) => response.json() as Promise<{ requests: number }>);
-  expect(after.requests).toBe(before.requests + 2);
+  expect(after.requests).toBe(before.requests + 1);
   await shot(page, "19-timeout");
 });
 

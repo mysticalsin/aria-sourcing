@@ -12,6 +12,7 @@ export interface HandlerInput {
   sessionWorkspaceId?: string;
   serverQcPass?: boolean;
   serverAutoOptIn?: boolean;
+  ratePerMin?: number;
 }
 
 export interface HandlerResult {
@@ -27,7 +28,8 @@ function privileged(role: string): boolean {
   return role === "admin" || role === "owner";
 }
 
-const ADMIN_ACTIONS = new Set(["enable", "disable", "token", "revoke", "kill", "reset", "approval-ttl"]);
+const KNOWN_ROLES = new Set(["admin", "owner", "member", "viewer"]);
+const ADMIN_ACTIONS = new Set(["enable", "disable", "token", "revoke", "kill", "unkill", "reset", "approve", "send", "enqueue", "approval-ttl"]);
 const READ_ONLY_REFUSED = new Set([
   "enable",
   "disable",
@@ -41,9 +43,15 @@ const READ_ONLY_REFUSED = new Set([
   "approval-ttl",
 ]);
 
+const rateHits = new Map<string, number[]>();
+
 export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<HandlerResult> {
-  if (input.userId === null) {
+  if (!input.userId) {
     return { status: 401, body: { ok: false, reason: "unauthenticated" } };
+  }
+  if (!KNOWN_ROLES.has(input.role)) return denied();
+  if (!allowRate(input.userId, input.ratePerMin ?? rateLimit())) {
+    return { status: 429, body: { ok: false, reason: "rate" } };
   }
   if (input.sessionWorkspaceId && input.workspaceId && input.sessionWorkspaceId !== input.workspaceId) {
     return { status: 403, body: { ok: false, reason: "workspace" } };
@@ -84,6 +92,10 @@ export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<H
   }
   if (action === "kill") {
     const result = await input.channel.engageKill({ workspaceId });
+    return outcome(result, input.channel, workspaceId, input.role);
+  }
+  if (action === "unkill") {
+    const result = await input.channel.clearKill({ workspaceId, role: input.role });
     return outcome(result, input.channel, workspaceId, input.role);
   }
   if (action === "approval-ttl") {
@@ -151,4 +163,21 @@ function outcome(result: ActionResult, channel: LinkedInTokenChannel, workspaceI
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function rateLimit(): number {
+  const raw = Number(process.env.ARIA_LINKEDIN_TOKEN_RATE_PER_MIN);
+  return Number.isInteger(raw) && raw > 0 ? raw : 120;
+}
+
+function allowRate(userId: string, limit: number): boolean {
+  const now = Date.now();
+  const recent = (rateHits.get(userId) ?? []).filter((at) => now - at < 60_000);
+  if (recent.length >= limit) {
+    rateHits.set(userId, recent);
+    return false;
+  }
+  recent.push(now);
+  rateHits.set(userId, recent);
+  return true;
 }

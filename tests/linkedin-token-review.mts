@@ -505,7 +505,7 @@ test("token actions are rate limited", async () => {
         await handleLinkedInTokenRequest({
           method: "POST",
           role: "admin",
-          userId: "ada-admin",
+          userId: "ada-rate",
           sessionWorkspaceId: "ws-home",
           workspaceId: "ws-home",
           channel,

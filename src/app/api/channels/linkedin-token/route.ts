@@ -34,7 +34,8 @@ async function caller(): Promise<{ userId: string | null; role: string; workspac
     } = await supabase.auth.getUser();
     if (!user) return { userId: null, role: "", workspaceId: null };
     const { data: role } = await supabase.rpc("current_profile_role");
-    const name = role === "admin" || role === "owner" || role === "viewer" || role === "member" ? role : "member";
+    const name = role === "admin" || role === "owner" || role === "viewer" || role === "member" ? role : "";
+    if (!name) return { userId: user.id, role: "", workspaceId: null };
     const { data: profile } = await supabase.from("profiles").select("workspace_id").eq("id", user.id).maybeSingle();
     const workspaceId = typeof profile?.workspace_id === "string" ? profile.workspace_id : null;
     if (!workspaceId) return { userId: null, role: "", workspaceId: null };
@@ -49,7 +50,7 @@ function closed(): NextResponse {
 
 export async function GET(req: NextRequest) {
   const who = await caller();
-  if (!who.userId || !who.workspaceId) return closed();
+  if (!who.userId || !who.workspaceId || !who.role) return who.userId && !who.role ? NextResponse.json({ ok: false, reason: "role" }, { status: 403, headers: { "cache-control": "no-store" } }) : closed();
   const requested = req.nextUrl.searchParams.get("workspaceId");
   if (requested && requested !== who.workspaceId) {
     return NextResponse.json({ ok: false, reason: "workspace" }, { status: 403, headers: { "cache-control": "no-store" } });
@@ -68,11 +69,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const who = await caller();
-  if (!who.userId || !who.workspaceId) {
+  if (!who.userId || !who.workspaceId || !who.role) {
+    if (who.userId && !who.role) {
+      return NextResponse.json({ ok: false, reason: "role" }, { status: 403, headers: { "cache-control": "no-store" } });
+    }
     return NextResponse.json({ ok: false, reason: "unauthenticated" }, { status: 401, headers: { "cache-control": "no-store" } });
   }
   const payload = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!payload || typeof payload.action !== "string") {
+  if (!payload || typeof payload.action !== "string" || JSON.stringify(payload).length > 16_384) {
     return NextResponse.json({ ok: false, reason: "action" }, { status: 400 });
   }
   if (typeof payload.workspaceId === "string" && payload.workspaceId !== who.workspaceId) {

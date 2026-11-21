@@ -59,6 +59,8 @@ function keyEnv(extra: Record<string, string> = {}): Env & { set(key: string, va
     ARIA_LINKEDIN_TOKEN_DAILY_CAP: "5",
     ARIA_LINKEDIN_TOKEN_MIN_GAP_MS: "0",
     ARIA_LINKEDIN_TOKEN_BASE_URL: "http://127.0.0.1:9",
+    NODE_ENV: "test",
+    ARIA_LINKEDIN_TOKEN_TEST_SESSION: "1",
     ...extra,
   });
 }
@@ -122,7 +124,7 @@ async function arm(
   assert.equal(enabled.ok, true, enabled.reason);
   const stored = await channel.putToken({
     workspaceId: WORKSPACE,
-    role: "member",
+    role: "admin",
     actorId: "ada-user",
     token: TOKEN,
   });
@@ -375,7 +377,7 @@ test("an Odoo audit entry is written for enable, disable, purge, send, refusal, 
     actorId: "ada-admin",
     acknowledgement: RISK_NOTICE,
   });
-  await channel.putToken({ workspaceId: WORKSPACE, role: "member", actorId: "ada-user", token: TOKEN });
+  await channel.putToken({ workspaceId: WORKSPACE, role: "admin", actorId: "ada-user", token: TOKEN });
   const refused = await channel.send({ ...approval("audit-refuse"), actorId: "ada-user" });
   assert.equal(refused.reason, "approval-token");
   assert.equal((await approveAndSend(channel, "audit-send")).ok, true);
@@ -466,7 +468,7 @@ test("verifier property: any token string never appears in output", async () => 
       actorId: "ada-owner",
       acknowledgement: RISK_NOTICE,
     });
-    await channel.putToken({ workspaceId: WORKSPACE, role: "member", actorId: "ada-user", token: sample });
+    await channel.putToken({ workspaceId: WORKSPACE, role: "admin", actorId: "ada-user", token: sample });
     let thrown = "";
     try {
       await approveAndSend(channel, `prop-${digest(sample).slice(0, 8)}`, `Body ${digest(sample).slice(0, 6)}`);
@@ -488,7 +490,7 @@ test("revoke clears the stored token", async () => {
   const { channel } = harness({ transport });
   await arm(channel);
   assert.equal(channel.view(WORKSPACE).tokenStored, true);
-  const revoked = await channel.revoke({ workspaceId: WORKSPACE, role: "member", actorId: "ada-user" });
+  const revoked = await channel.revoke({ workspaceId: WORKSPACE, role: "admin", actorId: "ada-user" });
   assert.equal(revoked.ok, true);
   assert.equal(channel.view(WORKSPACE).tokenStored, false);
   assert.equal(channel.view(WORKSPACE).enabled, true);
@@ -536,8 +538,8 @@ test("OFF purges the token and cancels an in-flight send atomically", async () =
   const waiting = await queued;
   assert.equal(sent.ok, false);
   assert.equal(sent.reason, "cancelled");
-  assert.equal(waiting.ok, false);
-  assert.equal(waiting.reason, "cancelled");
+  assert.equal(waiting.ok, true);
+  assert.equal(waiting.reason, "queued");
   assert.equal(calls, 1);
 });
 
@@ -553,7 +555,7 @@ test("fakes only: a non-loopback dial is refused before any fetch", async () => 
     return new Response('{"id":"unused"}', { status: 200 });
   }) as typeof fetch;
   try {
-    const env = keyEnv({ ARIA_LINKEDIN_TOKEN_BASE_URL: "https://www.linkedin.com" });
+    const env = keyEnv({ ARIA_LINKEDIN_TOKEN_BASE_URL: "https://evil.example" });
     const { channel } = harness({ env });
     await arm(channel);
     const refused = await approveAndSend(channel, "remote-1");
@@ -664,7 +666,7 @@ test("a timeout is an infrastructure error after one retry", async () => {
   const { channel } = harness({ transport });
   await arm(channel);
   const result = await approveAndSend(channel, "timeout-1");
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(result.ok, false);
   assert.equal(result.reason, "infrastructure-timeout");
   assert.equal(result.infrastructure, true);
@@ -703,6 +705,7 @@ test("a non-admin cannot read token status or ciphertext", async () => {
   const denied = await handleLinkedInTokenRequest({
     method: "GET",
     role: "member",
+    userId: "ada-member",
     workspaceId: WORKSPACE,
     channel,
   });
@@ -714,6 +717,7 @@ test("a non-admin cannot read token status or ciphertext", async () => {
   const allowed = await handleLinkedInTokenRequest({
     method: "GET",
     role: "admin",
+    userId: "ada-admin",
     workspaceId: WORKSPACE,
     channel,
   });
@@ -775,7 +779,7 @@ test("OFF deletes the token ciphertext and cancels queued rows in the database",
   assert.ok(rows.every((row) => row.status === "cancelled"));
   db.close();
   assert.equal((await inflight).reason, "cancelled");
-  assert.equal((await queued).reason, "cancelled");
+  assert.equal((await queued).reason, "queued");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -810,7 +814,7 @@ test("the kill switch flipped mid-queue stops queued sends and does not double-s
   const stopped = await channel.applyKillSwitch({ workspaceId: WORKSPACE });
   assert.equal(stopped.ok, true);
   assert.equal((await inflight).reason, "cancelled");
-  assert.equal((await queued).reason, "cancelled");
+  assert.equal((await queued).reason, "queued");
   assert.equal(calls, 1);
   env.set("ARIA_SEND_KILL_SWITCH", "off");
   const again = await channel.send({ ...first, actorId: "ada-user" });

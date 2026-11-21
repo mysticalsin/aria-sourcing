@@ -1,5 +1,6 @@
 /// <reference path="./node-sqlite.d.ts" />
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { DatabaseSync } from "node:sqlite";
 
 import { approvalHash } from "@/lib/outreach-content";
@@ -17,6 +18,13 @@ export type { Env };
 const SELF_MEMBER = "ACoAASyntheticSelf01";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SKEW_MS = 120_000;
+const PINNED_HOST = "www.linkedin.com";
+const MAX_QUEUE = 20;
+const MAX_BODY = 4_000;
+const MAX_SUBJECT = 300;
+const MAX_NONCE = 80;
+const MAX_AUDIT = 200;
+const RECIPIENT_PATTERN = /^ACoAA[A-Za-z0-9_-]{4,64}$/;
 
 export class RedactedToken {
   constructor(private readonly value: string) {}
@@ -72,6 +80,8 @@ export interface Transport {
   deliver(request: TransportRequest): Promise<TransportResult>;
 }
 
+export type HostResolver = (host: string) => Promise<string[]>;
+
 export interface ActionResult {
   ok: boolean;
   reason: string;
@@ -125,6 +135,7 @@ interface QueueRow {
   subject: string;
   body: string;
   senderId: string;
+  sentAt?: number;
 }
 
 interface Memory {
@@ -156,6 +167,7 @@ export interface ChannelOptions {
   logger?: (line: string) => void;
   fetchImpl?: typeof fetch;
   dbPath?: string;
+  resolver?: HostResolver;
 }
 
 function blank(): Memory {
@@ -261,9 +273,9 @@ export class LinkedInTokenChannel {
   private readonly db: DatabaseSync | null;
   private readonly workspaces = new Map<string, Memory>();
   private readonly secrets = new Set<string>();
+  private readonly resolver: HostResolver;
   private tail: Promise<void> = Promise.resolve();
-  private flight: AbortController | null = null;
-  private flightWorkspace: string | null = null;
+  private readonly flights = new Map<string, Set<AbortController>>();
   private waiters: Waiter[] = [];
 
   constructor(options: ChannelOptions) {
@@ -273,6 +285,7 @@ export class LinkedInTokenChannel {
     this.clock = options.clock ?? { now: () => Date.now() };
     this.logger = options.logger;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.resolver = options.resolver ?? defaultResolver;
     this.db = options.dbPath ? new DatabaseSync(options.dbPath) : null;
     if (this.db) {
       this.db.exec(`
@@ -286,6 +299,7 @@ export class LinkedInTokenChannel {
           token_ciphertext TEXT,
           paused INTEGER NOT NULL DEFAULT 0,
           pause_reason TEXT,
+          killed INTEGER NOT NULL DEFAULT 0,
           updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS linkedin_token_queue (
@@ -297,6 +311,7 @@ export class LinkedInTokenChannel {
           body TEXT NOT NULL,
           nonce TEXT NOT NULL,
           sender_id TEXT NOT NULL,
+          sent_at TEXT,
           updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS linkedin_token_audit (
@@ -307,6 +322,8 @@ export class LinkedInTokenChannel {
           created_at TEXT NOT NULL
         );
       `);
+      ensureColumn(this.db, "linkedin_token_workspace", "killed", "alter table linkedin_token_workspace add column killed integer not null default 0");
+      ensureColumn(this.db, "linkedin_token_queue", "sent_at", "alter table linkedin_token_queue add column sent_at text");
     }
   }
 
@@ -408,8 +425,23 @@ export class LinkedInTokenChannel {
     });
   }
 
+  async clearKill(input: { workspaceId: string; role: string }): Promise<ActionResult> {
+    return this.exclusive(async () => {
+      if (input.role !== "admin" && input.role !== "owner") return { ok: false, reason: "role" };
+      const state = this.memory(input.workspaceId);
+      state.killed = false;
+      this.persist(input.workspaceId);
+      await this.audit(input.workspaceId, "unkill", "unkill");
+      return { ok: true, reason: "" };
+    });
+  }
+
   async putToken(input: { workspaceId: string; role: string; actorId: string; token: string }): Promise<ActionResult> {
     return this.exclusive(async () => {
+      if (input.role !== "admin" && input.role !== "owner") {
+        await this.audit(input.workspaceId, "refusal", "role");
+        return { ok: false, reason: "role" };
+      }
       const state = this.memory(input.workspaceId);
       if (!state.enabled) {
         await this.audit(input.workspaceId, "refusal", "disabled");
@@ -425,6 +457,10 @@ export class LinkedInTokenChannel {
 
   async revoke(input: { workspaceId: string; role: string; actorId: string }): Promise<ActionResult> {
     return this.exclusive(async () => {
+      if (input.role !== "admin" && input.role !== "owner") {
+        await this.audit(input.workspaceId, "refusal", "role");
+        return { ok: false, reason: "role" };
+      }
       const state = this.memory(input.workspaceId);
       state.tokenCiphertext = null;
       this.persist(input.workspaceId);
@@ -435,6 +471,10 @@ export class LinkedInTokenChannel {
 
   async approve(input: ApprovalInput): Promise<ActionResult> {
     return this.exclusive(async () => {
+      if (!RECIPIENT_PATTERN.test(input.recipient)) return { ok: false, reason: "recipient" };
+      if (input.subject.length > MAX_SUBJECT || input.body.length > MAX_BODY || input.nonce.length > MAX_NONCE) {
+        return { ok: false, reason: "bounds" };
+      }
       if (input.expiresAt <= input.issuedAt || input.expiresAt - input.issuedAt > DAY_MS) {
         return { ok: false, reason: "approval-lifetime" };
       }
@@ -443,6 +483,7 @@ export class LinkedInTokenChannel {
       const state = this.memory(input.workspaceId);
       state.approvals = state.approvals.filter((item) => item.nonce !== input.nonce);
       state.approvals.push({ ...input, binding: bindingOf(input), consumed: false });
+      if (state.approvals.length > 50) state.approvals.splice(0, state.approvals.length - 50);
       return { ok: true, reason: "" };
     });
   }
@@ -487,11 +528,13 @@ export class LinkedInTokenChannel {
   }
 
   async enqueue(input: SendInput): Promise<ActionResult> {
-    if (this.flight) {
-      const id = randomBytes(8).toString("hex");
-      return new Promise((resolve) => {
-        this.waiters.push({ id, input, resolve });
-        const state = this.memory(input.workspaceId);
+    const queued = await this.exclusive(() => {
+      const state = this.memory(input.workspaceId);
+      const inflight = this.flights.get(input.workspaceId)?.size ?? 0;
+      const waiting = this.waiters.filter((waiter) => waiter.input.workspaceId === input.workspaceId).length;
+      if (inflight + waiting >= MAX_QUEUE) return { ok: false, reason: "queue-full" } satisfies ActionResult;
+      if (inflight > 0 || waiting > 0) {
+        const id = randomBytes(8).toString("hex");
         state.queue.push({
           id,
           state: "queued",
@@ -501,16 +544,20 @@ export class LinkedInTokenChannel {
           body: input.body,
           senderId: input.senderId,
         });
+        this.waiters.push({ id, input, resolve: () => undefined });
         this.persist(input.workspaceId);
-      });
-    }
+        return { ok: true, reason: "queued" } satisfies ActionResult;
+      }
+      return null;
+    });
+    if (queued) return queued;
     return this.dispatch(input);
   }
 
   async reset(workspaceId: string): Promise<void> {
     return this.exclusive(async () => {
-      this.flight?.abort();
-      this.flight = null;
+      this.flights.get(workspaceId)?.forEach((controller) => controller.abort());
+      this.flights.delete(workspaceId);
       for (const waiter of this.waiters) waiter.resolve({ ok: false, reason: "cancelled" });
       this.waiters = [];
       this.workspaces.set(workspaceId, blank());
@@ -533,10 +580,8 @@ export class LinkedInTokenChannel {
       return await this.exclusive(() => this.finishThrown(input, controller, err));
     } finally {
       await this.exclusive(() => {
-        if (this.flight === controller) {
-          this.flight = null;
-          this.flightWorkspace = null;
-        }
+        this.flights.get(input.workspaceId)?.delete(controller);
+        this.pump(input.workspaceId);
       });
     }
   }
@@ -564,7 +609,7 @@ export class LinkedInTokenChannel {
     if (!same(stored.binding, bindingOf(input))) return refuse("binding-mismatch");
     const now = this.clock.now();
     if (now >= stored.expiresAt || stored.issuedAt > now + SKEW_MS) return refuse("approval-expired");
-    const destination = this.destination();
+    const destination = await this.destination();
     if (!destination.ok) return refuse(destination.reason);
     const slot = sendSlot({
       now,
@@ -575,8 +620,9 @@ export class LinkedInTokenChannel {
     if (!slot.allowed) return refuse(slot.reason === "daily_cap" ? "daily-cap" : "pacing");
     stored.consumed = true;
     state.recentSends.push(now);
-    this.flight = controller;
-    this.flightWorkspace = input.workspaceId;
+    const active = this.flights.get(input.workspaceId) ?? new Set<AbortController>();
+    active.add(controller);
+    this.flights.set(input.workspaceId, active);
     const row = state.queue.find((item) => item.nonce === input.nonce);
     if (row) row.state = "sending";
     else {
@@ -595,7 +641,7 @@ export class LinkedInTokenChannel {
   }
 
   private async deliver(input: SendInput, controller: AbortController): Promise<TransportResult> {
-    const destination = this.destination();
+    const destination = await this.destination();
     if (!destination.ok) return { status: 0, body: "", error: "config" };
     const state = this.memory(input.workspaceId);
     const token = decryptToken(state.tokenCiphertext ?? "", this.env);
@@ -607,6 +653,7 @@ export class LinkedInTokenChannel {
       trackingId: trackingId(input.nonce),
     });
     const headers: Record<string, string> = { ...spec.headers, "csrf-token": token };
+    if (destination.host) headers.host = destination.host;
     headers.cookie = `li_at=${token}`;
     if (testBuild(this.env)) {
       if (input.hold) headers["x-aria-hold"] = "1";
@@ -621,11 +668,13 @@ export class LinkedInTokenChannel {
       body: spec.body,
       signal: controller.signal,
     };
-    const attempts = input.hold ? 1 : 2;
+    const dedupe = this.env.lookup("ARIA_LINKEDIN_TOKEN_DEDUPE") === "on";
+    const attempts = input.hold || !dedupe ? 1 : 2;
     const timeoutMs = input.hold ? 120_000 : intEnv(this.env, "ARIA_LINKEDIN_TOKEN_TIMEOUT_MS", 10_000);
     let last: TransportResult = { status: 0, body: "", timeout: true, error: "timeout" };
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (controller.signal.aborted || killEngaged(this.env)) {
+      this.reloadKill(input.workspaceId);
+      if (controller.signal.aborted || killEngaged(this.env) || this.memory(input.workspaceId).killed) {
         throw Object.assign(new Error("aborted"), { name: "AbortError" });
       }
       last = this.transport
@@ -658,8 +707,9 @@ export class LinkedInTokenChannel {
   }
 
   private async finish(input: SendInput, controller: AbortController, delivered: TransportResult): Promise<ActionResult> {
+    this.reloadKill(input.workspaceId);
     const state = this.memory(input.workspaceId);
-    if (controller.signal.aborted || !state.enabled || killEngaged(this.env)) {
+    if (controller.signal.aborted || !state.enabled || killEngaged(this.env) || state.killed) {
       this.rollback(input);
       this.markQueue(input, "cancelled");
       await this.audit(input.workspaceId, "refusal", "cancelled");
@@ -684,10 +734,9 @@ export class LinkedInTokenChannel {
       return { ok: false, reason: "sender-paused" };
     }
     if (kind !== "ok") {
-      this.rollback(input);
-      this.markQueue(input, "failed");
-      await this.audit(input.workspaceId, "refusal", "delivery");
-      return { ok: false, reason: "delivery" };
+      this.markQueue(input, "unknown");
+      await this.audit(input.workspaceId, "unknown", "unknown");
+      return { ok: false, reason: "unknown" };
     }
     this.markQueue(input, "sent");
     this.persist(input.workspaceId);
@@ -696,13 +745,20 @@ export class LinkedInTokenChannel {
   }
 
   private async finishThrown(input: SendInput, controller: AbortController, err: unknown): Promise<ActionResult> {
-    this.rollback(input);
-    this.markQueue(input, "cancelled");
+    this.reloadKill(input.workspaceId);
     const aborted = controller.signal.aborted || (err instanceof Error && err.name === "AbortError");
-    const reason = aborted || killEngaged(this.env) || !this.memory(input.workspaceId).enabled ? "cancelled" : "delivery";
-    await this.audit(input.workspaceId, "refusal", reason);
+    const stopped = aborted || killEngaged(this.env) || this.memory(input.workspaceId).killed || !this.memory(input.workspaceId).enabled;
+    if (stopped) {
+      this.rollback(input);
+      this.markQueue(input, "cancelled");
+      await this.audit(input.workspaceId, "refusal", "cancelled");
+      this.log("send ended");
+      return { ok: false, reason: "cancelled" };
+    }
+    this.markQueue(input, "unknown");
+    await this.audit(input.workspaceId, "unknown", "unknown");
     this.log("send ended");
-    return { ok: false, reason };
+    return { ok: false, reason: "unknown" };
   }
 
   private rollback(input: SendInput): void {
@@ -714,7 +770,10 @@ export class LinkedInTokenChannel {
   private markQueue(input: SendInput, status: string): void {
     const state = this.memory(input.workspaceId);
     const row = [...state.queue].reverse().find((item) => item.nonce === input.nonce && item.state !== "cancelled");
-    if (row) row.state = status;
+    if (row) {
+      row.state = status;
+      if (status === "sent" || status === "unknown") row.sentAt = this.clock.now();
+    }
     this.persist(input.workspaceId);
   }
 
@@ -732,7 +791,7 @@ export class LinkedInTokenChannel {
   }
 
   private cancelOutstanding(workspaceId: string, reason: string): void {
-    if (this.flight && this.flightWorkspace === workspaceId) this.flight.abort();
+    this.flights.get(workspaceId)?.forEach((controller) => controller.abort());
     const state = this.memory(workspaceId);
     for (const row of state.queue) {
       if (row.state === "queued" || row.state === "sending") row.state = "cancelled";
@@ -748,7 +807,7 @@ export class LinkedInTokenChannel {
     if (waiting.length) void this.audit(workspaceId, "refusal", reason);
   }
 
-  private destination(): { ok: true; url: string } | { ok: false; reason: string } {
+  private async destination(): Promise<{ ok: true; url: string; host?: string } | { ok: false; reason: string }> {
     const raw = (this.env.lookup("ARIA_LINKEDIN_TOKEN_BASE_URL") ?? "").trim();
     if (!raw) return { ok: false, reason: "config" };
     let parsed: URL;
@@ -759,19 +818,40 @@ export class LinkedInTokenChannel {
     }
     if (parsed.username || parsed.password) return { ok: false, reason: "config" };
     const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    if (loopback(host) && (parsed.protocol === "http:" || parsed.protocol === "https:")) {
+    if (loopback(host)) {
+      if (!testBuild(this.env) || parsed.protocol !== "http:") return { ok: false, reason: "config" };
       return { ok: true, url: parsed.origin };
     }
-    const ipv4 = ipv4Parts(host);
-    if (ipv4 && (blockedIpv4(ipv4) || ipv4[0] !== 127)) return { ok: false, reason: "config" };
-    if (host.includes(":") && blockedIpv6(host)) return { ok: false, reason: "config" };
     if (parsed.protocol !== "https:" || parsed.port) return { ok: false, reason: "config" };
     if (parsed.pathname !== "" && parsed.pathname !== "/") return { ok: false, reason: "config" };
     if (parsed.search || parsed.hash) return { ok: false, reason: "config" };
-    const allowed = (this.env.lookup("ARIA_LINKEDIN_TOKEN_ALLOWED_HOST") ?? "").trim().toLowerCase();
-    if (!allowed || ipv4Parts(allowed) || allowed.includes(":")) return { ok: false, reason: "config" };
-    if (host !== allowed) return { ok: false, reason: "config" };
-    return { ok: true, url: parsed.origin };
+    if (host !== PINNED_HOST) return { ok: false, reason: "config" };
+    let addresses: string[] = [];
+    try {
+      addresses = await this.resolver(host);
+    } catch {
+      return { ok: false, reason: "config" };
+    }
+    if (addresses.length === 0 || addresses.some((address) => !publicAddress(address))) return { ok: false, reason: "config" };
+    const pinned = addresses[0].includes(":") ? `[${addresses[0]}]` : addresses[0];
+    return { ok: true, url: `https://${pinned}`, host: PINNED_HOST };
+  }
+
+  private pump(workspaceId: string): void {
+    const next = this.waiters.find((waiter) => waiter.input.workspaceId === workspaceId);
+    if (!next) return;
+    if ((this.flights.get(workspaceId)?.size ?? 0) > 0) return;
+    this.waiters = this.waiters.filter((waiter) => waiter !== next);
+    void this.dispatch(next.input).then((result) => next.resolve(result));
+  }
+
+  private reloadKill(workspaceId: string): void {
+    const state = this.memory(workspaceId);
+    if (!this.db) return;
+    const row = this.db.prepare("select killed from linkedin_token_workspace where workspace_id = ?").get(workspaceId) as
+      | { killed: number }
+      | undefined;
+    if (row) state.killed = row.killed === 1;
   }
 
   private memory(workspaceId: string): Memory {
@@ -788,7 +868,7 @@ export class LinkedInTokenChannel {
     if (!this.db) return;
     const row = this.db
       .prepare(
-        "select enabled, acknowledgement, acknowledged_by, token_ciphertext, paused, pause_reason from linkedin_token_workspace where workspace_id = ?",
+        "select enabled, acknowledgement, acknowledged_by, token_ciphertext, paused, pause_reason, killed from linkedin_token_workspace where workspace_id = ?",
       )
       .get(workspaceId) as
       | {
@@ -798,6 +878,7 @@ export class LinkedInTokenChannel {
           token_ciphertext: string | null;
           paused: number;
           pause_reason: string | null;
+          killed: number;
         }
       | undefined;
     if (!row) return;
@@ -807,8 +888,9 @@ export class LinkedInTokenChannel {
     state.tokenCiphertext = row.token_ciphertext;
     state.paused = row.paused === 1;
     state.pauseReason = row.pause_reason;
+    state.killed = row.killed === 1;
     const queued = this.db
-      .prepare("select id, status, recipient, subject, body, nonce, sender_id from linkedin_token_queue where workspace_id = ?")
+      .prepare("select id, status, recipient, subject, body, nonce, sender_id, sent_at from linkedin_token_queue where workspace_id = ?")
       .all(workspaceId) as {
       id: string;
       status: string;
@@ -817,6 +899,7 @@ export class LinkedInTokenChannel {
       body: string;
       nonce: string;
       sender_id: string;
+      sent_at: string | null;
     }[];
     state.queue = queued.map((item) => ({
       id: item.id,
@@ -826,7 +909,12 @@ export class LinkedInTokenChannel {
       body: item.body,
       nonce: item.nonce,
       senderId: item.sender_id,
+      sentAt: item.sent_at ? Date.parse(item.sent_at) : undefined,
     }));
+    const dayAgo = this.clock.now() - DAY_MS;
+    state.recentSends = state.queue
+      .filter((item) => (item.state === "sent" || item.state === "unknown") && item.sentAt !== undefined && item.sentAt > dayAgo)
+      .map((item) => item.sentAt as number);
   }
 
   private persist(workspaceId: string): void {
@@ -836,8 +924,8 @@ export class LinkedInTokenChannel {
     this.db
       .prepare(
         `insert into linkedin_token_workspace
-          (workspace_id, enabled, acknowledgement, acknowledged_by, acknowledged_at, token_ciphertext, paused, pause_reason, updated_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (workspace_id, enabled, acknowledgement, acknowledged_by, acknowledged_at, token_ciphertext, paused, pause_reason, killed, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          on conflict(workspace_id) do update set
           enabled = excluded.enabled,
           acknowledgement = excluded.acknowledgement,
@@ -846,6 +934,7 @@ export class LinkedInTokenChannel {
           token_ciphertext = excluded.token_ciphertext,
           paused = excluded.paused,
           pause_reason = excluded.pause_reason,
+          killed = excluded.killed,
           updated_at = excluded.updated_at`,
       )
       .run(
@@ -857,14 +946,26 @@ export class LinkedInTokenChannel {
         state.tokenCiphertext,
         state.paused ? 1 : 0,
         state.pauseReason,
+        state.killed ? 1 : 0,
         now,
       );
     this.db.prepare("delete from linkedin_token_queue where workspace_id = ?").run(workspaceId);
     const insert = this.db.prepare(
-      "insert into linkedin_token_queue (id, workspace_id, status, recipient, subject, body, nonce, sender_id, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "insert into linkedin_token_queue (id, workspace_id, status, recipient, subject, body, nonce, sender_id, sent_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     for (const row of state.queue) {
-      insert.run(row.id, workspaceId, row.state, row.recipient, row.subject, row.body, row.nonce, row.senderId, now);
+      insert.run(
+        row.id,
+        workspaceId,
+        row.state,
+        row.recipient,
+        row.subject,
+        row.body,
+        row.nonce,
+        row.senderId,
+        row.sentAt ? new Date(row.sentAt).toISOString() : null,
+        now,
+      );
     }
   }
 
@@ -872,6 +973,7 @@ export class LinkedInTokenChannel {
     const state = this.memory(workspaceId);
     const at = new Date(this.clock.now()).toISOString();
     state.audit.push({ action, at });
+    if (state.audit.length > MAX_AUDIT) state.audit.splice(0, state.audit.length - MAX_AUDIT);
     const safeDetail = this.scrub(detail);
     const line = `channel=linkedin-token action=${action} detail=${safeDetail}`;
     const message: MailMessage = {
@@ -915,6 +1017,27 @@ export class LinkedInTokenChannel {
     );
     return run;
   }
+}
+
+async function defaultResolver(host: string): Promise<string[]> {
+  const records = await lookup(host, { all: true, verbatim: true });
+  return records.map((record) => record.address);
+}
+
+function ensureColumn(db: DatabaseSync, table: string, column: string, statement: string): void {
+  const columns = db.prepare(`pragma table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((item) => item.name === column)) db.exec(statement);
+}
+
+function publicAddress(address: string): boolean {
+  const host = address.toLowerCase();
+  if (host.includes(":")) {
+    if (host === "::1" || host.startsWith("fe80") || host.startsWith("fc") || host.startsWith("fd")) return false;
+    return true;
+  }
+  const parts = ipv4Parts(host);
+  if (!parts) return false;
+  return !blockedIpv4(parts);
 }
 
 function escapeHtml(value: string): string {
