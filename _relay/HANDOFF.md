@@ -1,51 +1,50 @@
 ---
 project: MSourcing / ARIA
-shift: 468
-agent: claude-code
-updated: 2026-11-17
-status: demo-day-checked
+shift: 469
+agent: cursor
+updated: 2026-11-21
+status: next-16.4.6-security-upgrade
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 469
 
 ## Current state
 
-- Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
-  (fix(intake): keep skills Claude reworded from the brief's own words).
-  Gate green (typecheck, typecheck:tests, npm test exit 0). App + agents
-  restarted on the image rebuilt from 75f8b8bb; /api/health healthy.
-- Owner workspace still empty (wiped shift 467): no campaign yet for the demo.
-- LinkedIn bridge: owner account paired (extension 0.3.0), last seen
-  2026-11-10; 6 outbox rows, all sent. A conversation with Tony exists.
-- The owner's demo cheat sheet is a private Claude Doc, not in the repo
-  (owner asked: never commit it).
+- Branch `cursor/aria-next-security-upgrade` (draft PR into `twa-odoo`).
+  Do not touch `mbe-branch`, `mbe-ngrok`, `mbe-test`, `main`, or `vercel-demo`.
+- `next` is 16.4.6 in `package.json` and `package-lock.json`. `react`,
+  `react-dom`, and `eslint-config-next` are unchanged (`^19.2.7`, `^19.2.7`,
+  `^16.4.3`). Next 16.4.6 does not require new peers.
+- `scripts/check-next-version.mjs` fails unless the installed `next` package
+  is at least 16.4.5 for the seven GHSAs `npm audit` reported against 16.4.3.
+  The test is `tests/next-version.mts` (`next-version` in the application and
+  security groups).
+- Local gate on 16.4.6: `npm run typecheck`, `npm run typecheck:tests`,
+  `npm run lint` (0 errors), `npm test`, and `npm run build` exited 0.
+  Docker is not available here, so `npm run test:local-demo` was not run.
+- `npm audit` still reports moderate `minimatch` GHSA-g3hv-75wg-m249 via
+  `typescript-eslint`. Dependency audit uses `--audit-level=high`.
+- Agents compose healthcheck now checks that `agents-runner` is pid 1.
+  `.gitleaksignore` has one more exact fingerprint for a 16-character
+  identifier false positive. No secret value was copied into the relay.
 
 ## Done this shift
 
-- Demo-day check: OrbStack was stopped; started it, stack came back healthy
-  (the db answered slowly for the first minutes after boot).
-- Playwright smoke of every in-scope page (/, /campaigns, /campaigns/new,
-  /candidates, /funnel, /outreach, /exec, /costs, /sessions, /settings,
-  /linkedin -> settings): no console error, no 5xx.
-- Live parse of "Load Mantu need" (no campaign created): Claude returned 7
-  Murex skills, `groundLiveIntakeFields` dropped them all (exact-substring
-  check vs reworded skills). Fixed: a skill is also grounded when every word
-  (or its plural) is in the brief; invented words still drop it. Test added
-  in tests/intake-grounding.mts. Re-tested live: Murex skills kept.
+- Red-first commit adds the Next version check and fails on 16.4.3.
+- Upgrade commit moves `next` 16.4.3 -> 16.4.6.
+- CI follow-up: gitleaks fingerprint and agents `--wait` healthcheck, both
+  pre-existing failures on `twa-odoo` (run 44824720933).
 
 ## Blockers
 
-- None.
+- None in the working tree. CI on the follow-up commit is the remaining check.
 
 ## Next steps
 
-1. Owner, before the demo: create the demo campaign and run sourcing ahead
-   of time; verify one profile (Reveal contact -> Evidence & contact ->
-   Save and rescore), record the contact basis, draft for Tony only.
-2. Owner: Chrome open with the ARIA extension and LinkedIn signed in.
-3. After the demo: empty AGENTS_LINKEDIN_ALLOWLIST before real autopilot use.
-4. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
-   VM POC (issue 07), server config (issue 10).
+1. Wait for CI on the follow-up commit. If a job is red, fix it with a new
+   commit. When every check on the head is green, do not push again.
+2. Leave the PR as a draft. Do not merge, deploy, or send live messages.
+3. `minimatch` GHSA-g3hv-75wg-m249 is out of scope for this Next upgrade.
 
 ## Decisions made (don't relitigate)
 
