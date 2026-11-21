@@ -1,4 +1,4 @@
-import { LinkedInTokenChannel, type ActionResult, type SendInput } from "./channel";
+import { LinkedInTokenChannel, type ActionResult } from "./channel";
 
 export interface HandlerInput {
   method: string;
@@ -8,6 +8,10 @@ export interface HandlerInput {
   action?: string;
   body?: Record<string, unknown>;
   e2e?: boolean;
+  userId?: string | null;
+  sessionWorkspaceId?: string;
+  serverQcPass?: boolean;
+  serverAutoOptIn?: boolean;
 }
 
 export interface HandlerResult {
@@ -23,8 +27,29 @@ function privileged(role: string): boolean {
   return role === "admin" || role === "owner";
 }
 
+const ADMIN_ACTIONS = new Set(["enable", "disable", "token", "revoke", "kill", "reset", "approval-ttl"]);
+const READ_ONLY_REFUSED = new Set([
+  "enable",
+  "disable",
+  "token",
+  "revoke",
+  "kill",
+  "reset",
+  "approve",
+  "send",
+  "enqueue",
+  "approval-ttl",
+]);
+
 export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<HandlerResult> {
-  const workspaceId = input.workspaceId || "synthetic-workspace";
+  if (input.userId === null) {
+    return { status: 401, body: { ok: false, reason: "unauthenticated" } };
+  }
+  if (input.sessionWorkspaceId && input.workspaceId && input.sessionWorkspaceId !== input.workspaceId) {
+    return { status: 403, body: { ok: false, reason: "workspace" } };
+  }
+  const workspaceId = input.sessionWorkspaceId || input.workspaceId;
+  if (!workspaceId) return { status: 401, body: { ok: false, reason: "unauthenticated" } };
   if (input.method === "GET") {
     if (!privileged(input.role)) return denied();
     const view = input.channel.view(workspaceId);
@@ -33,19 +58,18 @@ export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<H
   if (input.method !== "POST") return { status: 405, body: { ok: false, reason: "method" } };
   const action = input.action ?? "";
   const body = input.body ?? {};
+  if (input.role === "viewer" && READ_ONLY_REFUSED.has(action)) return denied();
+  if (ADMIN_ACTIONS.has(action) && !privileged(input.role)) return denied();
   if (action === "reset") {
     if (!input.e2e || !privileged(input.role)) return denied();
     await input.channel.reset(workspaceId);
     return { status: 200, body: { ok: true } };
   }
-  if (action === "enable" || action === "disable" || action === "kill") {
-    if (!privileged(input.role)) return denied();
-  }
   if (action === "enable") {
     const result = await input.channel.enable({
       workspaceId,
       role: input.role,
-      actorId: String(body.actorId ?? "operator"),
+      actorId: input.userId || "session-user",
       acknowledgement: String(body.acknowledgement ?? ""),
     });
     return outcome(result, input.channel, workspaceId, input.role);
@@ -54,19 +78,28 @@ export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<H
     const result = await input.channel.disable({
       workspaceId,
       role: input.role,
-      actorId: String(body.actorId ?? "operator"),
+      actorId: input.userId || "session-user",
     });
     return outcome(result, input.channel, workspaceId, input.role);
   }
   if (action === "kill") {
-    const result = await input.channel.applyKillSwitch({ workspaceId });
+    const result = await input.channel.engageKill({ workspaceId });
     return outcome(result, input.channel, workspaceId, input.role);
+  }
+  if (action === "approval-ttl") {
+    if (!input.e2e) return { status: 404, body: { ok: false, reason: "disabled" } };
+    const seconds = Number(body.seconds);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 24 * 60 * 60) {
+      return { status: 400, body: { ok: false, reason: "config" } };
+    }
+    await input.channel.setApprovalTtl(workspaceId, seconds * 1000);
+    return { status: 200, body: { ok: true } };
   }
   if (action === "token") {
     const result = await input.channel.putToken({
       workspaceId,
       role: input.role,
-      actorId: String(body.actorId ?? "operator"),
+      actorId: input.userId || "session-user",
       token: String(body.token ?? ""),
     });
     return outcome(result, input.channel, workspaceId, input.role);
@@ -75,17 +108,37 @@ export async function handleLinkedInTokenRequest(input: HandlerInput): Promise<H
     const result = await input.channel.revoke({
       workspaceId,
       role: input.role,
-      actorId: String(body.actorId ?? "operator"),
+      actorId: input.userId || "session-user",
     });
     return outcome(result, input.channel, workspaceId, input.role);
   }
   if (action === "approve") {
-    const result = await input.channel.approve(approvalFrom(workspaceId, body));
+    const result = await input.channel.approveFromServer({
+      workspaceId,
+      nonce: String(body.nonce ?? ""),
+      recipient: String(body.recipient ?? ""),
+      subject: String(body.subject ?? ""),
+      body: String(body.body ?? ""),
+      mode: body.mode === "auto" ? "auto" : "manual",
+      userId: input.userId || "session-user",
+    });
     return outcome(result, input.channel, workspaceId, input.role);
   }
   if (action === "send" || action === "enqueue") {
-    const send: SendInput = { ...approvalFrom(workspaceId, body), actorId: String(body.actorId ?? "operator"), hold: body.hold === true, fakeStatus: numberOrUndefined(body.fakeStatus), challenge: body.challenge === true, delayMs: numberOrUndefined(body.delayMs) };
-    const result = action === "enqueue" ? await input.channel.enqueue(send) : await input.channel.send(send);
+    const result = await input.channel.sendUsingStored({
+      workspaceId,
+      nonce: String(body.nonce ?? ""),
+      recipient: String(body.recipient ?? ""),
+      subject: String(body.subject ?? ""),
+      body: String(body.body ?? ""),
+      mode: body.mode === "auto" ? "auto" : "manual",
+      actorId: input.userId || "session-user",
+      hold: body.hold === true,
+      fakeStatus: numberOrUndefined(body.fakeStatus),
+      challenge: body.challenge === true,
+      delayMs: numberOrUndefined(body.delayMs),
+      enqueue: action === "enqueue",
+    });
     return outcome(result, input.channel, workspaceId, input.role);
   }
   return { status: 400, body: { ok: false, reason: "action" } };
@@ -98,20 +151,4 @@ function outcome(result: ActionResult, channel: LinkedInTokenChannel, workspaceI
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
-}
-
-function approvalFrom(workspaceId: string, body: Record<string, unknown>) {
-  return {
-    workspaceId,
-    nonce: String(body.nonce ?? ""),
-    recipient: String(body.recipient ?? ""),
-    subject: String(body.subject ?? ""),
-    body: String(body.body ?? ""),
-    mode: body.mode === "auto" ? "auto" as const : "manual" as const,
-    qcPass: body.qcPass === true,
-    autoOptIn: body.autoOptIn === true,
-    senderId: String(body.senderId ?? "sender-synthetic"),
-    issuedAt: typeof body.issuedAt === "number" ? body.issuedAt : Date.now(),
-    expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : Date.now() + 60 * 60 * 1000,
-  };
 }

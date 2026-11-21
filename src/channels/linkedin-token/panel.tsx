@@ -90,25 +90,20 @@ export function LinkedInTokenPanel() {
   }
 
   function draft() {
-    const issuedAt = Date.now();
     return {
-      nonce: nonce || `n-${issuedAt}`,
+      nonce,
       recipient,
       subject,
       body,
-      mode: "manual",
-      qcPass: false,
-      autoOptIn: false,
-      senderId: "sender-synthetic",
-      issuedAt,
-      expiresAt: issuedAt + (Number(approvalSeconds) || 3600) * 1000,
+      mode: "manual" as const,
     };
   }
 
   async function approve() {
+    if (demo) await post("approval-ttl", { seconds: Number(approvalSeconds) || 3600 });
     const next = `n-${Date.now()}`;
     setNonce(next);
-    const fields = { ...draft(), nonce: next };
+    const fields = { nonce: next, recipient, subject, body, mode: "manual" };
     const result = await post("approve", fields);
     setApprovedBody(result.ok ? body : null);
     setNotice(result.ok ? "Exact text approved." : `Approval refused: ${result.reason ?? "refused"}`);

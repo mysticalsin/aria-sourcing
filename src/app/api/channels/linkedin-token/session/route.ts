@@ -5,19 +5,26 @@ export const dynamic = "force-dynamic";
 
 const ROLES = new Set(["admin", "owner", "member", "viewer"]);
 
+function testSessionOpen(): boolean {
+  // The dev bundler rewrites a direct NODE_ENV read, so the key is built at runtime.
+  const env = process["env"] as Record<string, string | undefined>;
+  const NODE_ENV = env[["NODE", "ENV"].join("_")];
+  return NODE_ENV === "test" && process.env.ARIA_LINKEDIN_TOKEN_TEST_SESSION === "1";
+}
+
+function closed(): NextResponse {
+  return NextResponse.json({ ok: false, reason: "disabled" }, { status: 404 });
+}
+
 export async function GET() {
-  if (process.env.ARIA_E2E !== "1") {
-    return NextResponse.json({ ok: true, role: "member", e2e: false });
-  }
+  if (!testSessionOpen()) return closed();
   const jar = await cookies();
   const role = jar.get("aria_e2e_role")?.value;
   return NextResponse.json({ ok: true, role: ROLES.has(role ?? "") ? role : "member", e2e: true });
 }
 
 export async function POST(req: NextRequest) {
-  if (process.env.ARIA_E2E !== "1") {
-    return NextResponse.json({ ok: false, reason: "disabled" }, { status: 404 });
-  }
+  if (!testSessionOpen()) return closed();
   const payload = (await req.json().catch(() => null)) as { role?: string } | null;
   const role = payload?.role ?? "";
   if (!ROLES.has(role)) return NextResponse.json({ ok: false, reason: "role" }, { status: 400 });

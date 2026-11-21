@@ -8,60 +8,86 @@ import { getServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const WORKSPACE = "synthetic-workspace";
+const TEST_WORKSPACE = "synthetic-workspace";
 
-async function caller(): Promise<{ role: string; actorId: string }> {
-  if (supabaseEnabled) {
-    const supabase = await getServerSupabase();
-    if (!supabase) return { role: "member", actorId: "anonymous" };
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return { role: "member", actorId: "anonymous" };
-    const { data: role } = await supabase.rpc("current_profile_role");
-    const name = role === "admin" || role === "owner" ? role : "member";
-    return { role: name, actorId: user.id };
-  }
-  if (process.env.ARIA_E2E === "1") {
+export function linkedInTokenTestSessionOpen(): boolean {
+  // The dev bundler rewrites a direct NODE_ENV read, so the key is built at runtime.
+  const env = process["env"] as Record<string, string | undefined>;
+  const NODE_ENV = env[["NODE", "ENV"].join("_")];
+  return NODE_ENV === "test" && process.env.ARIA_LINKEDIN_TOKEN_TEST_SESSION === "1";
+}
+
+async function caller(): Promise<{ userId: string | null; role: string; workspaceId: string | null }> {
+  if (linkedInTokenTestSessionOpen()) {
     const jar = await cookies();
     const role = jar.get("aria_e2e_role")?.value;
     if (role === "admin" || role === "owner" || role === "member" || role === "viewer") {
-      return { role, actorId: "e2e-user" };
+      return { userId: "e2e-user", role, workspaceId: TEST_WORKSPACE };
     }
+    return { userId: null, role: "", workspaceId: null };
   }
-  return { role: "member", actorId: "local-demo" };
+  if (supabaseEnabled) {
+    const supabase = await getServerSupabase();
+    if (!supabase) return { userId: null, role: "", workspaceId: null };
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { userId: null, role: "", workspaceId: null };
+    const { data: role } = await supabase.rpc("current_profile_role");
+    const name = role === "admin" || role === "owner" || role === "viewer" || role === "member" ? role : "member";
+    const { data: profile } = await supabase.from("profiles").select("workspace_id").eq("id", user.id).maybeSingle();
+    const workspaceId = typeof profile?.workspace_id === "string" ? profile.workspace_id : null;
+    if (!workspaceId) return { userId: null, role: "", workspaceId: null };
+    return { userId: user.id, role: name, workspaceId };
+  }
+  return { userId: null, role: "", workspaceId: null };
+}
+
+function closed(): NextResponse {
+  return NextResponse.json({ ok: false, reason: "unauthenticated" }, { status: 401, headers: { "cache-control": "no-store" } });
 }
 
 export async function GET(req: NextRequest) {
   const who = await caller();
+  if (!who.userId || !who.workspaceId) return closed();
+  const requested = req.nextUrl.searchParams.get("workspaceId");
+  if (requested && requested !== who.workspaceId) {
+    return NextResponse.json({ ok: false, reason: "workspace" }, { status: 403, headers: { "cache-control": "no-store" } });
+  }
   const result = await handleLinkedInTokenRequest({
     method: "GET",
     role: who.role,
-    workspaceId: req.nextUrl.searchParams.get("workspaceId") ?? WORKSPACE,
+    userId: who.userId,
+    sessionWorkspaceId: who.workspaceId,
+    workspaceId: who.workspaceId,
     channel: getLinkedInTokenChannel(),
-    e2e: process.env.ARIA_E2E === "1",
+    e2e: linkedInTokenTestSessionOpen(),
   });
   return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {
   const who = await caller();
+  if (!who.userId || !who.workspaceId) {
+    return NextResponse.json({ ok: false, reason: "unauthenticated" }, { status: 401, headers: { "cache-control": "no-store" } });
+  }
   const payload = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!payload || typeof payload.action !== "string") {
     return NextResponse.json({ ok: false, reason: "action" }, { status: 400 });
   }
-  if (process.env.ARIA_E2E === "1" && (payload.action === "kill" || payload.action === "reset")) {
-    process.env.ARIA_SEND_KILL_SWITCH = payload.action === "kill" ? "on" : "off";
+  if (typeof payload.workspaceId === "string" && payload.workspaceId !== who.workspaceId) {
+    return NextResponse.json({ ok: false, reason: "workspace" }, { status: 403, headers: { "cache-control": "no-store" } });
   }
   const result = await handleLinkedInTokenRequest({
     method: "POST",
     role: who.role,
-    actorId: who.actorId,
-    workspaceId: typeof payload.workspaceId === "string" ? payload.workspaceId : WORKSPACE,
+    userId: who.userId,
+    sessionWorkspaceId: who.workspaceId,
+    workspaceId: who.workspaceId,
     channel: getLinkedInTokenChannel(),
     action: payload.action,
-    body: { ...payload, actorId: who.actorId },
-    e2e: process.env.ARIA_E2E === "1",
-  } as Parameters<typeof handleLinkedInTokenRequest>[0]);
+    body: payload,
+    e2e: linkedInTokenTestSessionOpen(),
+  });
   return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
 }

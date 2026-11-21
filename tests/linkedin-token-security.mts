@@ -1,6 +1,5 @@
 /**
- * Hammer H-01, M-01, and L-05. These assertions describe the closed behavior.
- * They fail on 6d4d6309.
+ * Authorization and outbound host checks for the LinkedIn token channel.
  */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -116,15 +115,15 @@ function bodyFor(action: string): Record<string, unknown> {
     mode: "auto",
     qcPass: true,
     autoOptIn: true,
-    senderId: "attacker",
+    senderId: "other-user",
     issuedAt: 1,
     expiresAt: 2,
-    actorId: "attacker",
+    actorId: "other-user",
     action,
   };
 }
 
-test("unauthenticated POST for each action is 401 and changes nothing", async () => {
+test("rejects an unauthenticated token request", async () => {
   const { channel, calls, db, close } = harness("http://127.0.0.1:9");
   try {
     await arm(channel, HOME);
@@ -152,7 +151,7 @@ test("unauthenticated POST for each action is 401 and changes nothing", async ()
   }
 });
 
-test("a foreign workspaceId is 403 and the home ciphertext is unchanged", async () => {
+test("rejects a workspace id outside the session", async () => {
   const { channel, calls, db, close } = harness("http://127.0.0.1:9");
   try {
     await arm(channel, HOME);
@@ -177,7 +176,7 @@ test("a foreign workspaceId is 403 and the home ciphertext is unchanged", async 
   }
 });
 
-test("a viewer is refused on every mutating action", async () => {
+test("rejects a read-only role on token changes", async () => {
   const { channel, calls, db, close } = harness("http://127.0.0.1:9");
   try {
     await arm(channel, HOME);
@@ -204,7 +203,7 @@ test("a viewer is refused on every mutating action", async () => {
   }
 });
 
-test("client-supplied qcPass and autoOptIn are ignored", async () => {
+test("uses the server QC result for approval", async () => {
   const { channel, calls, db, close } = harness("http://127.0.0.1:9");
   try {
     await arm(channel, HOME);
@@ -244,7 +243,7 @@ test("client-supplied qcPass and autoOptIn are ignored", async () => {
   }
 });
 
-test("REMOTE=on does not send the session cookie to an attacker host or the metadata address", async () => {
+test("refuses a remote base that is not the allowlisted host", async () => {
   for (const base of ["https://evil.example", "http://169.254.169.254", "https://169.254.169.254"]) {
     const { channel, env, calls, close } = harness(base);
     try {
@@ -276,14 +275,14 @@ test("REMOTE=on does not send the session cookie to an attacker host or the meta
   }
 });
 
-test("the test-session route is closed unless NODE_ENV=test and the explicit flag", () => {
+test("test session route requires the test build flag", () => {
   const source = readFileSync("src/app/api/channels/linkedin-token/session/route.ts", "utf8");
   assert.match(source, /NODE_ENV\s*===\s*["']test["']/);
   assert.match(source, /ARIA_LINKEDIN_TOKEN_TEST_SESSION/);
   assert.match(source, /404/);
 });
 
-test("kill is behind the admin check and is not applied before authentication", () => {
+test("kill switch requires an administrator", () => {
   const source = readFileSync("src/app/api/channels/linkedin-token/route.ts", "utf8");
   const post = source.slice(source.indexOf("export async function POST"));
   assert.match(post, /401/);

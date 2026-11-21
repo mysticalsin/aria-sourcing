@@ -138,6 +138,8 @@ interface Memory {
   approvals: StoredApproval[];
   queue: QueueRow[];
   audit: { action: string; at: string }[];
+  killed: boolean;
+  approvalTtlMs?: number;
 }
 
 interface Waiter {
@@ -168,6 +170,7 @@ function blank(): Memory {
     approvals: [],
     queue: [],
     audit: [],
+    killed: false,
   };
 }
 
@@ -214,6 +217,34 @@ function intEnv(env: Env, key: string, fallback: number): number {
 
 function loopback(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+function testBuild(env: Env): boolean {
+  return env.lookup("NODE_ENV") === "test" && env.lookup("ARIA_LINKEDIN_TOKEN_TEST_SESSION") === "1";
+}
+
+function ipv4Parts(host: string): number[] | null {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return null;
+  const parts = host.split(".").map((part) => Number(part));
+  if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return parts;
+}
+
+function blockedIpv4(parts: number[]): boolean {
+  const [a, b] = parts;
+  if (a === 10 || a === 0 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+function blockedIpv6(host: string): boolean {
+  const value = host.toLowerCase();
+  if (value === "::1") return false;
+  if (value.startsWith("fc") || value.startsWith("fd")) return true;
+  if (/^fe[89ab]/.test(value)) return true;
+  return true;
 }
 
 function trackingId(nonce: string): string {
@@ -288,9 +319,9 @@ export class LinkedInTokenChannel {
       paused: state.paused,
       pauseReason: state.pauseReason,
       queue: state.queue.map((item) => ({ id: item.id, state: item.state })),
-      killSwitch: killEngaged(this.env),
+      killSwitch: killEngaged(this.env) || state.killed,
       audit: state.audit,
-      e2e: this.env.lookup("ARIA_E2E") === "1",
+      e2e: testBuild(this.env),
     };
   }
 
@@ -321,6 +352,50 @@ export class LinkedInTokenChannel {
         return { ok: false, reason: "role" };
       }
       return this.purgeLocked(input.workspaceId, "disable");
+    });
+  }
+
+  async engageKill(input: { workspaceId: string }): Promise<ActionResult> {
+    return this.exclusive(async () => {
+      const state = this.memory(input.workspaceId);
+      state.killed = true;
+      this.persist(input.workspaceId);
+      await this.audit(input.workspaceId, "refusal", "kill-switch");
+      this.cancelOutstanding(input.workspaceId, "cancelled");
+      return { ok: true, reason: "kill-switch" };
+    });
+  }
+
+  async setApprovalTtl(workspaceId: string, ttlMs: number): Promise<void> {
+    return this.exclusive(async () => {
+      this.memory(workspaceId).approvalTtlMs = ttlMs;
+    });
+  }
+
+  async approveFromServer(input: {
+    workspaceId: string;
+    nonce: string;
+    recipient: string;
+    subject: string;
+    body: string;
+    mode: "manual" | "auto";
+    userId: string;
+  }): Promise<ActionResult> {
+    const now = this.clock.now();
+    const state = this.memory(input.workspaceId);
+    const ttl = state.approvalTtlMs ?? 60 * 60 * 1000;
+    return this.approve({
+      workspaceId: input.workspaceId,
+      nonce: input.nonce,
+      recipient: input.recipient,
+      subject: input.subject,
+      body: input.body,
+      mode: input.mode,
+      qcPass: false,
+      autoOptIn: false,
+      senderId: input.userId,
+      issuedAt: now,
+      expiresAt: now + ttl,
     });
   }
 
@@ -370,6 +445,41 @@ export class LinkedInTokenChannel {
       state.approvals.push({ ...input, binding: bindingOf(input), consumed: false });
       return { ok: true, reason: "" };
     });
+  }
+
+  async sendUsingStored(input: {
+    workspaceId: string;
+    nonce: string;
+    recipient: string;
+    subject: string;
+    body: string;
+    mode: "manual" | "auto";
+    actorId: string;
+    hold?: boolean;
+    fakeStatus?: number;
+    challenge?: boolean;
+    delayMs?: number;
+    enqueue?: boolean;
+  }): Promise<ActionResult> {
+    const stored = this.memory(input.workspaceId).approvals.find((item) => item.nonce === input.nonce);
+    if (!stored) return { ok: false, reason: "approval-token" };
+    if (
+      stored.recipient !== input.recipient ||
+      stored.subject !== input.subject ||
+      stored.body !== input.body ||
+      stored.mode !== input.mode
+    ) {
+      return { ok: false, reason: "binding-mismatch" };
+    }
+    const send: SendInput = {
+      ...stored,
+      actorId: input.actorId,
+      hold: input.hold,
+      fakeStatus: input.fakeStatus,
+      challenge: input.challenge,
+      delayMs: input.delayMs,
+    };
+    return input.enqueue ? this.enqueue(send) : this.send(send);
   }
 
   async send(input: SendInput): Promise<ActionResult> {
@@ -438,7 +548,7 @@ export class LinkedInTokenChannel {
       return { ok: false, reason };
     };
     if (!state.enabled) return refuse("disabled");
-    if (killEngaged(this.env)) return refuse("kill-switch");
+    if (killEngaged(this.env) || state.killed) return refuse("kill-switch");
     if (state.paused) return refuse("sender-paused");
     if (!state.tokenCiphertext) return refuse("no-token");
     let token = "";
@@ -498,7 +608,7 @@ export class LinkedInTokenChannel {
     });
     const headers: Record<string, string> = { ...spec.headers, "csrf-token": token };
     headers.cookie = `li_at=${token}`;
-    if (this.env.lookup("ARIA_E2E") === "1") {
+    if (testBuild(this.env)) {
       if (input.hold) headers["x-aria-hold"] = "1";
       if (input.fakeStatus) headers["x-aria-fake-status"] = String(input.fakeStatus);
       if (input.challenge) headers["x-aria-challenge"] = "1";
@@ -647,9 +757,20 @@ export class LinkedInTokenChannel {
     } catch {
       return { ok: false, reason: "config" };
     }
-    const remote = this.env.lookup("ARIA_LINKEDIN_TOKEN_REMOTE") === "on";
-    if (!remote && !loopback(parsed.hostname)) return { ok: false, reason: "config" };
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "config" };
+    if (parsed.username || parsed.password) return { ok: false, reason: "config" };
+    const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (loopback(host) && (parsed.protocol === "http:" || parsed.protocol === "https:")) {
+      return { ok: true, url: parsed.origin };
+    }
+    const ipv4 = ipv4Parts(host);
+    if (ipv4 && (blockedIpv4(ipv4) || ipv4[0] !== 127)) return { ok: false, reason: "config" };
+    if (host.includes(":") && blockedIpv6(host)) return { ok: false, reason: "config" };
+    if (parsed.protocol !== "https:" || parsed.port) return { ok: false, reason: "config" };
+    if (parsed.pathname !== "" && parsed.pathname !== "/") return { ok: false, reason: "config" };
+    if (parsed.search || parsed.hash) return { ok: false, reason: "config" };
+    const allowed = (this.env.lookup("ARIA_LINKEDIN_TOKEN_ALLOWED_HOST") ?? "").trim().toLowerCase();
+    if (!allowed || ipv4Parts(allowed) || allowed.includes(":")) return { ok: false, reason: "config" };
+    if (host !== allowed) return { ok: false, reason: "config" };
     return { ok: true, url: parsed.origin };
   }
 
