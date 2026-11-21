@@ -549,6 +549,14 @@ test("command binding is a typed view of the existing actions and adds no send p
   assert.equal(commands.settings.updateSettings, actions.updateSettings);
 });
 
+test("the outreach queue shows manual mode, one open draft, and a dry-run send", () => {
+  const page = readFileSync(new URL("../src/app/outreach/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /Delivery mode: Manual/);
+  assert.match(page, /fetch\("\/api\/outreach\/send"/);
+  assert.match(page, /openedDraft/);
+  assert.match(page, /selectedInView\.length > 0 && \(/);
+});
+
 test("feature modules do not import linkedin, autopilot, the approval ledger, or dispatch", () => {
   const files = sourceFiles("src/features");
   assert.ok(files.length > 0);
