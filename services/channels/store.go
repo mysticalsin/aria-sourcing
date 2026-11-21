@@ -18,10 +18,11 @@ type ConsumedStore interface {
 }
 
 // PauseStore records sender pauses for a database or Odoo-backed implementation.
-// A zero until means the pause stays until a later implementation clears it.
+// A zero until means the pause stays until Resume. Resume is the human clear.
 type PauseStore interface {
 	Pause(ctx context.Context, key string, until time.Time, reason string) error
 	Paused(ctx context.Context, key string, now time.Time) (bool, error)
+	Resume(ctx context.Context, key string) error
 	NoteFailure(ctx context.Context, key string, now time.Time, window time.Duration) (int, error)
 }
 
@@ -143,6 +144,23 @@ func (s *MemoryPauseStore) Pause(ctx context.Context, key string, until time.Tim
 		return nil
 	}
 	s.pauses[key] = pauseRecord{until: until, reason: reason}
+	return nil
+}
+
+// Resume clears one pause. A human takes this action.
+func (s *MemoryPauseStore) Resume(ctx context.Context, key string) error {
+	if s == nil {
+		return ErrConfig
+	}
+	if err := ctxErr(ctx); err != nil {
+		return err
+	}
+	if key == "" {
+		return ErrConfig
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pauses, key)
 	return nil
 }
 
