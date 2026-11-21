@@ -17,7 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
-import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
+import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
 import { deliveryTargetForChannel, sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { consultApprovalLedger } from "@/lib/approval/ledger";
@@ -176,16 +176,25 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
-      const dailyCap = channelDailyCapFromEnv(process.env);
-      const utcDay = new Date().toISOString().slice(0, 10);
-      const { data: capRow } = await supabase
-        .from("outreach_channel_daily_sends")
-        .select("sent_count")
-        .eq("workspace_id", msg.workspace_id)
-        .eq("channel", msg.channel)
-        .eq("send_day", utcDay)
-        .maybeSingle();
-      const sentToday = typeof capRow?.sent_count === "number" ? capRow.sent_count : Number(capRow?.sent_count ?? 0);
+      const { data: capRow, error: capReadError } = await supabase.rpc("outreach_channel_sent_today", {
+        p_workspace_id: msg.workspace_id,
+        p_channel: msg.channel,
+      });
+      const capRecord = capRow as { sent_count?: number; daily_cap?: number; reason?: string } | null;
+      const sentToday = capRecord?.sent_count;
+      const serverDailyCap = capRecord?.daily_cap;
+      if (
+        capReadError ||
+        capRecord?.reason ||
+        typeof sentToday !== "number" ||
+        !Number.isFinite(sentToday) ||
+        typeof serverDailyCap !== "number" ||
+        !Number.isFinite(serverDailyCap)
+      ) {
+        safeLog("dispatch-outbound: daily count unavailable", { message: capReadError?.message ?? capRecord?.reason ?? "missing count" });
+        await finish("blocked", { pass: false, reasons: ["daily-count-unavailable"] });
+        continue;
+      }
       const ledgerDecision = consultApprovalLedger({
         channel: msg.channel,
         recipient: deliveryTarget,
@@ -198,21 +207,11 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         storedWireHash: approval.body_hash,
         env: process.env,
         profileUrl,
-        dailyCap: dailyCap,
-        sentToday: Number.isFinite(sentToday) ? sentToday : 0,
+        dailyCap: serverDailyCap,
+        sentToday,
       });
       if (!ledgerDecision.allowed) {
         await finish("blocked", { pass: false, reasons: [ledgerDecision.reason] });
-        continue;
-      }
-      const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
-        p_workspace_id: msg.workspace_id,
-        p_channel: msg.channel,
-        p_cap: dailyCap,
-      });
-      const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
-      if (capError || capDecision?.allowed !== true) {
-        await finish("blocked", { pass: false, reasons: [capDecision?.reason ?? "channel-cap"] });
         continue;
       }
 

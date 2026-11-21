@@ -40,6 +40,7 @@
     "test:db-schema-authority": "bash tests/schema-authority-db.sh",
     "test:db-email-durability": "bash tests/email-durability-db.sh",
     "test:db-approval-dispatch": "bash tests/approval-dispatch-db.sh",
+    "test:db-approval-acceptance": "bash tests/approval-acceptance-db.sh",
     "test:db-email-inbound": "bash tests/email-inbound-db.sh",
     "test:db-email-outcomes": "bash tests/email-outcomes-db.sh"
   },

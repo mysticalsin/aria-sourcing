@@ -181,9 +181,9 @@ test("test_expired_approval_is_refused_on_the_send_route_and_the_dispatcher", as
 });
 
 test("test_claim_email_outbound_requires_a_current_approved_at", () => {
-  const sql = read("supabase/migrations/0001_baseline.sql");
-  const start = sql.indexOf("CREATE FUNCTION public.claim_email_outbound(");
-  const end = sql.indexOf("CREATE FUNCTION public.claim_email_outbound_queued");
+  const sql = read("supabase/migrations/0013_claim_exact_recompute.sql");
+  const start = sql.indexOf("create function public.claim_email_outbound(");
+  const end = sql.indexOf("create or replace function public.claim_email_outbound_queued");
   const fn = sql.slice(start, end);
   assert.match(fn, /approved_at is null/);
   assert.match(fn, /interval '7 days'/);

@@ -40,8 +40,9 @@ test("test_send_path_passes_a_persistent_daily_cap", () => {
   const send = read("src/app/api/outreach/send/route.ts");
   for (const source of [dispatch, send]) {
     assert.match(source, /dailyCap:/);
-    assert.match(source, /consume_outreach_channel_daily_cap/);
+    assert.match(source, /daily_cap/);
   }
+  assert.match(read("supabase/migrations/0013_claim_exact_recompute.sql"), /apply_channel_daily_cap/);
   assert.doesNotMatch(read("src/lib/approval/ledger.ts"), /consultCounts/);
 });
 

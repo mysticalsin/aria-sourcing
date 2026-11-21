@@ -1,37 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 471
+shift: 472
 agent: cursor
 updated: 2026-11-21
-status: approval-ledger-dual-hash
+status: approval-ledger-acceptance
 ---
 
-# Handoff - Shift 471
+# Handoff - Shift 472
 
 ## Current state
 
-- Branch `cursor/approval-ledger-allowlist-601c`. PR #167 targets `twa-odoo`. Not merged, not rebased, not force-pushed.
-- Sentinel agreed on `6c02aec7` and then reported that `body_hash` cannot be both the wire digest and `exactBodyHash`. The failing tests are `eef6bf61f7e585bc69b8cb19dc99ed11d9f4f3c9`. The fix stores `body_hash` as `sha256(subject || newline || body)` and `exact_body_hash` as the exact binding. `claim_email_outbound_queued` and `enforce_active_email_approval` check both. The dispatcher checks both.
-- Non-ASCII recipients are refused. They are not folded onto ASCII allowlist entries.
-- The per-UTC-day channel cap is `consume_outreach_channel_daily_cap` in Postgres. The send route and the dispatcher pass `dailyCap`. The in-memory `consultCounts` map is gone.
-- `linkedin_token` stays blocked in dispatch. There is no enable path in this PR.
-- New gitleaks fingerprints were checked with `git rev-list --all`. The secret-scan job now rejects an ignore line whose commit is not reachable.
-- `tests/approval-dispatch-db.sh` is the real Postgres proof (claim, trigger, dispatcher, edited body, swapped recipient). This environment has no Docker, so that script was not run here. Database security CI runs it.
-- Local `npm run typecheck`, `npm run typecheck:tests`, and `npm test` exited 0.
+- #167 stays frozen at `9e231dfcffc623df0fffce21b6d143df98c9fa5f` on `cursor/approval-ledger-allowlist-601c`. Do not push that branch.
+- `1f835cbdea29930f4af20423b190f43ebc42270c` is a normal ancestor of that frozen head, parent `eef6bf61`. It is not a merge commit.
+- #182 is the draft stacked on #167: branch `cursor/aria-ledger-hardening-followup`. Red acceptance commit `17f05d5641838ba1fca0433b97c51907858a7a93`. The fix is the commit that adds `supabase/migrations/0013_claim_exact_recompute.sql`.
+- `0013_exact_body_hash.sql` does not exist. The exact-hash migration is `0011_exact_body_hash.sql`, already pushed. `0013` replaces `claim_email_outbound` instead of rewriting `0011`.
+- The live claim recomputes `exact_outreach_body_hash` and `outreach_wire_body_hash`, binds `p_candidate_email`, and calls `apply_channel_daily_cap` in the same transaction. A refusal returns before that write. A cap failure raises so the claim rolls back.
+- `outreach_channel_sent_today` returns `daily_cap` from `outreach_channel_cap_config`. The send route and the dispatcher use that value. A missing count or a missing config returns a reason and the route answers 503.
+- Members cannot `UPDATE` or `DELETE` `outreach_ledger`. Status changes go through `append_outreach_ledger_event`, which is service-role only and inserts `outreach_ledger_events`.
+- There is no `aria_app` role.
+- `0014_cap_owner_policy.sql` lets the table owner use the cap tables and the ledger event table after `db-init` removes `bypassrls`. Members still have no grant and no policy.
+- The local full suite, including the Postgres scripts, is the proof. Do not push again to retrigger GitHub Actions.
 
 ## Done this shift
 
-- Unfroze `6c02aec7`, committed the failing tests, then the fix.
+- Pushed the failing acceptance tests, then the claim, cap, and append-only ledger fix.
 
 ## Blockers
 
-- Conflicts with #168, #169, #170, and #172 are still expected and were not resolved.
+- GitHub Actions is queued and is not the gate for this head.
+- Conflicts with #168, #169, #170, and #172 stay unresolved. Do not restore paths #168 deletes.
 
 ## Next steps
 
-1. Wait until every GitHub check on the new head is green, then do not push again.
-2. After #168 merges, rebase #167 onto it. Do not do that in this shift.
-3. Do not merge #167 from this shift.
+1. Do not push this branch again unless a local suite failure needs one combined push.
+2. #167 and #182 merge together. Do not merge either from this shift.
+3. Do not rebase #167.
 
 ## Decisions made (don't relitigate)
 
@@ -39,10 +42,11 @@ status: approval-ledger-dual-hash
 - Tony, 20:30 BRT: `linkedin_token` is off by default. This PR does not send it, and dispatch has no enable path for it.
 - Demo and test both fail closed on an empty allowlist. Non-ASCII recipients are refused rather than folded.
 - `body_hash` stays the wire hash. `exact_body_hash` is the exact approval binding.
-- #168 lands first. #167 rebases onto it only after #168 merges.
+- #167 stays at `9e231dfc`. The acceptance fixes live on #182 and the two PRs merge as one unit.
+- The daily cap ceiling is the `outreach_channel_cap_config` row, not `ARIA_CHANNEL_DAILY_CAP`.
 
 ## Watch out
 
-- The queued claim now also requires `exact_body_hash` and `approved_at` within 7 days. Seeds that claim email must set `exact_body_hash`.
-- The daily cap default is `DEFAULT_CHANNEL_DAILY_CAP` (50) when `ARIA_CHANNEL_DAILY_CAP` is unset. An unparseable value is zero.
-- Audit entries still do not store the recipient address or the message text.
+- `claim_email_outbound` is now nine arguments. The privilege matrix and the cross-channel wrapper pass subject and body.
+- `apply_channel_daily_cap` is revoked from `authenticated` and `service_role`. Only the security-definer claims call it.
+- Seeds that claim email must store a real wire hash, a real exact hash, and a scope hash of `candidate || newline || Email || newline || lower(email)`.

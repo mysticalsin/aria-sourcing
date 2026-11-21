@@ -6,7 +6,12 @@ do $$
 declare
   src text;
 begin
-  src := pg_get_functiondef('public.claim_email_outbound(text,text,text,text,text,text,uuid)'::regprocedure);
+  select pg_get_functiondef(p.oid) into src
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'claim_email_outbound'
+  order by p.pronargs desc
+  limit 1;
   if src !~ 'approved_at is null' then
     raise exception 'claim_email_outbound does not require approved_at';
   end if;

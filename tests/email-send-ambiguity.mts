@@ -330,8 +330,7 @@ try {
       if (name === "current_profile_role") return { data: "admin", error: null };
       if (name === "current_workspace_id") return { data: workspaceId, error: null };
       if (name === "claim_email_outbound") return { data: { allowed: true, reason: "ok", ledger_id: ledgerId }, error: null };
-      if (name === "outreach_channel_sent_today") return { data: { sent_count: 0 }, error: null };
-      if (name === "consume_outreach_channel_daily_cap") return { data: { allowed: true, reason: "authorized" }, error: null };
+      if (name === "outreach_channel_sent_today") return { data: { sent_count: 0, daily_cap: 50 }, error: null };
       return { data: null, error: null };
     },
     from: (table: string) => {
@@ -362,6 +361,20 @@ try {
   };
 
   const serviceSupabase = {
+    rpc: async (name: string, args?: Record<string, unknown>) => {
+      if (name === "outreach_channel_sent_today") return { data: { sent_count: 0, daily_cap: 50 }, error: null };
+      if (name === "append_outreach_ledger_event") {
+        if (userLedgerThrowNext > 0) {
+          userLedgerThrowNext -= 1;
+          throw new Error("ledger update connection reset");
+        }
+        const patch = { status: args?.p_status, reason: args?.p_reason };
+        userLedgerPatches.push(patch);
+        events.push(`reconcile:${String(patch.status)}`);
+        return { data: { ok: true }, error: null };
+      }
+      return { data: null, error: null };
+    },
     from: (table: string) => {
       if (table === "outreach_ledger") {
         return chainQuery({

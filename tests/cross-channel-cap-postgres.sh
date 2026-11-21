@@ -93,7 +93,7 @@ $$;
 create function aria_cap_test.claim_email(message_id text, candidate_id text)
 returns json
 language plpgsql
-set search_path = pg_catalog, public, pg_temp
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 begin
   perform aria_cap_test.set_claims(
@@ -102,12 +102,14 @@ begin
   );
   return public.claim_email_outbound(
     message_id,
-    repeat('a', 64),
-    repeat('b', 64),
+    public.outreach_wire_body_hash('Cap mail', 'Cap mail body'),
+    encode(digest(candidate_id || E'\n' || 'Email' || E'\n' || (candidate_id || '@example.test'), 'sha256'), 'hex'),
     candidate_id,
     candidate_id || '@example.test',
     'cap-test',
-    'ca000000-0000-4000-8000-000000000003'::uuid
+    'ca000000-0000-4000-8000-000000000003'::uuid,
+    'Cap mail',
+    'Cap mail body'
   );
 end;
 $$;
@@ -217,6 +219,25 @@ insert into public.outreach_approvals (
     encode(digest('candidate-email-race' || E'\n' || 'LinkedIn' || E'\n' || 'https://www.linkedin.com/in/recontact-candidate', 'sha256'), 'hex'),
     'ca000000-0000-4000-8000-000000000002', 'human'
   );
+update public.outreach_approvals
+  set body_hash = public.outreach_wire_body_hash('Cap mail', 'Cap mail body'),
+      approval_scope_hash = encode(digest(
+        case message_id
+          when 'email-race' then 'candidate-email-race'
+          else 'candidate-after-ambiguous'
+        end || E'\n' || 'Email' || E'\n' ||
+        case message_id
+          when 'email-race' then 'candidate-email-race@example.test'
+          else 'candidate-after-ambiguous@example.test'
+        end, 'sha256'), 'hex'),
+      exact_body_hash = public.exact_outreach_body_hash(
+        'Email',
+        case message_id
+          when 'email-race' then 'candidate-email-race@example.test'
+          else 'candidate-after-ambiguous@example.test'
+        end,
+        'Cap mail', 'Cap mail body', 'outreach-v1', approved_by::text, approved_at)
+  where message_id in ('email-race', 'email-after-ambiguous');
 update public.outreach_approvals
   set exact_body_hash = public.exact_outreach_body_hash(
     'Email', 'queued-race@example.test', 'Cap race', 'Queued email cap race body',

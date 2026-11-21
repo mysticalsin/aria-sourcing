@@ -13,7 +13,7 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
-import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
+import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
 import { sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { consultApprovalLedger } from "@/lib/approval/ledger";
@@ -244,40 +244,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
-  const dailyCap = channelDailyCapFromEnv(process.env);
-  const { data: sentTodayRow } = await supabase.rpc("outreach_channel_sent_today", {
-    p_workspace_id: approvalWid,
-    p_channel: channel,
-  });
-  const sentTodayRecord = sentTodayRow as { sent_count?: number } | null;
-  const sentToday = typeof sentTodayRecord?.sent_count === "number" ? sentTodayRecord.sent_count : 0;
-  const capPreview = consultApprovalLedger({
-    channel,
-    recipient: candidateEmail,
-    subject,
-    body,
-    noticeVersion: OUTREACH_NOTICE_VERSION,
-    approverId,
-    approvedAt,
-    storedBodyHash: storedExact,
-    storedWireHash: approval.body_hash,
-    env: process.env,
-    dailyCap: dailyCap,
-    sentToday,
-  });
-  if (!capPreview.allowed) {
-    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
-  }
-  const { data: consumed } = await supabase.rpc("consume_outreach_channel_daily_cap", {
-    p_workspace_id: approvalWid,
-    p_channel: channel,
-    p_cap: dailyCap,
-  });
-  const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
-  if (capDecision?.allowed !== true) {
-    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
-  }
-
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
   if (!seat.domain_verified) {
@@ -329,14 +295,55 @@ export async function POST(req: NextRequest) {
   // Atomic approval + guardrail claim: locks the active human approval and creates
   // the ledger claim in one transaction, so a revoke cannot land between the
   // client-visible approval validation and the provider dispatch.
+  const serviceForCap = getServiceSupabase();
+  if (!serviceForCap) {
+    safeLog("outreach-send: daily count unavailable", { message: "service client missing" });
+    return NextResponse.json({ status: "error", detail: "Channel daily count is unavailable." }, { status: 503 });
+  }
+  const { data: sentTodayRow, error: capReadError } = await serviceForCap.rpc("outreach_channel_sent_today", {
+    p_workspace_id: approvalWid,
+    p_channel: channel,
+  });
+  const sentTodayRecord = sentTodayRow as { sent_count?: number; daily_cap?: number; reason?: string } | null;
+  const sentToday = sentTodayRecord?.sent_count;
+  const serverDailyCap = sentTodayRecord?.daily_cap;
+  if (
+    capReadError ||
+    sentTodayRecord?.reason ||
+    typeof sentToday !== "number" ||
+    typeof serverDailyCap !== "number"
+  ) {
+    safeLog("outreach-send: daily count unavailable", { message: capReadError?.message ?? sentTodayRecord?.reason ?? "missing count" });
+    return NextResponse.json({ status: "error", detail: "Channel daily count is unavailable." }, { status: 503 });
+  }
+  const capPreview = consultApprovalLedger({
+    channel,
+    recipient: candidateEmail,
+    subject,
+    body,
+    noticeVersion: OUTREACH_NOTICE_VERSION,
+    approverId,
+    approvedAt,
+    storedBodyHash: storedExact,
+    storedWireHash: approval.body_hash,
+    env: process.env,
+    dailyCap: serverDailyCap,
+    sentToday,
+  });
+  if (!capPreview.allowed) {
+    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
+  }
+
   const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound", {
     p_message_id: payload.messageId,
-    p_body_hash: approvedContentHash,
+    p_body_hash: wireHash,
     p_approval_scope_hash: approvedScopeHash,
     p_candidate_id: candidateId,
     p_candidate_email: candidateEmail,
     p_campaign_id: campaignId,
     p_seat_id: seatId,
+    p_subject: subject,
+    p_body: body,
   });
   if (claimErr) {
     safeLog("claim_email_outbound error", { message: claimErr.message, code: claimErr.code });
@@ -348,7 +355,13 @@ export async function POST(req: NextRequest) {
   }
   const ledgerId = claimObj.ledger_id;
   const reconcile = async (status: "sent" | "skipped" | "ambiguous", reason: string | null) => {
-    if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
+    if (!ledgerId) return;
+    const { error } = await serviceForCap.rpc("append_outreach_ledger_event", {
+      p_ledger_id: ledgerId,
+      p_status: status,
+      p_reason: reason,
+    });
+    if (error) throw new Error(error.message);
   };
 
   // Immutable per-attempt identity, stamped on the ledger before any provider call
