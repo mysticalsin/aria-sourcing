@@ -67,3 +67,8 @@ test("the recruitment addon names opt-out, erasure, and a pipeline page", () => 
   assert.match(controller, /[Ee]rasure/);
   assert.match(controller, /\/aria\/pipeline/);
 });
+
+test("the ingest image does not pin the withdrawn poppler revision", () => {
+  const docker = readFileSync(new URL("../services/ingest/Dockerfile", import.meta.url), "utf8");
+  assert.doesNotMatch(docker, /poppler-utils=22\.12\.0-2\+deb12u2/);
+});
