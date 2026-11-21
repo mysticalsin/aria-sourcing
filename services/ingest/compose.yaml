@@ -1,8 +1,10 @@
 # Local OCR worker. Memory is capped here because the image cannot set it.
-# Networking is left to the run flags; see the Dockerfile note and README.
+# network_mode none is the runtime network disable. A direct docker run
+# must pass the same thing: --network=none.
 services:
   ingest:
     build: .
+    network_mode: none
     mem_limit: 512m
     pids_limit: 64
     read_only: true

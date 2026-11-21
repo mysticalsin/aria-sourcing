@@ -123,12 +123,10 @@ These are not implemented in this module:
 
 `Dockerfile` builds a static `ingest` binary. The base images are pinned by digest and the apt packages are pinned to bookworm versions (Tesseract, Poppler, ca-certificates). The image does not call a paid OCR API.
 
-The image does not turn networking off and does not set a memory cap. Enforce both when you run it:
+The image cannot turn the runtime network off. `compose.yaml` sets `network_mode: none` and `mem_limit: 512m`. A direct run has to pass the same flags:
 
 ```
 docker build -t aria-ingest services/ingest
 docker run --rm --network=none --memory=512m --pids-limit=64 \
   -v "$PWD:/in:ro" aria-ingest -file /in/cv.pdf -cv-source toast-upload -folder holding
 ```
-
-`compose.yaml` sets `mem_limit: 512m`. It does not set `network_mode: none`; add that flag when the process only reads a mounted file.

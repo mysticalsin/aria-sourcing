@@ -30,18 +30,20 @@ type errPageTooLarge struct{}
 func (errPageTooLarge) Error() string { return "page_too_large" }
 
 // PageTooLarge reports whether any page box is larger than MaxPagePoints
-// on either edge. A file with no page box is not large; the raster step
-// still scales into MaxRasterSide.
+// on either edge, after that page's UserUnit. A file with no page box is
+// not large; the raster step still scales into MaxRasterSide.
 func PageTooLarge(pdf []byte) bool {
+	limit := float64(MaxPagePoints)
 	for _, key := range [][]byte{[]byte("/MediaBox"), []byte("/CropBox"), []byte("/BleedBox")} {
-		rest := pdf
+		from := 0
 		for {
-			i := bytes.Index(rest, key)
-			if i < 0 {
+			rel := bytes.Index(pdf[from:], key)
+			if rel < 0 {
 				break
 			}
-			rest = rest[i+len(key):]
-			nums, ok := boxNumbers(rest)
+			at := from + rel
+			from = at + len(key)
+			nums, ok := boxNumbers(pdf[from:])
 			if !ok {
 				continue
 			}
@@ -53,12 +55,49 @@ func PageTooLarge(pdf []byte) bool {
 			if h < 0 {
 				h = -h
 			}
-			if w > MaxPagePoints || h > MaxPagePoints {
+			scale := userUnitInObject(pdf, at)
+			if w*scale > limit || h*scale > limit {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// userUnitInObject reads /UserUnit from the PDF object that contains at.
+// The default scale is 1. A missing or unusable value stays 1.
+func userUnitInObject(pdf []byte, at int) float64 {
+	start := 0
+	if i := bytes.LastIndex(pdf[:at], []byte("obj")); i >= 0 {
+		start = i
+	}
+	end := len(pdf)
+	if i := bytes.Index(pdf[at:], []byte("endobj")); i >= 0 {
+		end = at + i
+	}
+	chunk := pdf[start:end]
+	key := []byte("/UserUnit")
+	k := bytes.Index(chunk, key)
+	if k < 0 {
+		return 1
+	}
+	rest := chunk[k+len(key):]
+	i := 0
+	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r') {
+		i++
+	}
+	s := i
+	for i < len(rest) && (rest[i] == '+' || rest[i] == '-' || rest[i] == '.' || (rest[i] >= '0' && rest[i] <= '9')) {
+		i++
+	}
+	if s == i {
+		return 1
+	}
+	v, err := strconv.ParseFloat(string(rest[s:i]), 64)
+	if err != nil || v <= 0 || v > 1e6 {
+		return 1
+	}
+	return v
 }
 
 func boxNumbers(s []byte) ([4]float64, bool) {

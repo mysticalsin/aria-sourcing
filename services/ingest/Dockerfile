@@ -22,8 +22,6 @@ COPY --from=build /out/ingest /usr/local/bin/ingest
 USER nobody
 ENTRYPOINT ["ingest"]
 
-# This image does not apply a memory cap or disable the network.
-# Both are run flags, not image settings:
+# A Dockerfile cannot turn the runtime network off. compose.yaml sets
+# network_mode: none for this worker. A direct run must pass the same flag:
 #   docker run --network=none --memory=512m --pids-limit=64 ...
-# Compose sets the memory cap only. Add --network=none when the process
-# just reads a mounted file.
