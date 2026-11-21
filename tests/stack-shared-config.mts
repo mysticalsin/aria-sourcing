@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
+
+const CONCURRENCY_GROUP = "group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}";
+const CANCEL_IN_PROGRESS =
+  "cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}";
+const PUSH_BRANCHES = ["vercel-demo", "main", "twa-odoo"] as const;
 
 const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 
@@ -141,6 +146,24 @@ test("each pull request block is present in its job", () => {
   assert.match(release, /runs-on: ubuntu-24\.04/);
   for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "release-gate"]) {
     assert.match(jobBlock(ci, id), /runs-on: ubuntu-24\.04/, id);
+  }
+});
+
+test("workflows cancel stale PR runs and push only the release branches", () => {
+  const files = readdirSync(new URL("../.github/workflows/", import.meta.url))
+    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+    .sort();
+  assert.ok(files.includes("ci.yml"));
+  assert.ok(files.includes("codeql.yml"));
+  for (const file of files) {
+    const text = read(`.github/workflows/${file}`);
+    assert.ok(text.includes(CONCURRENCY_GROUP), file);
+    assert.ok(text.includes(CANCEL_IN_PROGRESS), file);
+    assert.match(text, /pull_request:\n {4}branches:/, file);
+    const push = text.split("\n  push:\n")[1]?.split("\n  pull_request:\n")[0] ?? "";
+    assert.ok(push.length > 0, `${file} push`);
+    assert.equal(push.includes("**"), false, file);
+    for (const branch of PUSH_BRANCHES) assert.match(push, new RegExp(`\\b${branch}\\b`), `${file} ${branch}`);
   }
 });
 
