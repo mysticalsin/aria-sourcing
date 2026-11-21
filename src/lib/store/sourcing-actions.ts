@@ -203,6 +203,12 @@ function isValidEmail(value: string): boolean {
   );
 }
 
+/** Operator-typed demo people use the example.test domain. A real address stays closed. */
+function syntheticDemoEmail(email: string): boolean {
+  const at = email.lastIndexOf("@");
+  return at > 0 && email.slice(at + 1) === "example.test";
+}
+
 function normalizeGithubLogin(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -1011,9 +1017,13 @@ export function createSourcingActions({
     campaignId,
     input,
   ) => {
-    if (!candidatePersistenceAllowed("manual")) {
+    const preview = sanitizeManualCandidateInput(input);
+    const handTypedSynthetic = Boolean(preview && syntheticDemoEmail(preview.email));
+    const manualClosed = !candidatePersistenceAllowed("manual");
+    if (manualClosed && !(handTypedSynthetic && candidatePersistenceAllowed("synthetic"))) {
       return { ok: false, error: "Manual candidate intake requires a live workspace." };
     }
+    const recordAsSynthetic = manualClosed && handTypedSynthetic;
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before adding a candidate." };
     }
@@ -1072,7 +1082,7 @@ export function createSourcingActions({
         suppressedUntil: null,
       },
       createdAt: now,
-      provenance: "manual",
+      provenance: recordAsSynthetic ? "synthetic" : "manual",
       leadSource: "Outbound",
       lawfulBasis: fields.lawfulBasis,
       lawfulBasisRecordedAt: now,
