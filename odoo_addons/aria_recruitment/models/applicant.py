@@ -30,7 +30,7 @@ class HrApplicant(models.Model):
         groups='aria_recruitment.group_dna_integration,base.group_system',
         help='The configured DNA adapter. Production stays unconfigured until an operator sets aria_recruitment.dna_adapter. The fake adapter is test and demo only.',
     )
-    aria_opt_out = fields.Boolean(string='Opt out', copy=False, help='When set, outreach is refused and the refusal is audited.')
+    aria_opt_out = fields.Boolean(string='Opt-out', copy=False, help='When set, outreach is refused and the refusal is audited.')
     aria_erased = fields.Boolean(string='Erased', copy=False, readonly=True)
     aria_erased_at = fields.Datetime(string='Erased at', copy=False, readonly=True)
     aria_retention_deadline = fields.Date(string='Retention deadline', copy=False)
