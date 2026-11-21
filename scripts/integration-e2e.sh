@@ -54,21 +54,38 @@ $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/int
 # A 307 to /login is the packaged app and is not this journey.
 # ARIA_E2E opens the demo role control. The journey uses it to act as admin.
 export ARIA_E2E=1
+export ARIA_INGEST_URL="http://127.0.0.1:8091/v1/cv"
 demo_ready() {
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:3000/campaigns/new || true)" = "200" ]
 }
 if ! demo_ready; then
-  (cd "$ROOT" && ARIA_E2E=1 npx next dev --hostname 127.0.0.1 --port 3000 >"$ART/logs/next.log" 2>&1) &
-  APP_PID=$!
+  start_demo() {
+    (cd "$ROOT" && ARIA_E2E=1 ARIA_INGEST_URL="http://127.0.0.1:8091/v1/cv" npx next dev --hostname 127.0.0.1 --port 3000 >>"$ART/logs/next.log" 2>&1) &
+    APP_PID=$!
+  }
+  start_demo
+  retried=0
   for _ in $(seq 1 90); do
     if demo_ready; then break; fi
     if ! kill -0 "$APP_PID" 2>/dev/null; then
       echo "next-exited" >>"$ART/logs/next.log"
-      break
+      if [ "$retried" = 1 ]; then break; fi
+      retried=1
+      start_demo
     fi
     sleep 2
   done
 fi
+
+INGEST_OK=0
+for _ in $(seq 1 60); do
+  if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:8091/health; then
+    INGEST_OK=1
+    break
+  fi
+  sleep 2
+done
+echo "ingest-health=$INGEST_OK" | tee -a "$ART/logs/compose-ps.log"
 
 ODOO_URL=""
 for _ in $(seq 1 180); do
@@ -91,6 +108,7 @@ $D compose -p "$COMPOSE_PROJECT" logs --no-color >"$ART/logs/compose.log" 2>&1 |
 $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" down -v --remove-orphans >>"$ART/logs/compose-up.log" 2>&1 || true
 
 export ARTIFACT_DIR="$ART/stress"
+export STRESS_SOAK_SECONDS="${STRESS_SOAK_SECONDS:-600}"
 bash "$ROOT/stress/run.sh" >"$ART/stress-stdout.json"
 
 python3 - "$ART" "$HEAD_SHA" "$COMPOSE_EXIT" "$PW_EXIT" << 'PY'

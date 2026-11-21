@@ -71,10 +71,11 @@ test("the recruitment addon names opt-out, erasure, and a pipeline page", () => 
 
 test("the bridge rule never changes a Mac firewall and skips outside a sandbox", () => {
   const script = new URL("../scripts/sandbox-bridge.sh", import.meta.url);
-  const run = (env: NodeJS.ProcessEnv) =>
+  const run = (env: { SANDBOX_UNAME?: string; CI?: string; GITHUB_ACTIONS?: string; CURSOR_AGENT?: string; ARIA_SANDBOX?: string }) =>
     execFileSync("sh", [script.pathname], {
       env: {
         PATH: process.env.PATH ?? "",
+        NODE_ENV: "test",
         SANDBOX_UNAME: env.SANDBOX_UNAME,
         CI: env.CI,
         GITHUB_ACTIONS: env.GITHUB_ACTIONS,

@@ -4,7 +4,7 @@ const artifactDir = process.env.ARTIFACT_DIR ?? "e2e-artifacts/local";
 
 export default defineConfig({
   testDir: ".",
-  timeout: 180_000,
+  timeout: 240_000,
   retries: 0,
   reporter: [["list"], ["html", { outputFolder: `${artifactDir}/playwright-report`, open: "never" }]],
   use: {

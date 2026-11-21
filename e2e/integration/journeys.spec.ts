@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const artifactDir = process.env.ARTIFACT_DIR ?? "e2e-artifacts/local";
@@ -15,7 +15,7 @@ async function shot(page: Page, id: string): Promise<string> {
 }
 
 test("sweep 0 physical journeys", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   mkdirSync(artifactDir, { recursive: true });
   const steps: Step[] = [];
   await page.route("**/api/outreach/send", async (route) => {
@@ -134,10 +134,31 @@ test("sweep 0 physical journeys", async ({ page }) => {
 
   await run("quick-stats", async () => {
     await page.goto("/");
+    const tour = page.getByRole("dialog", { name: "Welcome to Aria" });
+    if (await tour.isVisible().catch(() => false)) {
+      await page.getByRole("button", { name: "Skip" }).click();
+    }
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const stats = page.getByRole("region", { name: "Quick stats" });
+    const toRate = stats.getByTestId("quick-stat-toRate");
+    await expect(toRate).toBeVisible();
+    await expect(toRate).not.toHaveText("");
+    await toRate.click({ trial: true });
+    await page.goto("/outreach");
+    await page.goto("/");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(stats.getByTestId("quick-stat-hires")).toBeVisible();
     for (const label of ["Candidates to rate", "In assessment", "Interviews this week", "Outreach awaiting approval", "Replies", "Hires"]) {
       await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
-    return "six command center labels are visible";
+    return "quick-stat numbers stay visible after the tour is dismissed";
+  });
+
+  await run("cv-upload", async () => {
+    await page.goto("/candidates");
+    await page.getByLabel("CV file").setInputFiles(resolve(__dirname, "../fixtures/casey-example.pdf"));
+    await expect(page.getByText("Casey Example").first()).toBeVisible({ timeout: 20_000 });
+    return "synthetic CV parsed to Casey Example";
   });
 
   await run("odoo-pipeline", async () => {

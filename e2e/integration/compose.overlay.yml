@@ -78,11 +78,22 @@ services:
       retries: 10
       start_period: 5s
 
-  # The product Dockerfile pins poppler-utils to a revision whose library
-  # dependency no longer resolves. The sweep records that. This service only
-  # keeps a slot in the stack so the other services can still start.
+  # Real ingest. `ingest ready` checks /health. The published port is loopback
+  # only, and the process stays inside the memory cap.
   ingest:
-    image: debian:bookworm-slim
-    mem_limit: 64m
-    memswap_limit: 64m
-    entrypoint: ["sleep", "infinity"]
+    build:
+      context: ./services/ingest
+      dockerfile: Dockerfile
+    mem_limit: 384m
+    memswap_limit: 384m
+    environment:
+      ARIA_INGEST_ADDR: 0.0.0.0:8091
+    command: ["serve"]
+    ports:
+      - "127.0.0.1:8091:8091"
+    healthcheck:
+      test: ["CMD", "ingest", "ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
