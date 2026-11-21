@@ -66,10 +66,11 @@ func Evaluate(in Input, threshold float64) (Result, error) {
 		status = StatusPass
 	}
 	return Result{
-		status:  status,
-		score:   score,
-		version: QCVersion,
-		reasons: reasons,
+		status:    status,
+		score:     score,
+		version:   QCVersion,
+		reasons:   reasons,
+		draftHash: DraftHash(in.Draft),
 	}, nil
 }
 

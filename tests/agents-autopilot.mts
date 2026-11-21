@@ -18,6 +18,7 @@ import {
   pickTopCandidates,
 } from "../src/lib/agents/autopilot";
 import { recordLinkedInSent } from "../src/lib/store/workspace-transitions";
+import { outreachDailyCap, outreachKilled } from "../src/lib/agents/qc-gate";
 import {
   runTick,
   type AgentOutreachRow,
@@ -398,6 +399,15 @@ test("autopilot does not queue without a fresh QC pass, when killed, or over the
     assert.equal(w.queued.length, 0, "nothing reaches the outbox");
     assert.ok(w.qcCalls.length >= 1, "the tick evaluates the draft it would send");
   }
+});
+
+test("the outreach kill switch and daily cap fail closed when the value cannot be read", () => {
+  assert.equal(outreachKilled({}), false);
+  assert.equal(outreachKilled({ ARIA_OUTREACH_KILL_SWITCH: "true" }), true);
+  assert.equal(outreachKilled({ ARIA_OUTREACH_KILL_SWITCH: "maybe" }), null);
+  assert.equal(outreachDailyCap({}), 25);
+  assert.equal(outreachDailyCap({ ARIA_OUTREACH_DAILY_CAP: "10" }), 10);
+  assert.equal(outreachDailyCap({ ARIA_OUTREACH_DAILY_CAP: "lots" }), 0);
 });
 
 test("nothing due: the tick is idle", async () => {

@@ -18,7 +18,7 @@
 import type { Campaign, WorkspaceState } from "@/lib/types";
 import type { AgentDraft } from "./server/draft";
 import type { CampaignSourcingJob, SourceChoice } from "@/lib/sourcing/unified-contract";
-import { agentContactBlocker, agentOutreachMessage, autopilotSourcePlan, pickTopCandidates, type OutreachQcDraft, type OutreachQcVerdict } from "./autopilot";
+import { admitAutomaticSend, agentContactBlocker, agentOutreachMessage, autopilotSourcePlan, pickTopCandidates, type OutreachQcDraft, type OutreachQcVerdict } from "./autopilot";
 import { recordLinkedInSent, makeActivity, withActivity } from "@/lib/store/workspace-transitions";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
@@ -301,7 +301,36 @@ async function contactOne(deps: TickDeps, row: AgentOutreachRow, pilots: Autopil
     await deps.outreach.update(row, { state: "skipped", reason: "Outside the agent allowlist (AGENTS_LINKEDIN_ALLOWLIST)." });
     return "skipped: outside the allowlist";
   }
-  const queued = await deps.linkedin.queue({ ...row, kind }, kind, body ?? "");
+  const text = body ?? "";
+  const language = (campaign.jobAnalysis.language || "en").split(/[_-]/)[0].toLowerCase() || "en";
+  let verdict: OutreachQcVerdict | null = null;
+  let killed: boolean | null = null;
+  let sentToday: number | null = null;
+  try {
+    verdict = await deps.gate.evaluate({
+      channel: kind === "invitation" ? "heyreach-connect" : "heyreach",
+      subject: "",
+      body: text,
+      language,
+    });
+    killed = await deps.gate.killed(row.workspace_id);
+    sentToday = await deps.gate.sentToday(row.workspace_id);
+  } catch {
+    verdict = null;
+    killed = null;
+    sentToday = null;
+  }
+  const decision = admitAutomaticSend({
+    killed,
+    sentToday,
+    dailyCap: deps.gate.dailyCap(row.workspace_id),
+    verdict,
+  });
+  if (!decision.ok) {
+    await deps.outreach.update(row, { state: "failed", reason: decision.reason.slice(0, 300) });
+    return `failed: ${decision.reason}`;
+  }
+  const queued = await deps.linkedin.queue({ ...row, kind }, kind, text);
   if (!queued.ok) {
     await deps.outreach.update(row, { state: "failed", reason: queued.reason.slice(0, 300) });
     return `failed: ${queued.reason}`;

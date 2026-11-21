@@ -12,4 +12,6 @@
 //
 // Length limits are Unicode code points. InMail and HeyReach caps are the
 // constants in limits.go, each with the vendor page they were taken from.
+// Admit repeats that cap check at the send boundary. Apply accepts a verdict
+// only when its draft hash is the hash of the draft being applied.
 package qc

@@ -22,6 +22,7 @@ import { aiBudgetStatus } from "@/lib/ai/usage";
 import { linkedInBridgeEnabled } from "@/lib/linkedin-bridge/policy";
 import { parseAgentAllowlist } from "../autopilot";
 import { agentContact, agentOutboxItem, agentQueue, ownerAccount } from "@/lib/linkedin-bridge/agent";
+import { evaluateOutreachQc, outreachDailyCap, outreachKilled } from "../qc-gate";
 
 const AUTOPILOT_COLUMNS = "id, workspace_id, campaign_id, owner_id, enabled, source_every_hours, source_limit, contact_enabled, contacts_per_run, min_score, last_source_at, last_contact_at";
 const MISSION_COLUMNS = "id, workspace_id, campaign_id, on_behalf_of, kind, status, sourcing_job_id, summary, started_at";
@@ -154,17 +155,24 @@ export function tickDeps(svc: Svc): TickDeps {
       },
     },
     gate: {
-      async evaluate() {
-        return { status: "PASS" as const, score: 1, qcVersion: "qc.v1", draftHash: "unchecked", capsOk: true };
+      evaluate(draft) {
+        return Promise.resolve(evaluateOutreachQc(draft));
       },
       async killed() {
-        return false;
+        return outreachKilled();
       },
-      async sentToday() {
-        return 0;
+      async sentToday(workspaceId) {
+        const start = new Date();
+        start.setUTCHours(0, 0, 0, 0);
+        const result = await svc.from("agent_outreach").select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .in("state", ["queued", "sent"])
+          .gte("updated_at", start.toISOString());
+        if (result.error || typeof result.count !== "number") return null;
+        return result.count;
       },
       dailyCap() {
-        return 25;
+        return outreachDailyCap();
       },
     },
     async draft({ workspaceId, state, candidateId, kind }) {

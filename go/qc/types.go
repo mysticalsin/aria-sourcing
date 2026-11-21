@@ -149,11 +149,13 @@ func (r Result) MarshalJSON() ([]byte, error) {
 		Status    Status   `json:"status"`
 		Score     float64  `json:"score"`
 		QCVersion string   `json:"qc_version"`
+		DraftHash string   `json:"draft_hash"`
 		Reasons   []Reason `json:"reasons"`
 	}{
 		Status:    r.status,
 		Score:     r.score,
 		QCVersion: r.version,
+		DraftHash: r.draftHash,
 		Reasons:   r.Reasons(),
 	}
 	return json.Marshal(payload)

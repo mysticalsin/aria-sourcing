@@ -124,11 +124,24 @@ export interface AutomaticSendGate {
 }
 
 /**
- * Whether an automatic send may be queued. The red gate allows every call.
- * A fresh PASS, a clear kill switch, and room under the daily cap are not
- * required yet.
+ * Whether an automatic send may be queued. Unknown kill-switch state, an
+ * unreadable send count, a missing cap, a missing verdict, or a verdict that
+ * is not a PASS bound to a draft all refuse the send.
  */
-export function admitAutomaticSend(_gate: AutomaticSendGate): { ok: true } | { ok: false; reason: string } {
+export function admitAutomaticSend(gate: AutomaticSendGate): { ok: true } | { ok: false; reason: string } {
+  if (gate.killed === null) return { ok: false, reason: "Outreach kill switch is unavailable." };
+  if (gate.killed) return { ok: false, reason: "Outreach kill switch is on." };
+  if (gate.sentToday === null || !Number.isInteger(gate.sentToday) || gate.sentToday < 0) {
+    return { ok: false, reason: "Workspace send count is unavailable." };
+  }
+  if (!Number.isInteger(gate.dailyCap) || gate.dailyCap < 1) {
+    return { ok: false, reason: "Workspace daily cap is unavailable." };
+  }
+  if (gate.sentToday >= gate.dailyCap) return { ok: false, reason: "Workspace daily cap is reached." };
+  const verdict = gate.verdict;
+  if (!verdict || verdict.status !== "PASS" || verdict.draftHash.trim() === "" || verdict.capsOk !== true) {
+    return { ok: false, reason: "QC did not pass." };
+  }
   return { ok: true };
 }
 

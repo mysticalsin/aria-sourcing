@@ -501,13 +501,16 @@ func TestJSONShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"status", "score", "qc_version", "reasons"} {
+	for _, key := range []string{"status", "score", "qc_version", "draft_hash", "reasons"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("missing %s in %s", key, raw)
 		}
 	}
-	if len(payload) != 4 {
+	if len(payload) != 5 {
 		t.Fatalf("keys %d: %s", len(payload), raw)
+	}
+	if string(payload["draft_hash"]) != `"`+res.DraftHash()+`"` || res.DraftHash() != qc.DraftHash(baseline().Draft) {
+		t.Fatalf("draft_hash %s", payload["draft_hash"])
 	}
 	if string(payload["status"]) != `"PASS"` || string(payload["qc_version"]) != `"qc.v1"` || string(payload["score"]) != "1" {
 		t.Fatalf("payload %s", raw)

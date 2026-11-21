@@ -67,7 +67,6 @@ func Apply(from State, draft Draft, v Verdict) (State, error) {
 	if v == nil {
 		return "", ErrVerdict
 	}
-	_ = draft
 	var to State
 	switch v.Status() {
 	case StatusPass:
@@ -76,6 +75,9 @@ func Apply(from State, draft Draft, v Verdict) (State, error) {
 		to = StateQCFailed
 	default:
 		return "", ErrVerdict
+	}
+	if v.DraftHash() == "" || v.DraftHash() != DraftHash(draft) {
+		return "", ErrStaleVerdict
 	}
 	if err := Transition(from, to); err != nil {
 		return "", err
