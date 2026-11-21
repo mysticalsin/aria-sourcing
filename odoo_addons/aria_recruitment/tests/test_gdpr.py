@@ -138,3 +138,26 @@ class TestAriaGdpr(AriaRecruitmentCommon):
             message_type='comment',
             subtype_xmlid='mail.mt_note',
         )
+
+    def test_hired_outbound_mail_is_refused_and_internal_note_stays(self):
+        hired = self.applicant('to_hire', name='Hired Post', email='hired.post.example@example.test')
+        hired.aria_dna_integration_status = 'integrated'
+        self.contract(hired)
+        self.assertFalse(self.move(hired, 'hired'))
+        error = None
+        try:
+            hired.message_post(
+                body='Offer for hired.post.example@example.test',
+                message_type='email',
+                subtype_xmlid='mail.mt_comment',
+            )
+        except UserError as exc:
+            error = exc
+        self.assertIsNotNone(error)
+        self.assertIn('hired', str(error).lower())
+        note = hired.message_post(
+            body='internal note stays',
+            message_type='comment',
+            subtype_xmlid='mail.mt_note',
+        )
+        self.assertIn('internal note stays', note.body or '')
