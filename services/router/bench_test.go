@@ -12,7 +12,7 @@ import (
 // / p95 5s. Rules and cache hits have to stay far under those.
 func BenchmarkRulesTier(b *testing.B) {
 	r := benchRouter(b, false)
-	req := Request{ID: "b", Task: TaskStageLabel, Input: "To Assess"}
+	req := Request{ID: "b", Task: TaskStageLabel, Input: "to_assess"}
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()

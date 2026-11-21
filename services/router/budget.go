@@ -28,14 +28,12 @@ type Usage struct {
 type hold struct {
 	tokens int64
 	usd    float64
-	epoch  uint64
 }
 
 type ledger struct {
 	mu sync.Mutex
 
-	runID    string
-	runEpoch uint64
+	runID string
 
 	runTokens     int64
 	dailyTokens   int64
@@ -55,6 +53,10 @@ type ledger struct {
 	// tripped sticks after a bill exceeds the reservation and the ceiling.
 	// Later calls stay blocked even if a later estimate would look cheap.
 	tripped bool
+
+	// The ledger is in memory only. BeginRun clears the run counter, but an
+	// in-flight reservation still counts against the new run when it commits.
+	// Nothing here is written to the agents usage file.
 
 	runLimit      int64
 	dailyLimit    int64
@@ -77,7 +79,6 @@ func (l *ledger) beginRun(id string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.runID = id
-	l.runEpoch++
 	l.runTokens = 0
 }
 
@@ -140,7 +141,7 @@ func (l *ledger) tryReserve(now time.Time, tokens int64, usd float64) (hold, err
 	l.reservedMonthly += tokens
 	l.reservedDayUSD += usd
 	l.reservedMonUSD += usd
-	return hold{tokens: tokens, usd: usd, epoch: l.runEpoch}, nil
+	return hold{tokens: tokens, usd: usd}, nil
 }
 
 func (l *ledger) commit(h hold, tokens int64, usd float64) error {
@@ -171,10 +172,11 @@ func (l *ledger) commit(h hold, tokens int64, usd float64) error {
 	return nil
 }
 
-func (l *ledger) apply(h hold, tokens int64, usd float64) {
-	if h.epoch == l.runEpoch {
-		l.runTokens += tokens
-	}
+func (l *ledger) apply(_ hold, tokens int64, usd float64) {
+	// An in-flight hold still belongs to whichever run is current at commit.
+	// Dropping it when BeginRun moved the counter would let that spend bypass
+	// the new run ceiling.
+	l.runTokens += tokens
 	l.dailyTokens += tokens
 	l.monthlyTokens += tokens
 	l.dailyUSD += usd
@@ -182,16 +184,14 @@ func (l *ledger) apply(h hold, tokens int64, usd float64) {
 }
 
 // spendFits re-checks the ceiling after the reservation has been released.
-func (l *ledger) spendFits(h hold, tokens int64, usd float64) bool {
-	runAdd := tokens
-	if h.epoch != l.runEpoch {
-		runAdd = 0
-	}
-	runOK := tokenFits(l.runTokens, 0, runAdd, l.runLimit)
-	dailyOK := tokenFits(l.dailyTokens, 0, tokens, l.dailyLimit)
-	monthOK := tokenFits(l.monthlyTokens, 0, tokens, l.monthlyLimit)
-	dayUSDOK := usdFits(l.dailyUSD, 0, usd, l.dailyUSDLim)
-	monthUSDOK := usdFits(l.monthlyUSD, 0, usd, l.monthlyUSDLim)
+// reservedRun still holds any other in-flight holds, so this bill is checked
+// on top of those reservations.
+func (l *ledger) spendFits(_ hold, tokens int64, usd float64) bool {
+	runOK := tokenFits(l.runTokens, l.reservedRun, tokens, l.runLimit)
+	dailyOK := tokenFits(l.dailyTokens, l.reservedDaily, tokens, l.dailyLimit)
+	monthOK := tokenFits(l.monthlyTokens, l.reservedMonthly, tokens, l.monthlyLimit)
+	dayUSDOK := usdFits(l.dailyUSD, l.reservedDayUSD, usd, l.dailyUSDLim)
+	monthUSDOK := usdFits(l.monthlyUSD, l.reservedMonUSD, usd, l.monthlyUSDLim)
 	return runOK && dailyOK && monthOK && dayUSDOK && monthUSDOK
 }
 

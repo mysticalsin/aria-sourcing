@@ -39,7 +39,7 @@ func ruleRequest(i int) Request {
 	id := fmt.Sprintf("rule-%04d", i)
 	switch i % 8 {
 	case 0:
-		return Request{ID: id, Task: TaskStageLabel, Input: stageLabels[i%len(stageLabels)]}
+		return Request{ID: id, Task: TaskStageLabel, Input: stageKeys[i%len(stageKeys)]}
 	case 1:
 		return Request{ID: id, Task: TaskSourceCheck, Input: sourceAllowlist[i%len(sourceAllowlist)]}
 	case 2:

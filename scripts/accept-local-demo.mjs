@@ -9,7 +9,7 @@ const project = process.env.ARIA_ACCEPTANCE_PROJECT ?? "";
 if (process.env.ARIA_LOCAL_ACCEPTANCE !== "1" || !/^aria-acceptance-[a-z0-9-]{4,80}$/.test(project)) {
   throw new Error("Acceptance requires ARIA_LOCAL_ACCEPTANCE=1 and a unique ARIA_ACCEPTANCE_PROJECT=aria-acceptance-...; never use your normal workspace.");
 }
-const compose = (args, capture = false) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.yml", ...args], { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit", encoding: "utf8" });
+const compose = (args, capture = false) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.yml", "-f", "docker-compose.agents-wait.yml", ...args], { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit", encoding: "utf8" });
 const config = JSON.parse(compose(["config", "--format", "json"], true));
 assert.equal(config.name, project);
 for (const volume of Object.values(config.volumes)) {
@@ -113,10 +113,8 @@ try {
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
-  // Both the LinkedIn and Manual panels label a Name field. The inactive panel
-  // stays mounted and hidden, so fill the one that is actually on screen.
-  await dialog.getByLabel("Name", { exact: true }).filter({ visible: true }).fill(marker + " Person");
-  await dialog.getByLabel("Lawful basis", { exact: true }).filter({ visible: true }).selectOption("consent");
+  await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person");
+  await dialog.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;

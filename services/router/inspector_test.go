@@ -32,7 +32,9 @@ func TestStageKeyToRateIsARuleNotALabel(t *testing.T) {
 }
 
 func TestMissingSuppressionFlagDenies(t *testing.T) {
-	r := mustRouter(t, DefaultConfig(), Deps{Small: NewFakeProvider(TierSmall, nil), Big: NewFakeProvider(TierBig, nil)})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	r := mustRouter(t, cfg, Deps{Small: NewFakeProvider(TierSmall, nil), Big: NewFakeProvider(TierBig, nil)})
 	for _, fields := range []map[string]string{nil, {}, {"suppressed": "  "}} {
 		res, err := r.Route(context.Background(), Request{ID: "sup", Task: TaskSuppression, Fields: fields})
 		if err != nil {

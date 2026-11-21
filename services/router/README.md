@@ -24,7 +24,9 @@ Hard stops, checked before the provider is called, and reserved under a lock so 
 - per-run, daily, and monthly token ceilings
 - daily and monthly USD ceilings
 
-Rules and cache hits spend nothing. A refused call is not cached. The per-run counter resets on `BeginRun`. The daily counter resets at the next UTC day, the monthly counter at the next UTC month. In-flight reservations count against the ceiling.
+Rules and cache hits spend nothing. A refused call is not cached. The per-run counter resets on `BeginRun`. The daily counter resets at the next UTC day, the monthly counter at the next UTC month. In-flight reservations count against the ceiling, including a hold that commits after `BeginRun`.
+
+The ledger is in memory only. It is not the agents usage file (`var/ai-usage.json` or `AI_USAGE_FILE`). A process restart clears it. Prices for the small tier (claude-haiku-5-5) and the big tier (claude-sonnet-5-5) are copied from `src/lib/ai/model-prices.json`, which `src/lib/ai/usage.ts` reads.
 
 `LoadConfig` reads only these names:
 

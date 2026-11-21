@@ -25,6 +25,16 @@ const (
 	ReasonConfidence = "confidence"
 	ReasonComplexity = "complexity"
 	ReasonBudget     = "budget"
+	ReasonFallback   = "fallback"
+)
+
+// Prompt caps. PromptPolicyChars matches the extract trim in
+// src/lib/ai/intake.ts (text.slice(0, 12_000)). A classify or extract call
+// that is below the confidence threshold is retried on the small tier with
+// LowConfidencePromptChars, not sent to the big tier.
+const (
+	PromptPolicyChars        = 12000
+	LowConfidencePromptChars = 2000
 )
 
 // ConsultedEnv records that a named variable was looked up. The value is
@@ -79,10 +89,13 @@ func DefaultConfig() Config {
 		MonthlyTokenBudget:  20_000_000,
 		DailyBudgetUSD:      6,
 		MonthlyBudgetUSD:    30,
-		SmallInputUSDPer1K:  0.00025,
-		SmallOutputUSDPer1K: 0.00125,
-		BigInputUSDPer1K:    0.003,
-		BigOutputUSDPer1K:   0.015,
+		// USD per 1K tokens, from src/lib/ai/model-prices.json (USD per 1M / 1000).
+		// Small is claude-haiku-5-5. Big is claude-sonnet-5-5.
+		SmallInputUSDPer1K:  0.0001,
+		SmallOutputUSDPer1K: 0.0005,
+		BigInputUSDPer1K:    0.002,
+		BigOutputUSDPer1K:   0.01,
+		RouteDeadline:       3 * time.Second,
 	}
 }
 

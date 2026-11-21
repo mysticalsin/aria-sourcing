@@ -32,16 +32,16 @@ var sourceAllowlist = []string{
 	"Job application",
 }
 
-// Pipeline stages rebuilt from Smart. Hired stays a label here; the hire
-// gate itself lives in the Odoo addon, not in the router.
-var stageLabels = []string{
-	"To Rate",
-	"To Assess",
-	"To Interview",
-	"Shoot",
-	"QM",
-	"To Hire",
-	"Hired",
+// Odoo stage keys. Labels such as "To Rate" are not accepted; the router
+// matches the key the stage record uses (to_rate, not the display name).
+var stageKeys = []string{
+	"to_rate",
+	"to_assess",
+	"to_interview",
+	"shoot",
+	"qm",
+	"to_hire",
+	"hired",
 }
 
 var knownTasks = map[Task]bool{
@@ -87,10 +87,11 @@ func applyRules(req Request) (ruleMatch, bool) {
 			who,
 		)}, true
 	case TaskSuppression:
-		if strings.EqualFold(strings.TrimSpace(req.Fields["suppressed"]), "true") {
+		flag := strings.TrimSpace(req.Fields["suppressed"])
+		if !strings.EqualFold(flag, "false") {
 			return ruleMatch{text: "Do not contact. Suppression is in force."}, true
 		}
-		return ruleMatch{text: "Suppression flag is not set."}, true
+		return ruleMatch{text: "Suppression flag is explicitly false."}, true
 	case TaskNotice:
 		return noticeRule(req), true
 	}
@@ -106,7 +107,7 @@ func applyRules(req Request) (ruleMatch, bool) {
 		}
 		return ruleMatch{text: "rejected: source not on the allowlist"}, true
 	case TaskStageLabel:
-		if canon, ok := canonical(stageLabels, req.Input); ok {
+		if canon, ok := canonical(stageKeys, req.Input); ok {
 			return ruleMatch{text: "stage: " + canon}, true
 		}
 		return ruleMatch{}, false

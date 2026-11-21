@@ -325,10 +325,10 @@ func (r *Router) Route(ctx context.Context, req Request) (Result, error) {
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	comp, call, err := r.call(ctx, r.small, TierSmall, req)
+	comp, call, err := r.call(ctx, r.small, TierSmall, req, promptLimit(req, false))
 	if err != nil {
 		r.ledger.cancel(h)
-		return Result{}, err
+		return r.providerFallback(m, req, acc, start, err)
 	}
 	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
 		acc.add(call)
@@ -337,6 +337,9 @@ func (r *Router) Route(ctx context.Context, req Request) (Result, error) {
 	acc.add(call)
 
 	if !confident(comp, r.cfg.ConfidenceThreshold) {
+		if req.Task == TaskClassify || req.Task == TaskExtract {
+			return r.retrySmallTrimmed(ctx, m, req, key, acc, start)
+		}
 		if err := m.Transition(StateEscalated); err != nil {
 			return Result{}, err
 		}
@@ -366,10 +369,10 @@ func (r *Router) runBig(ctx context.Context, m *Machine, req Request, key string
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	comp, call, err := r.call(ctx, r.big, TierBig, req)
+	comp, call, err := r.call(ctx, r.big, TierBig, req, 0)
 	if err != nil {
 		r.ledger.cancel(h)
-		return Result{}, err
+		return r.providerFallback(m, req, acc, start, err)
 	}
 	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
 		acc.add(call)
@@ -384,6 +387,82 @@ func (r *Router) runBig(ctx context.Context, m *Machine, req Request, key string
 		Reason:     reason,
 	}
 	return r.succeed(m, key, res, acc, start)
+}
+
+func (r *Router) retrySmallTrimmed(ctx context.Context, m *Machine, req Request, key string, acc *accumulator, start time.Time) (Result, error) {
+	estTokens, estUSD := r.Estimate(req, TierSmall)
+	h, err := r.ledger.tryReserve(r.now(), estTokens, estUSD)
+	if errors.Is(err, ErrBudgetExceeded) {
+		return r.budgetStop(m, req, acc, start)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	comp, call, err := r.call(ctx, r.small, TierSmall, req, promptLimit(req, true))
+	if err != nil {
+		r.ledger.cancel(h)
+		return r.providerFallback(m, req, acc, start, err)
+	}
+	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
+		acc.add(call)
+		return r.budgetStop(m, req, acc, start)
+	}
+	acc.add(call)
+	res := Result{
+		RequestID:  req.ID,
+		Text:       comp.Text,
+		Tier:       TierSmall,
+		Confidence: comp.Confidence,
+		Reason:     ReasonSmall,
+	}
+	return r.succeed(m, key, res, acc, start)
+}
+
+func (r *Router) providerFallback(m *Machine, req Request, acc *accumulator, start time.Time, cause error) (Result, error) {
+	if cause == nil || errors.Is(cause, errNilProvider) || cause.Error() == "provider tier mismatch" {
+		return Result{}, cause
+	}
+	if err := m.Transition(StateDone); err != nil {
+		return Result{}, err
+	}
+	res := Result{
+		RequestID: req.ID,
+		Text:      fallbackText(req.Task),
+		Tier:      TierRules,
+		Trace:     m.Trace(),
+		Terminal:  StateDone,
+		Latency:   time.Since(start),
+		Reason:    ReasonFallback,
+	}
+	if acc != nil {
+		res.InputTokens = acc.in
+		res.OutputTokens = acc.out
+		res.USD = acc.usd
+		res.ProviderCalls = acc.calls
+	}
+	r.finish(res)
+	return res, nil
+}
+
+func fallbackText(task Task) string {
+	switch task {
+	case TaskClassify:
+		return `{"intent":"UNCLEAR","confidence":0.6,"reasoning":"No strong signal detected; routing to human review.","suggestedAction":"Queue for human review: intent ambiguous."}`
+	case TaskExtract:
+		return "extract: incomplete; only facts present in the submitted text"
+	default:
+		return "fallback: needs a human; no model result"
+	}
+}
+
+func promptLimit(req Request, retry bool) int {
+	if req.Task != TaskClassify && req.Task != TaskExtract {
+		return 0
+	}
+	if retry {
+		return LowConfidencePromptChars
+	}
+	return PromptPolicyChars
 }
 
 func (r *Router) succeed(m *Machine, key string, res Result, acc *accumulator, start time.Time) (Result, error) {
@@ -453,7 +532,7 @@ func (r *Router) finish(res Result) {
 	))
 }
 
-func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request) (Completion, ProviderCall, error) {
+func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request, inputLimit int) (Completion, ProviderCall, error) {
 	if p == nil {
 		return Completion{}, ProviderCall{}, errNilProvider
 	}
@@ -467,12 +546,12 @@ func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request) (
 		Tier:      tier,
 		Task:      string(req.Task),
 		System:    systemFor(tier),
-		Prompt:    buildPrompt(req, tier),
+		Prompt:    buildPrompt(req, tier, inputLimit),
 		MaxTokens: r.maxTokens(req, tier),
 	}
-	comp, lat, err := r.completeOnce(ctx, p, creq)
+	comp, lat, err := r.attempt(ctx, p, creq)
 	if isTimeout(err) {
-		comp, lat, err = r.completeOnce(ctx, p, creq)
+		comp, lat, err = r.attempt(ctx, p, creq)
 		if isTimeout(err) {
 			r.infra.Add(1)
 			return Completion{}, ProviderCall{}, ErrInfra
@@ -492,6 +571,15 @@ func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request) (
 		USD:          costUSD(r.cfg, tier, int64(comp.InputTokens), int64(comp.OutputTokens)),
 	}
 	return comp, pc, nil
+}
+
+func (r *Router) attempt(ctx context.Context, p Provider, req CompletionRequest) (Completion, time.Duration, error) {
+	if r.cfg.RouteDeadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.RouteDeadline)
+		defer cancel()
+	}
+	return r.completeOnce(ctx, p, req)
 }
 
 func (r *Router) completeOnce(ctx context.Context, p Provider, req CompletionRequest) (comp Completion, lat time.Duration, err error) {
@@ -518,7 +606,7 @@ func isTimeout(err error) bool {
 }
 
 func (r *Router) tokenEstimate(req Request, tier Tier) (in, out int64) {
-	return estimateTokens(systemFor(tier), buildPrompt(req, tier), r.maxTokens(req, tier))
+	return estimateTokens(systemFor(tier), buildPrompt(req, tier, promptLimit(req, false)), r.maxTokens(req, tier))
 }
 
 func (r *Router) maxTokens(req Request, tier Tier) int {
@@ -538,12 +626,16 @@ func systemFor(tier Tier) string {
 	return systemSmall
 }
 
-func buildPrompt(req Request, tier Tier) string {
+func buildPrompt(req Request, tier Tier, inputLimit int) string {
+	input := req.Input
+	if inputLimit > 0 {
+		input = trimRunes(input, inputLimit)
+	}
 	var b strings.Builder
 	b.WriteString("task=")
 	b.WriteString(string(req.Task))
 	b.WriteString("\ninput=")
-	b.WriteString(req.Input)
+	b.WriteString(input)
 	b.WriteString("\nshortlisted=")
 	b.WriteString(strconv.FormatBool(req.Shortlisted))
 	if len(req.Fields) > 0 {
@@ -562,6 +654,14 @@ func buildPrompt(req Request, tier Tier) string {
 	b.WriteString("\ntier=")
 	b.WriteString(string(tier))
 	return b.String()
+}
+
+func trimRunes(s string, n int) string {
+	runes := []rune(s)
+	if n <= 0 || len(runes) <= n {
+		return s
+	}
+	return string(runes[:n])
 }
 
 func estimateTokens(system, prompt string, maxTokens int) (in, out int64) {

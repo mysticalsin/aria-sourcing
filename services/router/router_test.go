@@ -36,8 +36,8 @@ func Test_test_rules_tier_handles_deterministic_cases_without_model(t *testing.T
 		},
 		{
 			name: "stage label",
-			req:  Request{ID: "st", Task: TaskStageLabel, Input: "to interview"},
-			want: "stage: To Interview",
+			req:  Request{ID: "st", Task: TaskStageLabel, Input: "to_interview"},
+			want: "stage: to_interview",
 		},
 		{
 			name: "score strong",
@@ -184,7 +184,7 @@ func Test_test_escalates_only_below_confidence_threshold(t *testing.T) {
 			cfg.ConfidenceThreshold = threshold
 			r := mustRouter(t, cfg, Deps{Small: small, Big: big})
 			res, err := r.Route(context.Background(), Request{
-				ID: "c1", Task: TaskClassify, Input: "Thanks, happy to talk", MaxTokens: 64,
+				ID: "c1", Task: TaskIntake, Input: "Thanks, happy to talk", MaxTokens: 64,
 			})
 			if err != nil {
 				t.Fatalf("route: %v", err)
@@ -478,11 +478,11 @@ func Test_test_budget_hard_stop(t *testing.T) {
 		r := budgetRouter(t, small)
 		r.SetTokenBudgets(0, 0, 0)
 		r.SetUSDBudgets(0, 0)
-		res, err := r.Route(context.Background(), Request{ID: "rule", Task: TaskStageLabel, Input: "Hired"})
+		res, err := r.Route(context.Background(), Request{ID: "rule", Task: TaskStageLabel, Input: "hired"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Tier != TierRules || res.Text != "stage: Hired" {
+		if res.Tier != TierRules || res.Text != "stage: hired" {
 			t.Fatalf("%+v", res)
 		}
 		if small.Calls() != 0 {
@@ -517,7 +517,7 @@ func Test_test_budget_hard_stop(t *testing.T) {
 		})
 		big := scripted(TierBig, Completion{Text: "draft", Confidence: 0.9, InputTokens: 100, OutputTokens: 50})
 		r := mustRouter(t, DefaultConfig(), Deps{Small: small, Big: big})
-		probe := Request{ID: "e", Task: TaskClassify, Input: "ambiguous note", MaxTokens: 32}
+		probe := Request{ID: "e", Task: TaskIntake, Input: "ambiguous note", MaxTokens: 32}
 		smallEst, _ := r.Estimate(probe, TierSmall)
 		// The small call consumes the entire run ceiling, so the big model
 		// is refused before Complete.
@@ -718,8 +718,8 @@ func TestClauseMutations(t *testing.T) {
 	if err := l.commit(h, 10, -1); err != nil {
 		t.Fatal(err)
 	}
-	if got := l.usage(); got.RunTokens != 0 || got.DailyTokens != 10 || got.DailyUSD != 0 {
-		t.Fatalf("epoch and negative usd clamp: %+v", got)
+	if got := l.usage(); got.RunTokens != 10 || got.DailyTokens != 10 || got.DailyUSD != 0 {
+		t.Fatalf("in-flight commit and negative usd clamp: %+v", got)
 	}
 
 	l2 := newLedger(Config{RunTokenBudget: 1000, DailyTokenBudget: 1000, MonthlyTokenBudget: 1000, DailyBudgetUSD: 10, MonthlyBudgetUSD: 10})
@@ -772,11 +772,11 @@ func TestClauseMutations(t *testing.T) {
 	}
 	l5.beginRun("other")
 	l5.setTokenLimits(1, 1000, 1000)
-	if err := l5.commit(h, 11, 1); err != nil || l5.tripped {
-		t.Fatalf("old run ceiling must not trip a later epoch: err=%v tripped=%v", err, l5.tripped)
+	if err := l5.commit(h, 11, 1); err != ErrBudgetExceeded || !l5.tripped {
+		t.Fatalf("in-flight overage must trip the new run: err=%v tripped=%v", err, l5.tripped)
 	}
-	if got := l5.usage(); got.RunTokens != 0 || got.DailyTokens != 11 {
-		t.Fatalf("later epoch usage: %+v", got)
+	if got := l5.usage(); got.RunTokens != 11 || got.DailyTokens != 11 {
+		t.Fatalf("in-flight usage: %+v", got)
 	}
 
 	l6 := newLedger(wide)
@@ -1053,12 +1053,12 @@ func TestTimeoutRetriesOnceThenInfra(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CacheEnabled = false
 	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
-	_, err := r.Route(context.Background(), Request{ID: "t", Task: TaskClassify, Input: "deadline please", MaxTokens: 32})
+	res, err := r.Route(context.Background(), Request{ID: "t", Task: TaskClassify, Input: "deadline please", MaxTokens: 32})
 	if n.Load() != 2 {
 		t.Fatalf("attempts %d, want 2", n.Load())
 	}
-	if !errors.Is(err, ErrInfra) {
-		t.Fatalf("err %v, want infra", err)
+	if err != nil || !strings.Contains(res.Text, "UNCLEAR") {
+		t.Fatalf("err %v text %q", err, res.Text)
 	}
 	if r.InfraErrors() != 1 {
 		t.Fatalf("infra count %d", r.InfraErrors())
@@ -1098,12 +1098,12 @@ func TestNonTimeoutProviderErrorDoesNotRetry(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CacheEnabled = false
 	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
-	_, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 32})
+	res, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 32})
 	if n.Load() != 1 {
 		t.Fatalf("attempts %d", n.Load())
 	}
-	if err == nil || strings.Contains(err.Error(), key) {
-		t.Fatalf("err %v", err)
+	if err != nil || strings.Contains(res.Text, key) || !strings.Contains(res.Text, "UNCLEAR") {
+		t.Fatalf("err %v text %q", err, res.Text)
 	}
 }
 
@@ -1205,9 +1205,9 @@ func TestEnvValuesNeverLogged(t *testing.T) {
 			Small: errProvider,
 			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
 		})
-		_, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 16})
-		if err == nil || strings.Contains(err.Error(), envProbeKey) || strings.Contains(strings.Join(r.LogLines(), "\n"), envProbeKey) {
-			t.Fatalf("provider error leaked: %v", err)
+		res, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 16})
+		if err != nil || strings.Contains(res.Text, envProbeKey) || strings.Contains(strings.Join(r.LogLines(), "\n"), envProbeKey) {
+			t.Fatalf("provider error leaked: %v text %q", err, res.Text)
 		}
 
 		panicProvider := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
