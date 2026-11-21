@@ -1,7 +1,10 @@
+import base64
+
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 PDF_MIMETYPE = 'application/pdf'
+PDF_MAGIC = b'%PDF-'
 
 
 class IrAttachment(models.Model):
@@ -32,17 +35,27 @@ class IrAttachment(models.Model):
     def _aria_can_unlock_hired_contract(self):
         return bool(self.env.su or self.env.user.has_group('base.group_system'))
 
+    def _aria_payload_bytes(self, payload):
+        if not payload:
+            return b''
+        if isinstance(payload, bytes) and payload.startswith(PDF_MAGIC):
+            return payload
+        try:
+            raw = payload if isinstance(payload, (bytes, str)) else b''
+            return base64.b64decode(raw, validate=False)
+        except Exception:
+            return b''
+
     def _aria_file_is_nonempty_pdf(self, vals, record=None):
-        mimetype = vals.get('mimetype') if 'mimetype' in vals else (record.mimetype if record else '')
         if 'datas' in vals:
             payload = vals.get('datas')
         elif 'raw' in vals:
             payload = vals.get('raw')
         elif record is not None:
-            payload = record.datas or record.raw
+            payload = record.raw or record.datas
         else:
             payload = False
-        return mimetype == PDF_MIMETYPE and bool(payload)
+        return self._aria_payload_bytes(payload).startswith(PDF_MAGIC)
 
     def _aria_stamp_contract(self, vals):
         vals['aria_contract_set_by'] = self.env.uid
