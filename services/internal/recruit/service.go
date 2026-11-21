@@ -192,7 +192,17 @@ func (s *Service) AttachContract(ctx context.Context, ariaID string, contract od
 }
 
 // LogTouch records an outreach touch and one audit row.
+// A hired applicant no longer accepts a message touch.
 func (s *Service) LogTouch(ctx context.Context, in odoo.Touch) (odoo.Touch, error) {
+	if in.Kind == "message" {
+		app, err := s.Odoo.ReadApplicant(ctx, in.ApplicantAriaID)
+		if err != nil {
+			return odoo.Touch{}, err
+		}
+		if app.Stage == stage.Hired {
+			return odoo.Touch{}, odoo.ErrOutreachClosed
+		}
+	}
 	return s.Odoo.LogTouch(ctx, in)
 }
 
