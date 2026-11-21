@@ -38,7 +38,7 @@ func newStack(t *testing.T) stack {
 		t.Fatal(err)
 	}
 	d := dna.NewFake()
-	svc := recruit.New(fake, d, led, log, []string{"Mina.Ortega@People.example.test", "real.person@gmail.com"}, fixedNow)
+	svc := recruit.New(fake, d, led, log, []string{"Mina.Ortega@People.example.test", "owner@example.com"}, fixedNow)
 	return stack{fake: fake, dna: d, log: log, led: led, svc: svc}
 }
 
@@ -244,7 +244,7 @@ func Test_test_approval_mirrored_as_note_never_grants(t *testing.T) {
 		t.Fatal(err)
 	}
 	real := in
-	real.RecipientRef = "real.person@gmail.com"
+	real.RecipientRef = "owner@example.com"
 	if _, err := s.svc.Approve(ctx, real); err == nil {
 		t.Fatal("real mailbox was allowlisted")
 	}
