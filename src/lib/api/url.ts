@@ -6,8 +6,8 @@ import { BlockList, isIP } from "node:net";
  * Deployment-owned exact-hostname allow-list (PROVIDER_ALLOWED_HOSTS) for
  * self-hosted model endpoints.
  *
- * The built-in patterns below only cover a developer's loopback and RFC1918
- * ranges. A deployment that reaches a model server over its own private DNS
+ * The built-in names below are exact loopback only. A deployment that reaches
+ * a model server over its own DNS
  * (`<app>.internal` names, IPv6 literals) cannot express that as a static
  * pattern without weakening the guard for everyone.
  *
@@ -36,10 +36,9 @@ function deploymentAllowedProviderHosts(): Set<string> {
 /**
  * SSRF-safe URL validator for upstream HTTP proxies.
  *
- * Allows only http/https schemes, the private/internal IPs commonly used for
- * self-hosted model servers, and any exact hostname the deployment names in
- * PROVIDER_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata endpoints, and
- * ambiguous hostnames that could resolve to internal services.
+ * Allows only http/https schemes, exact loopback, and any exact hostname the
+ * deployment names in PROVIDER_ALLOWED_HOSTS. Blocks file/ftp/gopher, metadata
+ * endpoints, private addresses, and other unnamed hosts.
  */
 export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?: string } {
   let url: URL;
@@ -87,16 +86,15 @@ export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?:
     }
   }
 
-  // Allow loopback, the Docker host and private IP prefixes used by self-hosted
-  // model servers. No compose service name is listed: none of this stack's
-  // services (gateway, auth, rest, db) is a model server.
+  // Exact loopback only. Private ranges and the Docker host are not implied.
+  // No compose service name is listed: none of this stack's services
+  // (gateway, auth, rest, db) is a model server.
+  if (isIpLiteral(hostname) && isPrivateIp(hostname) && hostname !== "127.0.0.1") {
+    return { ok: false, reason: "Blocked host pattern (SSRF guard)." };
+  }
   const allowedHostPatterns = [
     /^localhost$/,
     /^127\.0\.0\.1$/,
-    /^host\.docker\.internal$/,
-    /^10\.\d+\.\d+\.\d+$/,
-    /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
-    /^192\.168\.\d+\.\d+$/,
   ];
   const isAllowed =
     allowedHostPatterns.some((pattern) => pattern.test(hostname)) ||
@@ -105,6 +103,42 @@ export function isAllowedProviderUrl(urlString: string): { ok: boolean; reason?:
     return { ok: false, reason: "Host not in allow-list." };
   }
 
+  return { ok: true };
+}
+
+/**
+ * Same allow-list as isAllowedProviderUrl, plus name resolution.
+ * A hostname is accepted only when every resolved address is public.
+ * Loopback literals skip resolution. lookupImpl is a test stub.
+ */
+export async function assertProviderUrlPublic(
+  urlString: string,
+  lookupImpl?: (
+    hostname: string,
+    options: { all: true },
+  ) => Promise<readonly { address: string; family: number }[]>,
+): Promise<{ ok: boolean; reason?: string }> {
+  const listed = isAllowedProviderUrl(urlString);
+  if (!listed.ok) return listed;
+  let hostname = "";
+  try {
+    hostname = new URL(urlString).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  } catch {
+    return { ok: false, reason: "Invalid URL." };
+  }
+  if (hostname === "localhost" || isIpLiteral(hostname)) return { ok: true };
+  try {
+    const resolve = lookupImpl ?? ((host: string) => lookup(host, { all: true }));
+    const addrs = await resolve(hostname, { all: true });
+    if (!addrs.length) return { ok: false, reason: "Host did not resolve." };
+    for (const addr of addrs) {
+      if (isPrivateIp(addr.address)) {
+        return { ok: false, reason: "Host resolves to a private address (SSRF guard)." };
+      }
+    }
+  } catch {
+    return { ok: false, reason: "DNS resolution failed." };
+  }
   return { ok: true };
 }
 

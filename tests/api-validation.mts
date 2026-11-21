@@ -16,9 +16,9 @@ function ok(name: string, cond: boolean) {
 /* ---- SSRF URL allow-list ---- */
 ok("Localhost model server allowed", isAllowedProviderUrl("http://127.0.0.1:8642").ok);
 ok("HTTPS localhost allowed", isAllowedProviderUrl("https://localhost:8642").ok);
-ok("Private 10.x allowed", isAllowedProviderUrl("http://10.0.0.5:8642").ok);
-ok("Private 192.168 allowed", isAllowedProviderUrl("http://192.168.1.5:8642").ok);
-ok("Docker host allowed", isAllowedProviderUrl("http://host.docker.internal:8642").ok);
+ok("Private 10.x refused", !isAllowedProviderUrl("http://10.0.0.5:8642").ok);
+ok("Private 192.168 refused", !isAllowedProviderUrl("http://192.168.1.5:8642").ok);
+ok("Docker host refused unless named", !isAllowedProviderUrl("http://host.docker.internal:8642").ok);
 ok("Public internet blocked", !isAllowedProviderUrl("https://example.com").ok);
 ok("Metadata endpoint blocked", !isAllowedProviderUrl("http://metadata.google.internal").ok);
 ok("AWS metadata blocked", !isAllowedProviderUrl("http://169.254.169.254/latest/meta-data").ok);
@@ -28,9 +28,8 @@ ok("FTP scheme blocked", !isAllowedProviderUrl("ftp://127.0.0.1").ok);
 ok("Invalid URL blocked", !isAllowedProviderUrl("not-a-url").ok);
 
 /* ---- deployment-owned model host allow-list (PROVIDER_ALLOWED_HOSTS) ----
-   The built-in patterns only cover loopback and RFC1918, so a private
-   `<app>.internal` host or an IPv6 literal could never pass. The deployment
-   names its own hosts exactly. These assertions pin that it stays an allow-list. */
+   Built-in names are exact loopback. Anything else must be named exactly.
+   These assertions pin that it stays an allow-list. */
 const savedAllowedHosts = process.env.PROVIDER_ALLOWED_HOSTS;
 function withAllowedHosts<T>(value: string | undefined, run: () => T): T {
   if (value === undefined) delete process.env.PROVIDER_ALLOWED_HOSTS;
@@ -52,8 +51,8 @@ ok(
   withAllowedHosts("aria-model.internal", () => isAllowedProviderUrl("http://aria-model.internal:8642").ok),
 );
 ok(
-  "IPv6 literal allowed once named exactly",
-  withAllowedHosts("fdaa:0:1234::3", () => isAllowedProviderUrl("http://[fdaa:0:1234::3]:8642").ok),
+  "a named private IPv6 literal stays refused",
+  withAllowedHosts("fdaa:0:1234::3", () => !isAllowedProviderUrl("http://[fdaa:0:1234::3]:8642").ok),
 );
 // WHATWG URL.hostname keeps the brackets on an IPv6 literal, so every IPv6
 // block pattern in the validator was previously unreachable. Harmless while
