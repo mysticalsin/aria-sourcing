@@ -112,6 +112,10 @@ Field accuracy on the text-layer fixtures is a micro-F1 over name, email, phone,
 
 The text-layer benchmark reports `CVs/s`. OCR is intentionally not on that path; Tesseract is seconds per page and is covered by `TestScannedImageOCRPath`.
 
+## Known limits
+
+ADAPT, wiring this worker to Odoo or the Next.js UI, is outside this PR. The module stops at `source.Sink` and the single-file CLI.
+
 ## Follow-ups
 
 These are not implemented in this module:

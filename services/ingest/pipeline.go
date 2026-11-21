@@ -455,7 +455,7 @@ func (w *Worker) enter(doc *document, next state.State) error {
 
 func (w *Worker) log(doc *document, from, to state.State, op string) {
 	w.logger.Log(LogEvent{
-		UploadID: doc.id,
+		UploadID: loggedID(doc.id),
 		From:     from,
 		To:       to,
 		Reason:   doc.reason,
@@ -473,7 +473,7 @@ func (w *Worker) logID(id, op string) {
 		size = doc.bytes
 	}
 	w.logger.Log(LogEvent{
-		UploadID: id,
+		UploadID: loggedID(id),
 		Attempt:  attempt,
 		Bytes:    size,
 		Op:       op,

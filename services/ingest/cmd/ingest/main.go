@@ -7,14 +7,15 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mysticalsin/aria-sourcing/services/ingest"
@@ -62,8 +63,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	body, err := readLimited(*file, ingest.MaxUploadBytes)
 	if err == errTooLarge {
+		// Only a UUID or ULID is repeated. Anything else is omitted so the
+		// status JSON cannot echo an email or a phone number.
 		if writeStatus(stdout, status{
-			UploadID: uploadIDOr(*id),
+			UploadID: opaqueOrEmpty(*id),
 			State:    string(state.ErrorQueue),
 			Reason:   string(state.ReasonFileTooLarge),
 			Attempts: 1,
@@ -77,7 +80,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cannot read file")
 		return 1
 	}
-	uploadID := uploadIDOr(*id)
+	uploadID, ok := acceptedID(*id)
+	if !ok {
+		fmt.Fprintln(stderr, "upload id must be a UUID or ULID")
+		return 1
+	}
 	ocrLangs := *langs
 	if ocrLangs == "" {
 		ocrLangs = os.Getenv("ARIA_OCR_LANGS")
@@ -131,11 +138,37 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 var errTooLarge = errors.New("file_too_large")
 
-func uploadIDOr(id string) string {
-	if id == "" {
-		return newID()
+var (
+	uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	ulidRe = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
+)
+
+func opaqueID(id string) bool {
+	if uuidRe.MatchString(id) {
+		return true
 	}
-	return id
+	return ulidRe.MatchString(strings.ToUpper(id))
+}
+
+// opaqueOrEmpty returns id only when it is a UUID or ULID. Raw input is
+// never copied into a status line.
+func opaqueOrEmpty(id string) string {
+	if opaqueID(id) {
+		return id
+	}
+	return ""
+}
+
+// acceptedID returns a UUID or ULID. An empty id becomes a new UUID. Any
+// other value is refused without being returned.
+func acceptedID(id string) (string, bool) {
+	if id == "" {
+		return newID(), true
+	}
+	if opaqueID(id) {
+		return id, true
+	}
+	return "", false
 }
 
 // readLimited stats the file and then reads at most max bytes. A file
@@ -172,9 +205,11 @@ func writeStatus(w io.Writer, st status) error {
 func newID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "upload"
+		return "00000000-0000-4000-8000-000000000000"
 	}
-	return hex.EncodeToString(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 func days(raw string, fallback int) time.Duration {

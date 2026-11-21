@@ -34,7 +34,7 @@ func TestCLIPrintsStatusWithoutCVBody(t *testing.T) {
 		"-job-board", "indeed",
 		"-folder", "need",
 		"-folder-value", "900001",
-		"-id", "cli-1",
+		"-id", "550e8400-e29b-41d4-a716-446655440000",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr %s stdout %s", code, stderr.String(), stdout.String())
@@ -67,7 +67,7 @@ func TestCLIDoesNotReadPastUploadCap(t *testing.T) {
 	}
 	f.Close()
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-file", path, "-cv-source", "toast-upload", "-folder", "holding", "-id", "cli-2"}, &stdout, &stderr)
+	code := run([]string{"-file", path, "-cv-source", "toast-upload", "-folder", "holding", "-id", "550e8400-e29b-41d4-a716-446655440000"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit %d stdout %s stderr %s", code, stdout.String(), stderr.String())
 	}
@@ -131,7 +131,7 @@ func TestCLICorruptFileExits2(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-file", path, "-cv-source", "folder", "-folder", "holding", "-id", "cli-bad1"}, &stdout, &stderr)
+	code := run([]string{"-file", path, "-cv-source", "folder", "-folder", "holding", "-id", "550e8400-e29b-41d4-a716-446655440001"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit %d stdout %s", code, stdout.String())
 	}

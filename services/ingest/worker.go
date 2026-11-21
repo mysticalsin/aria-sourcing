@@ -3,6 +3,7 @@ package ingest
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,7 +211,7 @@ func New(opt Options) *Worker {
 }
 
 func idOK(id string) bool {
-	if !idRe.MatchString(id) {
+	if !idRe.MatchString(id) || phoneShaped(id) {
 		return false
 	}
 	// A digit is required so a name-shaped token (Casey-Example) cannot
@@ -221,4 +222,28 @@ func idOK(id string) bool {
 		}
 	}
 	return false
+}
+
+// phoneShaped is an id made only of digits and separators, at least eight
+// digits long. Those values are rejected and are never written to a log.
+func phoneShaped(id string) bool {
+	digits := 0
+	letters := 0
+	for _, r := range id {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			letters++
+		}
+	}
+	return letters == 0 && digits >= 8
+}
+
+// loggedID drops a phone-shaped or email-shaped id before it reaches a log.
+func loggedID(id string) string {
+	if phoneShaped(id) || strings.Contains(id, "@") {
+		return ""
+	}
+	return id
 }
