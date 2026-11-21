@@ -19,7 +19,7 @@ try {
 
 function fail(msg: string): never { console.error(`SMOKE FAIL: ${msg}`); process.exit(1); }
 
-const REAL_JD = `From: Priya Nair <priya@brightloop.io>
+const REAL_JD = `From: Priya Nair <owner@example.com>
 Subject: Senior React Engineer — London
 
 We're hiring a Senior React Engineer for our platform team in London.
