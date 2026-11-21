@@ -3,7 +3,7 @@ project: MSourcing / ARIA
 shift: 469
 agent: cursor
 updated: 2026-11-21
-status: interviewer-handoff-draft
+status: interviewer-handoff-qa-fix
 ---
 
 # Handoff - Shift 469
@@ -12,9 +12,10 @@ status: interviewer-handoff-draft
 
 - Branch `cursor/aria-interviewer-handoff` off `twa-odoo` (`e3fa3f59`).
 - Red-first commit `4ade6575` is tests only. `go test` in `go/interviewer` fails to compile because the adapter API is absent. Output is in the PR body.
-- Implementation lives only under `go/interviewer/**` plus a Go job in `.github/workflows/ci.yml` and this baton.
-- `go test -count=1 -timeout 120s .` in `go/interviewer` exits 0 (`ok` in about 0.8s). `go test -count=1 -race -timeout 120s .` also exits 0.
-- Feature flag `ARIA_INTERVIEWER_ENABLED` defaults off. Nothing is called while it is off.
+- Implementation lives under `go/interviewer/**`, the console route `src/app/interviewer/page.tsx`, and a hand-off panel on `/calendar` and `/candidates`.
+- `go test -count=1 -race -timeout 120s .` in `go/interviewer` exits 0. `node tests/interviewer-console.mjs` exits 0 (Chromium and WebKit, flag off and on).
+- Feature flag `ARIA_INTERVIEWER_ENABLED` defaults off. The console shows a disabled state. Nothing is sent while it is off.
+- Need summaries, role questions, report summaries and score reasoning are scrubbed of emails, phones and URLs before send or store.
 - The package does not write Odoo stages and does not auto-reject. Recommendation is advisory.
 - Interviewer contract assumed from public `mysticalsin/aria-interviewer` branch `feat/aria-fusion-multimodal-streaming` at `369077cef402eea6df66f5a7e166e9a51dc252b1`. That tree has no `/v1/screenings` webhook. The façade is documented in `go/interviewer/doc.go`.
 - Not wired to Odoo. PRs #171 and #176 still own the Go Odoo client and the addon. Not touched: #167 ledger, #175 channels, #170 Rust core, `mbe-*`, `main`, `vercel-demo`.
@@ -24,7 +25,8 @@ status: interviewer-handoff-draft
 - Added the isolated hand-off adapter: eligibility (`to_interview` + recorded approval + consent true), idempotent POST, poll, HMAC webhook, state machine, bounded timeout retry classified as `ErrInfra`.
 - Tests use `httptest` only. No real key and no external network.
 - Forge checks are in `property_test.go`, `noskip_test.go`, `spec_boundary_test.go`, and `timeout_infra_test.go`.
-- CI: new `go-interviewer` job (`go test -count=1 -race`) is required by the release gate.
+- CI: new `go-interviewer` job (`go test -count=1 -race`) is required by the release gate. Quality installs Playwright Chromium and WebKit for `tests/interviewer-console.mjs`.
+- Inspector QA on `42b564e4` (no console route, raw need summary) is fixed on this branch. Red-first for that fix is `781717c0`.
 
 ## Blockers
 
