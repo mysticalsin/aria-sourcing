@@ -37,7 +37,7 @@ status: compliance-boundaries-pr-open
 
 - Tony, 2026-11-20: `twa-odoo` is cut from `mbe-branch`. PRs target `twa-odoo`.
 - Tony, 2026-11-20: Aria never calls the professional-network host. The extension, cookies, tokens, Voyager, and web-search sourcing are permanently out.
-- Tony, 2026-11-20, 20:30 BRT: the LinkedIn token option may be built as an off-by-default switch with the stated safeguards. It is not in this tree. `LINKEDIN_TOKEN_CHANNEL_ALLOWLIST` in `tests/compliance-boundaries.mts` is the only prefix that may hold it, and that constant is set to the final path when the port lands (`src/lib/channels/linkedin-token/` or `services/channels/linkedintoken/`). The old unflagged vendor route stays banned everywhere.
+- Tony, 2026-11-20, 20:30 BRT: the LinkedIn token option may be built as an off-by-default switch with the stated safeguards. PR #178 (card t1876s7747) owns that port. `LINKEDIN_TOKEN_CHANNEL_ALLOWLIST` has exactly one entry, `src/channels/linkedin-token/`, for server-side session-cookie sends. This tree does not add the channel. The old unflagged vendor route stays banned everywhere.
 - Tony, 2026-11-20: HeyReach may be built later, flag-off, official API only, in the separate Go channel module. It is not in this tree.
 - Tony, 2026-11-20: no automation or scraping of `arp.mantu.com`.
 - ADR 0002 is withdrawn. Do not reimplement the runner.

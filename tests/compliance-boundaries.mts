@@ -19,15 +19,15 @@ const root = process.cwd();
  * Tony WALTEUR, 20:30 BRT, 20 Nov 2026: "Yes, build the Aria LinkedIn token
  * option as an off-by-default switch with those safeguards."
  *
- * Exactly one path prefix may hold that later port. This PR does not contain
- * it. Set the single entry to the final directory when the port lands
- * (`src/lib/channels/linkedin-token/` or `services/channels/linkedintoken/`).
- * Session cookies, the professional-network host, its CDN, protocol-relative
- * URLs, and split host strings stay banned in every other file. The old
- * unflagged vendor route stays banned in every directory, including this one.
+ * PR #178 (card t1876s7747) is that port. Its only allowed path, for
+ * server-side session-cookie sends, is src/channels/linkedin-token/.
+ * This PR does not add the channel. Session cookies, the professional-network
+ * host, its CDN, protocol-relative URLs, and split host strings stay banned
+ * in every other file. The old unflagged vendor route stays banned in every
+ * directory, including this one.
  */
 const LINKEDIN_TOKEN_CHANNEL_ALLOWLIST = [
-  "__linkedin_token_channel_prefix_unset__/",
+  "src/channels/linkedin-token/",
 ] as const;
 
 function isLinkedInTokenChannelFile(file: string): boolean {
@@ -334,12 +334,15 @@ test("test_linkedin_token_channel_allowlist_has_exactly_one_entry", () => {
   const block = source.match(/const LINKEDIN_TOKEN_CHANNEL_ALLOWLIST = \[([\s\S]*?)\] as const;/);
   assert.ok(block, "LINKEDIN_TOKEN_CHANNEL_ALLOWLIST must stay a single constant");
   const entries = [...block[1].matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+  assert.deepEqual(entries, ["src/channels/linkedin-token/"]);
   assert.deepEqual(entries, [...LINKEDIN_TOKEN_CHANNEL_ALLOWLIST]);
   assert.equal(entries.length, 1);
   const prefix = entries[0];
   assert.match(prefix, /\/$/);
   assert.equal(prefix.includes(".."), false);
-  assert.equal(isLinkedInTokenChannelFile(`${prefix}client.ts`), true);
+  assert.equal(isLinkedInTokenChannelFile("src/channels/linkedin-token/client.ts"), true);
+  assert.equal(isLinkedInTokenChannelFile("src/channels/other/client.ts"), false);
+  assert.equal(isLinkedInTokenChannelFile("services/channels/linkedintoken/client.ts"), false);
   for (const banned of [
     "extensions/linkedin-bridge",
     "src/lib/linkedin-bridge",
