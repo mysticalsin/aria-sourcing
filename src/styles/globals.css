@@ -85,7 +85,8 @@
   --mantu-yellow: 57 92% 67%;
   --mantu-yellow-ink: 271 100% 12%;
 
-  --success: 152 54% 38%;
+  /* 26% lightness clears 4.5:1 on success-soft (the 38% green did not). */
+  --success: 152 64% 26%;
   --success-soft: 150 56% 91%;
   --warning: 38 92% 48%;
   --warning-soft: 42 100% 91%;
@@ -103,6 +104,34 @@
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
     Menlo, Consolas, monospace;
   --ease-motion-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Same hues as the light tokens, darkened so a dark page stays readable.
+   The product stays light unless a parent sets this class. */
+.dark {
+  --paper: 270 35% 8%;
+  --canvas: 270 28% 12%;
+  --surface: 270 30% 14%;
+  --ink: 270 40% 96%;
+  --ink-soft: 270 20% 82%;
+  --muted: 270 12% 72%;
+  --line: 270 16% 24%;
+  --tangerine: 275 100% 78%;
+  --tangerine-soft: 275 40% 18%;
+  --electric: 275 100% 78%;
+  --electric-soft: 275 40% 18%;
+  --aqua: 265 70% 74%;
+  --aqua-soft: 265 30% 18%;
+  --violet: 282 72% 74%;
+  --violet-soft: 282 30% 18%;
+  --mantu-yellow: 57 92% 67%;
+  --mantu-yellow-ink: 271 100% 10%;
+  --success: 152 45% 74%;
+  --success-soft: 152 28% 14%;
+  --warning: 38 92% 62%;
+  --warning-soft: 38 30% 16%;
+  --danger: 2 76% 70%;
+  --danger-soft: 2 30% 16%;
 }
 
 * {

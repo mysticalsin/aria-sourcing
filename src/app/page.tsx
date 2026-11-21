@@ -19,7 +19,7 @@ import {
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
 import { HeroPanel } from "@/components/dashboard/hero-panel";
-import { MetricCard } from "@/components/dashboard/metric-card";
+import { CommandCenterStats } from "@/components/dashboard/command-center-stats";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
@@ -34,25 +34,22 @@ import {
   useActiveCampaign,
   useActivities,
   useCampaigns,
+  useBookings,
   useCandidates,
-  useDashboardKpis,
   useHydrated,
+  useOutreach,
   usePendingApprovals,
   useReplies,
 } from "@/lib/store";
 import { funnelForCandidates } from "@/lib/metrics";
-import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
+import { quickStatNow } from "@/lib/quick-stats";
+import { pluralize } from "@/lib/utils";
 import {
-  CalendarCheck,
   FilePlus2,
   Megaphone,
   PlayCircle,
   Radar,
-  Reply,
   Sparkles,
-  Target,
-  Timer,
-  Users,
 } from "lucide-react";
 
 const FunnelChart = dynamic(
@@ -66,13 +63,24 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const actions = useActions();
 
-  const kpis = useDashboardKpis();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const activities = useActivities();
   const pendingApprovals = usePendingApprovals();
   const replies = useReplies();
+  const outreach = useOutreach();
+  const bookings = useBookings();
   const activeCampaign = useActiveCampaign();
+  const statSource = React.useMemo(
+    () => ({
+      candidates,
+      interviews: bookings,
+      approvals: outreach,
+      replies,
+      now: quickStatNow({ synthetic: !supabaseEnabled }),
+    }),
+    [candidates, bookings, outreach, replies],
+  );
 
   const unrepliedCount = React.useMemo(
     () => replies.filter((r) => !r.handled).length,
@@ -112,68 +120,6 @@ export default function DashboardPage() {
     setRunToken((k) => k + 1);
   }
 
-  // Contact KPIs count real sends only; in a dry run every send is simulated.
-  const noRealSend =
-    kpis.simulatedContacted > 0
-      ? `No real send yet · ${pluralize(kpis.simulatedContacted, "simulated contact")} in the demo`
-      : "No real send yet";
-
-  const kpiCards: {
-    label: string;
-    value: string | number;
-    hint: string;
-    icon: React.ReactNode;
-    tone: Tone;
-  }[] = [
-    {
-      label: "Active campaigns",
-      value: kpis.activeCampaigns,
-      hint: `${pluralize(kpis.totalCampaigns, "campaign")} created in total`,
-      icon: <Megaphone aria-hidden />,
-      tone: "tangerine",
-    },
-    {
-      label: "Candidates sourced",
-      value: formatNumber(kpis.candidatesSourced),
-      hint: kpis.contacted > 0 ? `${pluralize(kpis.contacted, "candidate")} contacted by real send` : noRealSend,
-      icon: <Users aria-hidden />,
-      tone: "electric",
-    },
-    {
-      // Real sends only: a 0% before any real send would read as "nobody answers".
-      label: "Reply rate",
-      value: kpis.contacted > 0 ? formatPercent(kpis.replyRate) : "—",
-      hint: kpis.contacted > 0 ? `Real sends only, across ${pluralize(kpis.contacted, "contact")}` : noRealSend,
-      icon: <Reply aria-hidden />,
-      tone: "aqua",
-    },
-    {
-      label: "Interviews booked",
-      value: kpis.interviewsBooked,
-      hint:
-        kpis.interviewsBooked > 0 || kpis.simulatedBooked === 0
-          ? `From real sends · ${pluralize(kpis.interested, "candidate")} interested in flight`
-          : `None from real sends yet · ${kpis.simulatedBooked} in the demo data`,
-      icon: <CalendarCheck aria-hidden />,
-      tone: "violet",
-    },
-    {
-      label: "Avg match score",
-      value: kpis.avgMatchScore,
-      hint: "Quality of the sourced pool",
-      icon: <Target aria-hidden />,
-      tone: scoreTone(kpis.avgMatchScore),
-    },
-    {
-      label: "Time to first interview",
-      value:
-        kpis.interviewsBooked > 0 && kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
-      hint: kpis.interviewsBooked > 0 ? "Mean across active campaigns" : "Shown once a real interview is booked",
-      icon: <Timer aria-hidden />,
-      tone: "neutral",
-    },
-  ];
-
   async function handleSourceBatch() {
     if (!activeCampaign) {
       toast({
@@ -207,24 +153,27 @@ export default function DashboardPage() {
 
       <HydrationGate hydrated={hydrated} fallback={<DashboardFallback />}>
         {isFirstRun ? (
-          <Card className="p-5 animate-fade-in" data-testid="cc-first-run-body">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <Eyebrow>Your next step</Eyebrow>
-                <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
-                  <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
-                  {nextStep.reason}
-                </p>
+          <>
+            <Card className="p-5 animate-fade-in" data-testid="cc-first-run-body">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <Eyebrow>Your next step</Eyebrow>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
+                    <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
+                    {nextStep.reason}
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  leftIcon={<FilePlus2 aria-hidden />}
+                  onClick={() => router.push(nextStep.href)}
+                >
+                  {nextStep.cta}
+                </Button>
               </div>
-              <Button
-                variant="primary"
-                leftIcon={<FilePlus2 aria-hidden />}
-                onClick={() => router.push(nextStep.href)}
-              >
-                {nextStep.cta}
-              </Button>
-            </div>
-          </Card>
+            </Card>
+            <CommandCenterStats source={statSource} />
+          </>
         ) : (
           <>
             {/* Secondary actions. The hero above holds the one primary action. */}
@@ -255,19 +204,7 @@ export default function DashboardPage() {
               />
             )}
 
-            {/* KPI grid */}
-            <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              {kpiCards.map((k) => (
-                <MetricCard
-                  key={k.label}
-                  label={k.label}
-                  value={k.value}
-                  hint={k.hint}
-                  icon={k.icon}
-                  tone={k.tone}
-                />
-              ))}
-            </section>
+            <CommandCenterStats source={statSource} />
 
             {/* Main two-column layout */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

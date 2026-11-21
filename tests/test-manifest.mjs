@@ -168,6 +168,10 @@ export const testManifest = {
     {"id":"email-inbound-db","executable":"bash","argv":["tests/email-inbound-db.sh"]},
     {"id":"email-outcomes-contract","executable":"tsx","argv":["tests/email-outcomes-contract.mts"]},
     {"id":"email-outcomes-db","executable":"bash","argv":["tests/email-outcomes-db.sh"]},
+    {"id":"quick-stats","executable":"node","argv":["--import","tsx","--test","tests/quick-stats.mts"]},
+    {"id":"channel-picker","executable":"node","argv":["--import","tsx","--test","tests/channel-picker.mts"]},
+    {"id":"processing-visual","executable":"node","argv":["--import","tsx","--test","tests/processing-visual.mts"]},
+    {"id":"inspector-qa","executable":"node","argv":["--import","tsx","--test","tests/inspector-qa.mts"]},
   ],
   groups: {
     "pretest": [
@@ -298,6 +302,10 @@ export const testManifest = {
       "winlog",
       "exec-dashboard",
       "command-center-firstrun",
+      "quick-stats",
+      "channel-picker",
+      "processing-visual",
+      "inspector-qa",
       "mcp-secret-leak-adversarial",
       "claim-serialization",
       "cross-channel-cap-contract",
