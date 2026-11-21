@@ -18,15 +18,14 @@ import { can } from "@/lib/rbac";
 import { campaignAllowsManualCandidateIntake } from "@/lib/sourcing/campaign-lifecycle";
 import { publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
 import type { CandidateLawfulBasis } from "@/lib/types";
-import { LinkedInProfileLookup, forgetProspect, keepProspectAs, type LookedUpProfile } from "@/components/linkedin/profile-lookup";
 import { Linkedin, UserPlus } from "lucide-react";
 
 type Mode = "linkedin" | "github" | "manual";
 
 /**
  * Manual candidate intake: hand Aria a specific person instead of a search.
- * From a LinkedIn profile (read through the user's own LinkedIn when the
- * bridge is connected), a GitHub username, or typed fields. Gated behind the
+ * From a LinkedIn profile URL the recruiter already has, a GitHub username,
+ * or typed fields. Aria does not look the profile up on LinkedIn. Gated behind the
  * same "source" permission as sourcing itself. Never drafts or sends
  * outreach: the new candidate lands in "Sourced".
  */
@@ -47,7 +46,6 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
   const [username, setUsername] = React.useState("");
 
   const [linkedinUrl, setLinkedinUrl] = React.useState("");
-  const [prospectId, setProspectId] = React.useState<string | null>(null);
 
   const [name, setName] = React.useState("");
   const [title, setTitle] = React.useState("");
@@ -62,13 +60,6 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
   const eligible = React.useMemo(() => campaigns.filter((c) => campaignAllowsManualCandidateIntake(c.status)), [campaigns]);
   const chosenCampaign = campaignId ?? targetCampaign;
 
-  // Prefill from the profile once LinkedIn answers; never overwrite typing.
-  const prefill = React.useCallback((profile: LookedUpProfile) => {
-    setName((v) => v || profile.name);
-    setTitle((v) => v || profile.title);
-    setCompany((v) => v || profile.company);
-  }, []);
-
   if (!can(role, "source")) return null;
 
   function openDialog() {
@@ -81,7 +72,6 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
   function reset() {
     setUsername("");
     setLinkedinUrl("");
-    setProspectId(null);
     setName("");
     setTitle("");
     setCompany("");
@@ -95,7 +85,6 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
   }
 
   function cancel() {
-    if (prospectId) forgetProspect(prospectId);
     reset();
     setOpen(false);
   }
@@ -151,8 +140,6 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
       return;
     }
     const candidateId = res.ok ? res.candidateIds?.[0] : undefined;
-    // The profile already looked up becomes the candidate's: no second view.
-    if (fromLinkedIn && prospectId && candidateId) await keepProspectAs(prospectId, candidateId);
     setBusy(false);
     toast({ title: `Added ${trimmedName}`, description: "Scored and placed in Sourced.", variant: "success" });
     reset();
@@ -283,17 +270,21 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           />
 
           <TabPanel value="linkedin" active={mode === "linkedin"} idBase={idBase}>
-            <div className="space-y-4">
-              <LinkedInProfileLookup
-                idBase={`${idBase}-li`}
-                url={linkedinUrl}
-                onUrlChange={setLinkedinUrl}
-                prospectId={prospectId}
-                onProspectChange={setProspectId}
-                onProfile={prefill}
+            <Field
+              label="LinkedIn profile URL"
+              htmlFor={`${idBase}-li-url`}
+              hint="A URL you already have. Aria stores it and does not open LinkedIn."
+            >
+              <Input
+                id={`${idBase}-li-url`}
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                placeholder="https://www.linkedin.com/in/jane-doe"
+                autoComplete="off"
+                maxLength={500}
               />
-              {personFields("linkedin")}
-            </div>
+            </Field>
+            {personFields("linkedin")}
           </TabPanel>
 
           <TabPanel value="github" active={mode === "github"} idBase={idBase}>
@@ -314,6 +305,7 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
           </TabPanel>
 
           <TabPanel value="manual" active={mode === "manual"} idBase={idBase}>
+            <p className="text-sm text-muted">Type the person yourself. Nothing is fetched from LinkedIn.</p>
             {personFields("manual")}
           </TabPanel>
         </div>

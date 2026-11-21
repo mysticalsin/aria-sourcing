@@ -1,6 +1,6 @@
 # 07 — POC B3 : VM « bridge host »
 
-Status: ready-for-human
+Status: wontfix (LinkedIn bridge and extension removed, 2026-11-20; do not host a LinkedIn session)
 Blocked by: 05
 Spec: ../spec.md
 

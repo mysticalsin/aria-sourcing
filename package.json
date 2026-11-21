@@ -39,6 +39,7 @@
     "test:authority-regression": "node scripts/run-test-manifest.mjs --group authority-regression",
     "test:db-schema-authority": "bash tests/schema-authority-db.sh",
     "test:db-email-durability": "bash tests/email-durability-db.sh",
+    "test:db-approval-dispatch": "bash tests/approval-dispatch-db.sh",
     "test:db-email-inbound": "bash tests/email-inbound-db.sh",
     "test:db-email-outcomes": "bash tests/email-outcomes-db.sh"
   },
@@ -58,6 +59,7 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
+    "@playwright/test": "1.65.1",
     "@types/node": "^20.17.6",
     "@types/react": "^19.2.3",
     "@types/react-dom": "^19.2.3",
@@ -65,7 +67,7 @@
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.4.3",
     "js-yaml": "4.3.2",
-    "playwright": "^1.61.1",
+    "playwright": "1.65.1",
     "postcss": "^8.5.32",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.22.4",

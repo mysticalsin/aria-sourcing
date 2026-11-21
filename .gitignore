@@ -1,5 +1,7 @@
 # dependencies
 /node_modules
+odoo_addons/aria_recruitment/e2e/node_modules/
+e2e-artifacts/
 /build-metadata.json
 /.localbin/
 /.rocket-fuel/
@@ -37,6 +39,8 @@ backups/
 
 # test artifacts
 .playwright-mcp/
+.playwright-browsers/
+e2e-artifacts/
 *.jpeg
 __pycache__/
 *.py[cod]

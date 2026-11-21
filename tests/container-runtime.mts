@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,4 +56,41 @@ test("configured HTTPS backend and custom loopback ports drive CSP and cookie po
   assert.equal(isLoopbackHttpOrigin("http://localhost:3101"), true);
   assert.equal(isLoopbackHttpOrigin("http://127.0.0.1:3000"), true);
   for (const origin of [undefined, "http://example.test", "https://example.test", "http://localhost.evil.test", "http://user:secret@localhost", "http://localhost/path"]) assert.equal(isLoopbackHttpOrigin(origin), false);
+});
+
+test("the recruitment addon names opt-out, erasure, and a pipeline page", () => {
+  const applicant = readFileSync("odoo_addons/aria_recruitment/models/applicant.py", "utf8");
+  const views = readFileSync("odoo_addons/aria_recruitment/views/applicant_views.xml", "utf8");
+  const controller = readFileSync("odoo_addons/aria_recruitment/controllers/pipeline.py", "utf8");
+  assert.match(applicant, /string='Opt-out'/);
+  assert.match(views, /Erasure/);
+  assert.match(controller, /opt-out/);
+  assert.match(controller, /[Ee]rasure/);
+  assert.match(controller, /\/aria\/pipeline/);
+});
+
+test("the bridge rule never changes a Mac firewall and skips outside a sandbox", () => {
+  const script = new URL("../scripts/sandbox-bridge.sh", import.meta.url);
+  const run = (env: { SANDBOX_UNAME?: string; CI?: string; GITHUB_ACTIONS?: string; CURSOR_AGENT?: string; ARIA_SANDBOX?: string }) =>
+    execFileSync("sh", [script.pathname], {
+      env: {
+        PATH: process.env.PATH ?? "",
+        NODE_ENV: "test",
+        SANDBOX_UNAME: env.SANDBOX_UNAME,
+        CI: env.CI,
+        GITHUB_ACTIONS: env.GITHUB_ACTIONS,
+        CURSOR_AGENT: env.CURSOR_AGENT,
+        ARIA_SANDBOX: env.ARIA_SANDBOX,
+      },
+      encoding: "utf8",
+    }).trim();
+  assert.match(run({ SANDBOX_UNAME: "Darwin", CI: "true", CURSOR_AGENT: "1" }), /skip:.*macOS/);
+  assert.match(run({ SANDBOX_UNAME: "Linux" }), /skip:.*sandbox/);
+  assert.equal(run({ SANDBOX_UNAME: "Linux", CI: "true" }), "apply");
+  assert.equal(run({ SANDBOX_UNAME: "Linux", CURSOR_AGENT: "1" }), "apply");
+});
+
+test("the ingest image does not pin the withdrawn poppler revision", () => {
+  const docker = readFileSync(new URL("../services/ingest/Dockerfile", import.meta.url), "utf8");
+  assert.doesNotMatch(docker, /poppler-utils=22\.12\.0-2\+deb12u2/);
 });

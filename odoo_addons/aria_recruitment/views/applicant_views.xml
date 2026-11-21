@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hr_applicant_view_form_aria" model="ir.ui.view">
+        <field name="name">hr.applicant.form.aria</field>
+        <field name="model">hr.applicant</field>
+        <field name="inherit_id" ref="hr_recruitment.hr_applicant_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Aria" name="aria_applicant">
+                    <group>
+                        <group string="Cross-keys">
+                            <field name="aria_smart_need_id"/>
+                            <field name="aria_smart_candidate_id"/>
+                            <field name="aria_utm_link" widget="url"/>
+                            <field name="aria_dna_adapter_name" readonly="1"/>
+                            <field name="aria_dna_integration_status"/>
+                        </group>
+                        <group string="Contract">
+                            <field name="aria_contract_filename" invisible="1"/>
+                            <field name="aria_contract_pdf" filename="aria_contract_filename"/>
+                        </group>
+                        <group string="GDPR">
+                            <field name="aria_opt_out"/>
+                            <field name="aria_retention_deadline"/>
+                            <field name="aria_erased"/>
+                            <field name="aria_erased_at"/>
+                            <button name="action_aria_outreach" type="object" string="Record outreach"/>
+                            <button name="action_aria_erase" type="object" string="Erasure of personal data"/>
+                            <button name="action_aria_apply_retention" type="object" string="Apply retention"/>
+                        </group>
+                        <group string="Interview">
+                            <field name="aria_itw_grade"/>
+                            <field name="aria_itw_stars"/>
+                            <field name="aria_proposal_status"/>
+                            <field name="aria_last_itw_on"/>
+                            <field name="aria_itw_stale"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

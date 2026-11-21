@@ -23,6 +23,7 @@ export function MetricCard({
   icon,
   tone = "neutral",
   delta,
+  testId,
 }: {
   label: string;
   value: string | number;
@@ -30,6 +31,7 @@ export function MetricCard({
   icon?: React.ReactNode;
   tone?: Tone;
   delta?: { value: string; positive?: boolean };
+  testId?: string;
 }) {
   return (
     <Card className="p-5 animate-fade-in">
@@ -49,7 +51,7 @@ export function MetricCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
-        <span className="text-3xl font-extrabold leading-none tracking-tight tabular-nums text-ink">
+        <span data-testid={testId} className="text-3xl font-extrabold leading-none tracking-tight tabular-nums text-ink">
           {value}
         </span>
         {delta && (

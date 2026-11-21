@@ -42,9 +42,12 @@ test("seat bindings are validated constraints, not NOT VALID placeholders", () =
   assert.doesNotMatch(migration, /workspace_seat_fkey[^;]*NOT VALID;/);
 });
 
-test("the dispatcher scopes both spec and seat reads to the outbox workspace", () => {
+test("the dispatcher scopes spec reads and does not load a seat to deliver LinkedIn", () => {
   assert.match(dispatcher, /\.from\("agent_specs"\)[\s\S]+\.eq\("id",\s*msg\.spec_id\)[\s\S]+\.eq\("workspace_id",\s*msg\.workspace_id\)/i);
-  assert.match(dispatcher, /\.from\("agent_seats"\)[\s\S]+\.eq\("id",\s*msg\.seat_id[^)]*\)[\s\S]+\.eq\("workspace_id",\s*msg\.workspace_id\)/i);
+  assert.match(dispatcher, /linkedin-channel-refused/);
+  assert.match(dispatcher, /linkedin-delivery-refused/);
+  assert.doesNotMatch(dispatcher, /adapter\.deliver/);
+  assert.doesNotMatch(dispatcher, /\.from\("agent_seats"\)/);
 });
 
 test("Fleet sourcing uses the reviewed real-provider path and never the synthetic generator", () => {

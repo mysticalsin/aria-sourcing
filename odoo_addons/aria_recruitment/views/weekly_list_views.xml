@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_hr_applicant_weekly_list" model="ir.ui.view">
+        <field name="name">hr.applicant.weekly.list</field>
+        <field name="model">hr.applicant</field>
+        <field name="arch" type="xml">
+            <list string="My Weekly List" export_xlsx="1">
+                <field name="partner_name"/>
+                <field name="email_from" optional="show"/>
+                <field name="job_id"/>
+                <field name="stage_id"/>
+                <field name="aria_smart_need_id" optional="show"/>
+                <field name="aria_smart_candidate_id" optional="show"/>
+                <field name="aria_itw_grade"/>
+                <field name="aria_itw_stars"/>
+                <field name="aria_proposal_status"/>
+                <field name="aria_last_itw_on"/>
+                <field name="aria_itw_stale"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_hr_applicant_weekly_search" model="ir.ui.view">
+        <field name="name">hr.applicant.weekly.search</field>
+        <field name="model">hr.applicant</field>
+        <field name="arch" type="xml">
+            <search string="My Weekly List">
+                <field name="partner_name"/>
+                <field name="job_id"/>
+                <field name="aria_smart_candidate_id"/>
+                <filter name="stage_to_interview" string="To Interview" domain="[('stage_id.aria_stage_key', '=', 'to_interview')]"/>
+                <filter name="stage_shoot" string="Shoot" domain="[('stage_id.aria_stage_key', '=', 'shoot')]"/>
+                <filter name="stage_qm" string="QM" domain="[('stage_id.aria_stage_key', '=', 'qm')]"/>
+                <separator/>
+                <filter name="stale_7d" string="Stale 7 days" domain="[('aria_itw_stale', '=', True)]"/>
+                <group>
+                    <filter name="group_stage" string="Stage" context="{'group_by': 'stage_id'}"/>
+                    <filter name="group_proposal" string="Proposal status" context="{'group_by': 'aria_proposal_status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_weekly_list" model="ir.actions.act_window">
+        <field name="name">My Weekly List</field>
+        <field name="res_model">hr.applicant</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_hr_applicant_weekly_search"/>
+        <field name="domain">[('stage_id.aria_stage_key', 'in', ['to_interview', 'shoot', 'qm'])]</field>
+        <field name="context">{}</field>
+    </record>
+
+    <record id="action_weekly_list_view_list" model="ir.actions.act_window.view">
+        <field name="sequence" eval="1"/>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_hr_applicant_weekly_list"/>
+        <field name="act_window_id" ref="action_weekly_list"/>
+    </record>
+
+    <menuitem
+        id="menu_aria_weekly_list"
+        name="My Weekly List"
+        parent="hr_recruitment.menu_hr_recruitment_root"
+        action="action_weekly_list"
+        sequence="25"
+        groups="hr_recruitment.group_hr_recruitment_user"/>
+</odoo>

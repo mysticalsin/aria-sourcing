@@ -7,7 +7,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { EmailConnection, Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
+import { calendarInviteHash, calendarSendUpdates, createGoogleCalendarEvent, createGraphCalendarEvent, type CalendarEventInput } from "@/lib/calendar";
 import { claimCalendarBooking, reconcileCalendarBooking } from "@/lib/calendar-authority";
 import { safeLog } from "@/lib/log-redact";
 import { decryptSecret, encryptSecret, encryptionRequiredButMissing } from "@/lib/crypto-secrets";
@@ -189,10 +189,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const guestNotice = calendarSendUpdates(process.env, ev, null);
+    const approvedHash = guestNotice === "all" ? calendarInviteHash(ev) : null;
     const outcome =
       provider === "Gmail API"
-        ? await createGoogleCalendarEvent(ev, connection)
-        : await createGraphCalendarEvent(ev, connection);
+        ? await createGoogleCalendarEvent(ev, connection, { env: process.env, approvedHash })
+        : await createGraphCalendarEvent(ev, connection, { env: process.env, approvedHash });
 
     if (outcome.ok) {
       await reconcileCalendarBooking(svc, {

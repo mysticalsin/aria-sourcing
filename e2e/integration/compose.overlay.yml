@@ -1,0 +1,99 @@
+# Integration packaging. Memory caps sum to under 6 GiB. Swap is capped at the
+# same size so a service cannot grow past its limit. Nothing here is a product
+# behavior change.
+
+x-cap: &cap
+  memswap_limit: 128m
+
+services:
+  db:
+    mem_limit: 640m
+    memswap_limit: 640m
+  db-init:
+    mem_limit: 96m
+    memswap_limit: 96m
+  auth:
+    mem_limit: 192m
+    memswap_limit: 192m
+  rest:
+    mem_limit: 160m
+    memswap_limit: 160m
+  gateway:
+    mem_limit: 96m
+    memswap_limit: 96m
+  supabase-bootstrap:
+    mem_limit: 96m
+    memswap_limit: 96m
+  app:
+    mem_limit: 1280m
+    memswap_limit: 1280m
+    environment:
+      ARIA_E2E: "1"
+
+  odoo-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    mem_limit: 256m
+    memswap_limit: 256m
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=20"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  odoo:
+    image: odoo:19
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      USER: odoo
+      PASSWORD: odoo
+    mem_limit: 1408m
+    memswap_limit: 1408m
+    ports:
+      - "127.0.0.1:8069:8069"
+    volumes:
+      - ./odoo_addons:/mnt/extra-addons:ro
+    command: ["odoo", "--workers=0", "--max-cron-threads=0", "--no-database-list", "-d", "aria_integration", "--db-filter=^aria_integration$", "-i", "aria_recruitment", "--without-demo=all"]
+
+  aria-go:
+    build:
+      context: ./services
+      dockerfile: ../e2e/integration/services.Dockerfile
+    mem_limit: 192m
+    memswap_limit: 192m
+    environment:
+      ARIA_MODE: test
+      ARIA_RECIPIENT_ALLOWLIST: ada@example.test
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # Real ingest. `ingest ready` checks /health. The published port is loopback
+  # only, and the process stays inside the memory cap.
+  ingest:
+    build:
+      context: ./services/ingest
+      dockerfile: Dockerfile
+    mem_limit: 384m
+    memswap_limit: 384m
+    environment:
+      ARIA_INGEST_ADDR: 0.0.0.0:8091
+    command: ["serve"]
+    ports:
+      - "127.0.0.1:8091:8091"
+    healthcheck:
+      test: ["CMD", "ingest", "ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s

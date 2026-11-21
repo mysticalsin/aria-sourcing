@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import {
   Card,
@@ -26,6 +25,10 @@ import {
   toneForOutreachStatus,
   type Tone,
 } from "@/lib/utils";
+import { ChannelPicker } from "@/components/dashboard/channel-picker";
+import { OutreachComposer } from "@/components/dashboard/outreach-composer";
+import type { ChannelId } from "@/lib/channel-catalog";
+import { exactTextDigest } from "@/lib/exact-text";
 import {
   Check,
   X,
@@ -112,7 +115,6 @@ export function OutreachMessageCard({
 
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
-  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
   const [rejecting, setRejecting] = React.useState(false);
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -153,16 +155,14 @@ export function OutreachMessageCard({
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
       return;
     }
-    if (message.channel === "LinkedIn") {
-      // Approving the exact LinkedIn message is the decision to send it.
-      await deliverOnLinkedIn(message);
-      return;
-    }
     toast({
-      title: "Approved: queued for send",
-      description: res.warnings.length
-        ? res.warnings.join(" ")
-        : "Goes live once the agent seat is connected and its sending domain is verified.",
+      title: "Exact text approved",
+      description:
+        message.channel === "LinkedIn"
+          ? "Nothing was sent. Send it from Recruiter, then Mark sent."
+          : res.warnings.length
+            ? res.warnings.join(" ")
+            : "Approved. The email is still waiting for the send step.",
       variant: "success",
     });
   }
@@ -205,14 +205,6 @@ export function OutreachMessageCard({
     } catch {
       toast({ title: "Copy failed", description: "Select the text and copy it manually.", variant: "warning" });
     }
-  }
-
-  const [sendingLinkedIn, setSendingLinkedIn] = React.useState(false);
-  async function handleSendPendingOnLinkedIn() {
-    if (sendingLinkedIn) return;
-    setSendingLinkedIn(true);
-    await deliverOnLinkedIn(message);
-    setSendingLinkedIn(false);
   }
 
   function handleConfirmManualSend() {
@@ -353,6 +345,18 @@ export function OutreachMessageCard({
           />
         </Field>
 
+        <OutreachComposer
+          toName={name}
+          channelLabel={message.channel === "Email" ? "Email" : "Assisted Recruiter InMail"}
+          subject={message.subject}
+          exactText={message.body}
+          digest={exactTextDigest(message.subject, message.body)}
+          dirty={dirty}
+          onApprove={actionable && !approving && !rejecting ? () => void handleApprove() : undefined}
+          onMarkSent={message.channel === "LinkedIn" ? handleConfirmManualSend : undefined}
+        />
+        <ChannelPicker selectedId={message.channel === "Email" ? "email" : ("assisted-inmail" satisfies ChannelId)} />
+
         {/* LinkedIn: approved, not sent yet */}
         {pendingManual && (
           <div className="space-y-3 rounded-2xl bg-tangerine-soft px-3.5 py-3 text-sm text-tangerine ring-1 ring-inset ring-tangerine/20">
@@ -361,22 +365,11 @@ export function OutreachMessageCard({
               <div>
                 <p className="font-semibold">Approved LinkedIn message, not sent yet</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Send it from your LinkedIn now. If you already sent it yourself (copy-paste), record it instead.
+                  Send it yourself in Recruiter. If you already sent it, record that here. Aria does not contact LinkedIn.
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={<Linkedin className="h-4 w-4" />}
-                onClick={handleSendPendingOnLinkedIn}
-                loading={sendingLinkedIn}
-                disabled={sendingLinkedIn || !candidate?.linkedinUrl}
-                data-send-on-linkedin
-              >
-                {sendingLinkedIn ? "Sending…" : "Send on LinkedIn"}
-              </Button>
               {candidate?.linkedinUrl && (
                 <Link
                   href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
@@ -424,7 +417,7 @@ export function OutreachMessageCard({
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
-            {approvedPendingSend && (
+            {approvedPendingSend && message.channel !== "LinkedIn" && (
               <Button size="sm" disabled={sending} onClick={handleSend}>
                 <Send className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                 {sending ? "Sending…" : "Send now"}
@@ -456,27 +449,15 @@ export function OutreachMessageCard({
             </Button>
           )}
           {actionable && (
-            <>
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={<Check className="h-4 w-4" />}
-                onClick={handleApprove}
-                loading={approving}
-                disabled={approving || rejecting}
-              >
-                {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<X className="h-4 w-4" />}
-                onClick={handleReject}
-                disabled={approving || rejecting}
-              >
-                {rejecting ? "Revoking…" : "Reject"}
-              </Button>
-            </>
+            <Button
+              size="sm"
+              variant="ghost"
+              leftIcon={<X className="h-4 w-4" />}
+              onClick={handleReject}
+              disabled={approving || rejecting}
+            >
+              {rejecting ? "Revoking…" : "Reject"}
+            </Button>
           )}
           {(actionable || rejected) && (
             <Button

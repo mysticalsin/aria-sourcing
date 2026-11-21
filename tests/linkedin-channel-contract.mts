@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
-  getLinkedInAdapter,
   linkedInAdapterForProvider,
   linkedInBackendForProvider,
 } from "../src/lib/linkedin-channel";
@@ -69,50 +68,17 @@ ok(
     /public\.record_linkedin_delivery_outcome\(uuid,uuid,text,text,text\)'\s*,\s*'service_role'/i.test(priv),
 );
 ok(
-  "dispatcher routes LinkedIn through the adapter claim before backend delivery",
+  "dispatcher refuses the LinkedIn channel before any claim or delivery",
   dispatch.indexOf('msg.channel === "LinkedIn"') >= 0 &&
-    dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("await adapter.deliver") > dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    dispatch.indexOf('rpc("record_linkedin_delivery_outcome"') > dispatch.indexOf("await adapter.deliver"),
+    dispatch.indexOf("linkedin-channel-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    dispatch.indexOf("linkedin-delivery-refused") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
+    !dispatch.includes("adapter.deliver") &&
+    !dispatch.includes("claim_linkedin_outbound_queued"),
 );
-ok(
-  "dispatcher fails dark vendor credentials before claim or delivery",
-  dispatch.indexOf("!adapter.configured()") > dispatch.indexOf('msg.channel === "LinkedIn"') &&
-    dispatch.indexOf("!adapter.configured()") < dispatch.indexOf('rpc("claim_linkedin_outbound_queued"') &&
-    /linkedin-provider-unconfigured/.test(dispatch),
-);
-ok("adapter maps assisted-manual by provider", linkedInBackendForProvider("LinkedIn Assisted Manual") === "assisted-manual");
-ok("adapter maps vendor-api by provider", linkedInBackendForProvider("LinkedIn Vendor API") === "vendor-api");
+ok("every LinkedIn provider is refused", linkedInBackendForProvider("LinkedIn Assisted Manual") === null);
+ok("a vendor-named provider is refused", linkedInBackendForProvider("LinkedIn Vendor API") === null);
 ok("unknown provider has no adapter", linkedInAdapterForProvider("LinkedIn Bot Fleet") === null);
-
-const originalUrl = process.env.LINKEDIN_VENDOR_API_URL;
-const originalKey = process.env.LINKEDIN_VENDOR_API_KEY;
-delete process.env.LINKEDIN_VENDOR_API_URL;
-delete process.env.LINKEDIN_VENDOR_API_KEY;
-try {
-  const vendor = getLinkedInAdapter("vendor-api");
-  ok("vendor adapter reports unconfigured without credentials", vendor.configured() === false);
-  const result = await vendor.deliver({
-    workspaceId: "ws-1",
-    messageId: "m-1",
-    candidateId: "cand-1",
-    profileUrl: "https://www.linkedin.com/in/marco-rossi",
-    subject: "Quick note",
-    body: "Hello",
-    attemptId: "11111111-1111-4111-8111-111111111111",
-  });
-  ok(
-    "vendor adapter fails closed without credentials",
-    result.status === "error" &&
-      result.deliveryState === "not-sent" &&
-      /not set/i.test(result.detail),
-  );
-} finally {
-  if (originalUrl === undefined) delete process.env.LINKEDIN_VENDOR_API_URL;
-  else process.env.LINKEDIN_VENDOR_API_URL = originalUrl;
-  if (originalKey === undefined) delete process.env.LINKEDIN_VENDOR_API_KEY;
-  else process.env.LINKEDIN_VENDOR_API_KEY = originalKey;
-}
+ok("assisted-manual name has no adapter", linkedInAdapterForProvider("LinkedIn Assisted Manual") === null);
 
 console.log(`RESULT linkedin-channel-contract: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

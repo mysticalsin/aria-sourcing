@@ -1,0 +1,16 @@
+[package]
+name = "aria-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "p95 scoring benchmark for the 500-candidate synthetic batch"
+
+[[bin]]
+name = "aria-p95"
+path = "src/main.rs"
+
+[dependencies]
+aria-scoring.workspace = true
+serde.workspace = true
+serde_json.workspace = true

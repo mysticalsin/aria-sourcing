@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -23,16 +22,18 @@ import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
 import { GlassBoxPanel } from "@/components/outreach/glass-box-panel";
+import { useApprovalCommands, useApprovalQueue } from "@/features/approvals/hooks";
+import { initialApprovalBatch, reduceApprovalBatch } from "@/features/approvals/machine";
+import { useOutreachCommands, useOutreachQueueData } from "@/features/outreach/hooks";
+import { initialOutreachQueue, reduceOutreachQueue } from "@/features/outreach/machine";
+import { filterByCampaign } from "@/features/outreach/selectors";
 import {
   useHydrated,
   useCampaigns,
-  usePendingApprovals,
-  useOutreach,
   useActiveCampaign,
   useSettings,
   useFollowUpsDue,
   useCandidate,
-  useActions,
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
@@ -206,13 +207,13 @@ function StatTile({
  *  straight into the approval queue above. Never sends. */
 function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
   const candidate = useCandidate(item.candidateId);
-  const actions = useActions();
+  const outreachCommands = useOutreachCommands();
   const { toast } = useToast();
   const [drafting, setDrafting] = React.useState(false);
 
   async function handleDraft() {
     setDrafting(true);
-    const msg = await actions.draftFollowUpFor(item.candidateId);
+    const msg = await outreachCommands.draftFollowUpFor(item.candidateId);
     setDrafting(false);
     if (!msg) {
       toast({ title: "Could not draft the follow-up", variant: "error" });
@@ -251,64 +252,64 @@ function FollowUpDueRow({ item }: { item: FollowUpDueItem }) {
 function OutreachView() {
   const hydrated = useHydrated();
   const campaigns = useCampaigns();
-  const pending = usePendingApprovals();
-  const allOutreach = useOutreach();
+  const pending = useApprovalQueue();
+  const allOutreach = useOutreachQueueData().messages;
   const activeCampaign = useActiveCampaign();
   const settings = useSettings();
   const followUpsDue = useFollowUpsDue();
-  const actions = useActions();
+  const outreachCommands = useOutreachCommands();
+  const approvalCommands = useApprovalCommands();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const campaignParam = searchParams.get("campaign");
 
-  const [campaignFilter, setCampaignFilter] = React.useState<string>(campaignParam ?? "all");
-  const [sentOpen, setSentOpen] = React.useState(false);
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [approvingAll, setApprovingAll] = React.useState(false);
-  const [draftingAllDue, setDraftingAllDue] = React.useState(false);
-  const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
+  const [queue, dispatchQueue] = React.useReducer(
+    reduceOutreachQueue,
+    campaignParam ?? "all",
+    initialOutreachQueue,
+  );
+  const [batch, dispatchBatch] = React.useReducer(reduceApprovalBatch, undefined, initialApprovalBatch);
+  const { campaignFilter, sentOpen, draftingAll: draftingAllDue, draftProgress: draftAllProgress, glassBoxId, expandedId, composerOpen } = queue;
+  const approvingAll = batch.approving;
+  const selectedIds = React.useMemo(() => new Set(batch.selectedIds), [batch.selectedIds]);
   const followUpAbortRef = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => followUpAbortRef.current?.abort(), []);
   // Which pending draft (if any) has its glass-box guardrail detail expanded.
   // Collapsed by default so the queue doesn't render every candidate's radar
   // + claim map at once; the panel is one click away for every draft.
-  const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
-  // One pending draft unfolded at a time; the composer lives in a drawer.
-  const [expandedId, setExpandedId] = React.useState<string | null>(null);
-  const [composerOpen, setComposerOpen] = React.useState(false);
-
   function toggleGlassBox(messageId: string) {
-    setGlassBoxId((prev) => (prev === messageId ? null : messageId));
+    dispatchQueue({ type: "toggle-glass", id: messageId });
   }
 
-  const matches = React.useCallback(
-    (campaignId: string) => campaignFilter === "all" || campaignId === campaignFilter,
-    [campaignFilter],
+  const pendingFiltered = filterByCampaign(pending, campaignFilter);
+  const pendingManualFiltered = filterByCampaign(
+    allOutreach.filter((m) => m.status === "Pending Manual Send"),
+    campaignFilter,
   );
-
-  const pendingFiltered = pending.filter((m) => matches(m.campaignId));
-  const pendingManualFiltered = allOutreach
-    .filter((m) => m.status === "Pending Manual Send")
-    .filter((m) => matches(m.campaignId));
-  const scheduledFiltered = allOutreach
-    .filter((m) => m.status === "Scheduled")
-    .filter((m) => matches(m.campaignId));
-  const followUpsDueFiltered = followUpsDue.filter((f) => matches(f.campaignId));
+  const scheduledFiltered = filterByCampaign(
+    allOutreach.filter((m) => m.status === "Scheduled"),
+    campaignFilter,
+  );
+  const followUpsDueFiltered = filterByCampaign(followUpsDue, campaignFilter);
 
   const selectedInView = pendingFiltered.filter((m) => selectedIds.has(m.id));
   const allPendingSelected = pendingFiltered.length > 0 && selectedInView.length === pendingFiltered.length;
+  const openedDraft = React.useRef(false);
+  React.useEffect(() => {
+    if (openedDraft.current || expandedId || pendingFiltered.length === 0) return;
+    openedDraft.current = true;
+    dispatchQueue({ type: "toggle-expanded", id: pendingFiltered[0].id });
+  }, [expandedId, pendingFiltered]);
 
   function toggleSelect(messageId: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(messageId)) next.delete(messageId);
-      else next.add(messageId);
-      return next;
-    });
+    dispatchBatch({ type: "toggle", id: messageId });
   }
 
   function toggleSelectAll() {
-    setSelectedIds(allPendingSelected ? new Set() : new Set(pendingFiltered.map((m) => m.id)));
+    dispatchBatch({
+      type: "replace",
+      ids: allPendingSelected ? [] : pendingFiltered.map((message) => message.id),
+    });
   }
 
   /** Bulk approve: routes every selected draft through the SAME gated
@@ -316,29 +317,19 @@ function OutreachView() {
    *  checkOutreachApproval internally) — never flips status directly, never
    *  bypasses a blocker, and never sends. Blocked drafts simply stay in the
    *  queue and get counted, matching the single-approve failure path. */
-  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
-
   async function handleBulkApprove() {
     if (approvingAll) return;
     const ids = selectedInView.map((m) => m.id);
     if (ids.length === 0) return;
-    setApprovingAll(true);
+    dispatchBatch({ type: "begin" });
     let approved = 0;
     let blocked = 0;
     let simulated = 0;
-    let linkedInHeld = 0;
     const blockers = new Set<string>();
     const blockedIds = new Set<string>();
     try {
       for (const id of ids) {
-        const res = await actions.approveOutreach(id);
-        const approvedMessage = res.allowed && !res.dryRun ? selectedInView.find((m) => m.id === id) : undefined;
-        if (approvedMessage?.channel === "LinkedIn") {
-          // Approving a LinkedIn message sends it (paced by the server); a
-          // failure leaves it in Pending manual send.
-          const sent = await deliverOnLinkedIn(approvedMessage, { quiet: true });
-          if (!sent.ok) linkedInHeld += 1;
-        }
+        const res = await approvalCommands.approveOutreach(id);
         if (res.dryRun) {
           simulated += 1;
           blockedIds.add(id);
@@ -352,7 +343,7 @@ function OutreachView() {
       }
       // Keep every unapproved draft selected so the operator can correct it
       // rather than silently losing the selection after a partial failure.
-      setSelectedIds(blockedIds);
+      dispatchBatch({ type: "finish", blockedIds: [...blockedIds] });
       toast({
         title: simulated > 0
           ? `Approved ${approved}, simulated ${simulated}, blocked ${blocked}`
@@ -362,12 +353,11 @@ function OutreachView() {
         description:
           (blocked > 0 || simulated > 0
             ? `Unchanged drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
-            : "Queued for send per the usual approval flow.") +
-          (linkedInHeld > 0 ? ` ${linkedInHeld} LinkedIn message(s) could not be sent and wait in Pending manual send.` : ""),
+            : "Queued for send per the usual approval flow. LinkedIn messages stay unsent until you send them in Recruiter."),
         variant: blocked > 0 || simulated > 0 ? "warning" : "success",
       });
     } finally {
-      setApprovingAll(false);
+      dispatchBatch({ type: "end" });
     }
   }
 
@@ -382,23 +372,22 @@ function OutreachView() {
     const items = followUpsDueFiltered;
     if (items.length === 0) return;
 
-    const plan = followUpPlan(items, (candidateId) => actions.draftFollowUpFor(candidateId));
+    const plan = followUpPlan(items, (candidateId) => outreachCommands.draftFollowUpFor(candidateId));
     const runs = plan.steps[0]?.fanOut?.({}).length ?? 0;
     followUpAbortRef.current?.abort();
     const controller = new AbortController();
     followUpAbortRef.current = controller;
-    setDraftingAllDue(true);
-    setDraftAllProgress({ done: 0, total: runs });
+    dispatchQueue({ type: "draft-start", total: runs });
     let finished = 0;
     const report = await runMission(plan, {
       concurrency: 3,
       signal: controller.signal,
       onEvent: (event) => {
-        if (event.type === "agent_finished") setDraftAllProgress({ done: ++finished, total: runs });
+        if (event.type === "agent_finished") dispatchQueue({ type: "draft-progress", done: ++finished, total: runs });
       },
     });
     if (controller.signal.aborted) return;
-    setDraftingAllDue(false);
+    dispatchQueue({ type: "draft-finish" });
 
     const messages = (report.results["follow-ups"] as OutreachMessage[] | undefined) ?? [];
     const drafted = messages.length;
@@ -420,6 +409,24 @@ function OutreachView() {
     });
   }
 
+  async function sendToReviewSink() {
+    const message = pendingFiltered[0] ?? allOutreach[0];
+    if (!message) return;
+    await fetch("/api/outreach/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messageId: message.id,
+        candidateId: message.candidateId,
+        campaignId: message.campaignId,
+        subject: message.subject || "Synthetic note",
+        body: message.body || "Synthetic exact text.",
+        channel: "Email",
+        confirmLive: false,
+      }),
+    });
+  }
+
   const meterCampaign =
     campaignFilter === "all"
       ? activeCampaign
@@ -435,7 +442,7 @@ function OutreachView() {
       <PageHeader
         eyebrow="Engage"
         title="Outreach"
-        description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
+        description="Every message is drafted by the system and held here for your sign-off. Delivery mode: Manual. Automatic send stays blocked until a QC pass matches the exact text."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <label
@@ -447,21 +454,26 @@ function OutreachView() {
             <Select
               id="outreach-campaign-filter"
               value={campaignFilter}
-              onChange={(e) => setCampaignFilter(e.target.value)}
+              onChange={(e) => dispatchQueue({ type: "set-campaign", campaignId: e.target.value })}
               options={campaignOptions}
               aria-label="Filter outreach by campaign"
               className="w-56"
             />
-            <Button variant="outline" leftIcon={<PenLine className="h-4 w-4" aria-hidden />} onClick={() => setComposerOpen(true)}>
+            <Button variant="outline" leftIcon={<PenLine className="h-4 w-4" aria-hidden />} onClick={() => dispatchQueue({ type: "set-composer", open: true })}>
               New message
             </Button>
+            {settings.dryRunMode && (
+              <Button type="button" variant="outline" onClick={() => void sendToReviewSink()}>
+                Send
+              </Button>
+            )}
           </div>
         }
       />
 
       <Drawer
         open={composerOpen}
-        onClose={() => setComposerOpen(false)}
+        onClose={() => dispatchQueue({ type: "set-composer", open: false })}
         title="New message"
         description="Draft a one-off message. It joins the approval queue like every other draft."
       >
@@ -513,18 +525,20 @@ function OutreachView() {
                       />
                       Select all
                     </label>
+                    {selectedInView.length > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
                       leftIcon={<CheckCheck className="h-3.5 w-3.5" aria-hidden />}
                       onClick={handleBulkApprove}
                       loading={approvingAll}
-                      disabled={selectedInView.length === 0 || approvingAll}
+                      disabled={approvingAll}
                     >
                       {approvingAll
                         ? "Recording approvals…"
                         : `Approve selected${selectedInView.length > 0 ? ` (${selectedInView.length})` : ""}`}
                     </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -550,7 +564,7 @@ function OutreachView() {
                       key={m.id}
                       message={m}
                       expanded={expandedId === m.id}
-                      onToggle={() => setExpandedId((prev) => (prev === m.id ? null : m.id))}
+                      onToggle={() => dispatchQueue({ type: "toggle-expanded", id: m.id })}
                       selected={selectedIds.has(m.id)}
                       onToggleSelect={toggleSelect}
                       glassBoxOpen={glassBoxId === m.id}
@@ -638,7 +652,7 @@ function OutreachView() {
             <section className="space-y-4">
               <button
                 type="button"
-                onClick={() => setSentOpen((o) => !o)}
+                onClick={() => dispatchQueue({ type: "toggle-sent" })}
                 aria-expanded={sentOpen}
                 className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-5 py-4 text-left transition hover:bg-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
               >

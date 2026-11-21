@@ -61,8 +61,8 @@ const nextConfig = {
       "default-src 'self'",
       scriptSrc,
       "style-src 'self' 'unsafe-inline'",
-      // Sourced candidates' LinkedIn photos (see src/lib/candidate-photo.ts).
-      "img-src 'self' data: blob: https://media.licdn.com",
+      // Candidate photos are not loaded from a third party (initials only).
+      "img-src 'self' data: blob:",
       "font-src 'self' data:",
       // Login hero background video (CloudFront).
       "media-src 'self' blob: https://d8j0ntlcm91z4.cloudfront.net",

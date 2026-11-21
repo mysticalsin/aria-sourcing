@@ -1,0 +1,124 @@
+{
+  "spec_version": 1,
+  "guard_definitions": {
+    "contract_attached && dna_integrated": {
+      "expression": "contract_attached && dna_integrated",
+      "all": ["contract_attached", "dna_integrated"],
+      "dna_passing_statuses": ["integrated", "complete"],
+      "contract_attached": "The applicant has an ir.attachment with aria_document_kind = contract.",
+      "dna_integrated": "DnaAdapter.integration_status returns integrated or complete. The built-in adapter is fake and does not call a network."
+    }
+  },
+  "stages": [
+    {
+      "key": "to_rate",
+      "name": "To Rate",
+      "order": 1,
+      "sequence": 10,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "to_assess"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "to_assess",
+      "name": "To Assess",
+      "order": 2,
+      "sequence": 20,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "to_rate"},
+        {"to": "to_interview"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "to_interview",
+      "name": "To Interview",
+      "order": 3,
+      "sequence": 30,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "to_assess"},
+        {"to": "shoot"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "shoot",
+      "name": "Shoot",
+      "order": 4,
+      "sequence": 40,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "to_interview"},
+        {"to": "qm"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "qm",
+      "name": "QM",
+      "order": 5,
+      "sequence": 50,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "shoot"},
+        {"to": "to_hire"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "to_hire",
+      "name": "To Hire",
+      "order": 6,
+      "sequence": 60,
+      "terminal": false,
+      "hired": false,
+      "transitions": [
+        {"to": "qm"},
+        {"to": "hired", "guard": "contract_attached && dna_integrated"},
+        {"to": "rejected"},
+        {"to": "withdrawn"}
+      ]
+    },
+    {
+      "key": "hired",
+      "name": "Hired",
+      "order": 7,
+      "sequence": 70,
+      "terminal": true,
+      "hired": true,
+      "transitions": []
+    },
+    {
+      "key": "rejected",
+      "name": "Rejected",
+      "order": 8,
+      "sequence": 80,
+      "terminal": true,
+      "hired": false,
+      "transitions": []
+    },
+    {
+      "key": "withdrawn",
+      "name": "Withdrawn",
+      "order": 9,
+      "sequence": 90,
+      "terminal": true,
+      "hired": false,
+      "transitions": []
+    }
+  ]
+}

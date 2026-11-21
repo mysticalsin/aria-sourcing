@@ -18,7 +18,15 @@ import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer, isCandidateTab } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
+import { CvUploadButton } from "@/components/candidates/cv-upload";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
+import { usePipelineCommands } from "@/features/pipeline/hooks";
+import {
+  filterPipelineCandidates,
+  initialPipelineList,
+  reducePipelineList,
+  type CandidateSort,
+} from "@/features/pipeline/machine";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { corpusServerReadEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
@@ -55,10 +63,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "50", label: "50 / page" },
   { value: "100", label: "100 / page" },
 ];
-const DEFAULT_PAGE_SIZE = 50;
-
-type CandidateSort = "match" | "recent";
-
 interface ServerCandidatesState {
   candidates: Candidate[];
   total: number;
@@ -131,15 +135,12 @@ function useServerCandidates({
   return state;
 }
 
-function lastActivityIso(c: Candidate): number {
-  return new Date(c.lastContactedAt ?? c.createdAt).getTime();
-}
-
 /** Reads `?focus=<id>` to auto-open a drawer. Must live under a Suspense boundary. */
 function CandidatesView() {
   const hydrated = useHydrated();
   const candidates = useCandidates();
   const actions = useActions();
+  const pipeline = usePipelineCommands();
   const activeCampaign = useActiveCampaign();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -149,17 +150,11 @@ function CandidatesView() {
   const focusTab = isCandidateTab(focusTabParam) ? focusTabParam : "overview";
   const serverPreview = corpusServerReadEnabled;
 
-  const [query, setQuery] = React.useState("");
-  const [sort, setSort] = React.useState<CandidateSort>("match");
-  const [stage, setStage] = React.useState("all");
-  const [source, setSource] = React.useState("all");
+  const [list, dispatchList] = React.useReducer(reducePipelineList, undefined, initialPipelineList);
+  const { query, sort, stage, source, page, pageSize, bulkStage, bulkReason } = list;
+  const selectedIds = React.useMemo(() => new Set(list.selectedIds), [list.selectedIds]);
   const [selected, setSelected] = React.useState<Candidate | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [bulkStage, setBulkStage] = React.useState<CandidateStage | "">("");
-  const [bulkReason, setBulkReason] = React.useState("");
-  const [page, setPage] = React.useState(0);
-  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [sourcing, setSourcing] = React.useState(false);
   const [draftingOutreach, setDraftingOutreach] = React.useState(false);
   const [draftProgress, setDraftProgress] = React.useState({ done: 0, total: 0 });
@@ -183,30 +178,10 @@ function CandidatesView() {
     }
   }, [hydrated, focus, candidates]);
 
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const result = candidates.filter((c) => {
-      if (stage !== "all" && c.stage !== stage) return false;
-      if (source !== "all" && c.sourcePlatform !== source) return false;
-      if (!q) return true;
-      return (
-        c.name.toLowerCase().includes(q) ||
-        c.currentTitle.toLowerCase().includes(q) ||
-        c.currentCompany.toLowerCase().includes(q)
-      );
-    });
-    result.sort((a, b) =>
-      sort === "match" ? b.matchScore - a.matchScore : lastActivityIso(b) - lastActivityIso(a),
-    );
-    return result;
-  }, [candidates, query, stage, source, sort]);
-
-  // Reset to page 1 whenever the result set could reshuffle out from under the
-  // current page (filter/sort change or a bigger page size) — never leave the
-  // user staring at a page that's now past the end.
-  React.useEffect(() => {
-    setPage(0);
-  }, [query, stage, source, sort, pageSize]);
+  const filtered = React.useMemo(
+    () => filterPipelineCandidates(candidates, { query, sort, stage, source }),
+    [candidates, query, sort, stage, source],
+  );
 
   const localTotalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const localClampedPage = Math.min(page, localTotalPages - 1);
@@ -232,7 +207,7 @@ function CandidatesView() {
   );
 
   React.useEffect(() => {
-    if (page !== clampedPage) setPage(clampedPage);
+    if (page !== clampedPage) dispatchList({ type: "clamp-page", page: clampedPage });
   }, [page, clampedPage]);
 
   const stageOptions = [
@@ -249,9 +224,7 @@ function CandidatesView() {
   const [filtersOpen, setFiltersOpen] = React.useState(false);
 
   function clearFilters() {
-    setQuery("");
-    setStage("all");
-    setSource("all");
+    dispatchList({ type: "clear-filters" });
   }
 
   // Filtering can drop selected rows out of view (e.g. move a stage filter
@@ -263,12 +236,7 @@ function CandidatesView() {
   );
 
   function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    dispatchList({ type: "toggle-select", id });
   }
 
   // Selects the current PAGE (standard pagination convention), not every
@@ -276,17 +244,15 @@ function CandidatesView() {
   function toggleSelectAll() {
     if (serverPreview) return;
     const allPageSelected = paged.length > 0 && paged.every((c) => visibleSelectedIds.has(c.id));
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      paged.forEach((c) => (allPageSelected ? next.delete(c.id) : next.add(c.id)));
-      return next;
+    dispatchList({
+      type: "select-page",
+      ids: paged.map((candidate) => candidate.id),
+      mode: allPageSelected ? "remove" : "add",
     });
   }
 
   function clearSelection() {
-    setSelectedIds(new Set());
-    setBulkStage("");
-    setBulkReason("");
+    dispatchList({ type: "clear-selection" });
   }
 
   /** Sources the active campaign's next batch via the SAME unchanged
@@ -334,9 +300,9 @@ function CandidatesView() {
     const ids = Array.from(visibleSelectedIds);
     if (ids.length === 0) return;
     ids.forEach((id) => {
-      actions.setCandidateStage(id, bulkStage);
+      pipeline.setCandidateStage(id, bulkStage as CandidateStage);
       if (bulkStage === "Rejected" && bulkReason.trim()) {
-        actions.setRejectionReason(id, bulkReason.trim());
+        pipeline.setRejectionReason(id, bulkReason.trim());
       }
     });
     toast({
@@ -391,7 +357,7 @@ function CandidatesView() {
       toast({ title: "Selected candidates are already in the talent pool", variant: "info" });
       return;
     }
-    ids.forEach((id) => actions.toggleVivier(id));
+    ids.forEach((id) => pipeline.toggleVivier(id));
     toast({ title: `Added ${pluralize(ids.length, "candidate")} to the talent pool`, variant: "success" });
     clearSelection();
   }
@@ -434,7 +400,7 @@ function CandidatesView() {
             className="pl-10"
             placeholder="Search name, title, company"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => dispatchList({ type: "set-query", query: e.target.value })}
           />
         </div>
         {/* On a phone the list comes first: sort and filters fold away. */}
@@ -459,7 +425,7 @@ function CandidatesView() {
             className="sm:w-40"
             options={SORT_OPTIONS}
             value={sort}
-            onChange={(e) => setSort(e.target.value === "recent" ? "recent" : "match")}
+            onChange={(e) => dispatchList({ type: "set-sort", sort: e.target.value === "recent" ? "recent" : "match" })}
           />
           <Select
             id="candidate-stage"
@@ -467,7 +433,7 @@ function CandidatesView() {
             className="sm:w-40"
             options={stageOptions}
             value={stage}
-            onChange={(e) => setStage(e.target.value)}
+            onChange={(e) => dispatchList({ type: "set-stage", stage: e.target.value })}
           />
           <Select
             id="candidate-source"
@@ -475,7 +441,7 @@ function CandidatesView() {
             className="sm:w-40"
             options={sourceOptions}
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => dispatchList({ type: "set-source", source: e.target.value })}
           />
         </div>
         <Button
@@ -528,7 +494,7 @@ function CandidatesView() {
               className="w-48"
               options={[{ value: "", label: "Move to stage…" }, ...BULK_STAGE_OPTIONS]}
               value={bulkStage}
-              onChange={(e) => setBulkStage(e.target.value as CandidateStage | "")}
+              onChange={(e) => dispatchList({ type: "set-bulk-stage", stage: e.target.value })}
             />
             {bulkStage === "Rejected" && (
               <Input
@@ -536,7 +502,7 @@ function CandidatesView() {
                 className="w-64"
                 placeholder="Shared rejection reason (optional)"
                 value={bulkReason}
-                onChange={(e) => setBulkReason(e.target.value)}
+                onChange={(e) => dispatchList({ type: "set-bulk-reason", reason: e.target.value })}
               />
             )}
             <Button
@@ -616,7 +582,7 @@ function CandidatesView() {
             className="w-36"
             options={PAGE_SIZE_OPTIONS}
             value={String(pageSize)}
-            onChange={(e) => setPageSize(Number(e.target.value))}
+            onChange={(e) => dispatchList({ type: "set-page-size", pageSize: Number(e.target.value) })}
           />
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted tabular-nums">
@@ -625,7 +591,7 @@ function CandidatesView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => dispatchList({ type: "set-page", page: Math.max(0, page - 1) })}
               disabled={clampedPage === 0}
             >
               Prev
@@ -633,7 +599,7 @@ function CandidatesView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => dispatchList({ type: "set-page", page: Math.min(totalPages - 1, page + 1) })}
               disabled={clampedPage >= totalPages - 1}
             >
               Next
@@ -661,7 +627,12 @@ export default function CandidatesPage() {
         eyebrow="Recruit"
         title="Candidates"
         description="Every sourced candidate, ranked by fit. Open a profile to score, message or book."
-        actions={<AddCandidateButton />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <CvUploadButton />
+            <AddCandidateButton />
+          </div>
+        }
       />
       <React.Suspense
         fallback={

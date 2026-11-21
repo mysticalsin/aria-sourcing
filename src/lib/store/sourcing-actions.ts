@@ -89,12 +89,16 @@ export interface SourcingActionDependencies {
 const MAX_SOURCE_COUNT = 20;
 const SYNTHETIC_PLATFORMS = new Set<SourcePlatform>(["Referral", "Talent Pool"]);
 const DEDICATED_PLATFORMS = new Set<SourcePlatform>(["Manual"]);
-const WEB_HOSTS: Record<WebSearchPlatform, string> = {
-  LinkedIn: "linkedin.com",
+const WEB_HOSTS: Record<Exclude<WebSearchPlatform, "LinkedIn">, string> = {
   "Stack Overflow": "stackoverflow.com",
   Dribbble: "dribbble.com",
   Behance: "behance.net",
 };
+
+function webSearchHost(platform: WebSearchPlatform): string | null {
+  if (platform === "LinkedIn") return null;
+  return WEB_HOSTS[platform];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,6 +205,12 @@ function isValidEmail(value: string): boolean {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) &&
     !/[\u0000-\u001f\u007f]/.test(value)
   );
+}
+
+/** Operator-typed demo people use the example.test domain. A real address stays closed. */
+function syntheticDemoEmail(email: string): boolean {
+  const at = email.lastIndexOf("@");
+  return at > 0 && email.slice(at + 1) === "example.test";
 }
 
 function normalizeGithubLogin(value: unknown): string | null {
@@ -373,7 +383,8 @@ function sanitizeWebLeads(
     const name = optionalString(item.name, 200);
     const title = optionalString(item.title, 300);
     const company = optionalString(item.company, 200);
-    const url = safeHttpsUrl(item.url, WEB_HOSTS[platform]);
+    const host = webSearchHost(platform);
+    const url = host ? safeHttpsUrl(item.url, host) : null;
     const snippet = optionalString(item.snippet, 1_000);
     if (
       !name ||
@@ -612,6 +623,9 @@ export function createSourcingActions({
     );
     if (!isSourcePlatform(requestedPlatform)) {
       return invalidRequest("Unsupported sourcing platform.");
+    }
+    if (requestedPlatform === "LinkedIn") {
+      return invalidRequest("LinkedIn web search is disabled.");
     }
     const count = opts?.count ?? 6;
     const maxCount = demoSourcing ? MAX_SOURCE_COUNT : 8;
@@ -1011,9 +1025,13 @@ export function createSourcingActions({
     campaignId,
     input,
   ) => {
-    if (!candidatePersistenceAllowed("manual")) {
+    const preview = sanitizeManualCandidateInput(input);
+    const handTypedSynthetic = Boolean(preview && syntheticDemoEmail(preview.email));
+    const manualClosed = !candidatePersistenceAllowed("manual");
+    if (manualClosed && !(handTypedSynthetic && candidatePersistenceAllowed("synthetic"))) {
       return { ok: false, error: "Manual candidate intake requires a live workspace." };
     }
+    const recordAsSynthetic = manualClosed && handTypedSynthetic;
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before adding a candidate." };
     }
@@ -1072,7 +1090,7 @@ export function createSourcingActions({
         suppressedUntil: null,
       },
       createdAt: now,
-      provenance: "manual",
+      provenance: recordAsSynthetic ? "synthetic" : "manual",
       leadSource: "Outbound",
       lawfulBasis: fields.lawfulBasis,
       lawfulBasisRecordedAt: now,
