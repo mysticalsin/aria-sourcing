@@ -61,6 +61,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          # A pull_request checkout is a merge commit. Its first parent is the
+          # base branch, which has no bench. Measure the branch commit against
+          # that commit's own parent, on this runner.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
 
       - name: Setup Rust
@@ -120,7 +124,7 @@ jobs:
           }, indent=2) + "\n")
           print(pathlib.Path("core/bench/ci-measurement.json").read_text())
           PY
-          if git cat-file -e "HEAD^:core/crates/aria-bench/src/main.rs"; then
+          if git rev-parse --verify --quiet HEAD^ >/dev/null && git cat-file -e "HEAD^:core/crates/aria-bench/src/main.rs"; then
             git worktree add --detach /tmp/aria-parent HEAD^
             mkdir -p /tmp/parent-bench
             measure /tmp/aria-parent/core/Cargo.toml /tmp/parent-bench
