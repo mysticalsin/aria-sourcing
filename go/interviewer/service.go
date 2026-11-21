@@ -107,9 +107,13 @@ func (s *Service) RequestScreening(ctx context.Context, c Candidate, n Need) (Ha
 	if err := ValidateBaseURL(s.cfg.BaseURL); err != nil {
 		return refused, err
 	}
+	questions := trimmedQuestions(n.RoleQuestions)
+	for i, question := range questions {
+		questions[i] = Redact(question)
+	}
 	payload, err := json.Marshal(screeningRequest{
-		NeedSummary:   strings.TrimSpace(n.Summary),
-		RoleQuestions: trimmedQuestions(n.RoleQuestions),
+		NeedSummary:   Redact(strings.TrimSpace(n.Summary)),
+		RoleQuestions: questions,
 		CandidateID:   c.ID,
 		Language:      c.Language,
 		Consent:       true,

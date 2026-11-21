@@ -69,7 +69,7 @@ func (r remoteScreening) report() (Report, error) {
 		if err != nil {
 			return Report{}, err
 		}
-		scores = append(scores, Score{Name: name, Value: value, Reasoning: src[name].Reasoning})
+		scores = append(scores, Score{Name: name, Value: value, Reasoning: Redact(src[name].Reasoning)})
 	}
 	rec, err := mapRecommendation(r.Recommendation, r.Verdict)
 	if err != nil {
@@ -79,7 +79,8 @@ func (r remoteScreening) report() (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	if len(r.Summary) > maxSummaryLen {
+	summary := Redact(r.Summary)
+	if len(summary) > maxSummaryLen {
 		return Report{}, fmt.Errorf("%w: summary", ErrValidation)
 	}
 	rep := Report{
@@ -87,7 +88,7 @@ func (r remoteScreening) report() (Report, error) {
 		TranscriptRef:  ref,
 		Recommendation: rec,
 		Verdict:        r.Verdict,
-		Summary:        r.Summary,
+		Summary:        summary,
 		Advisory:       true,
 	}
 	if r.Overall != nil {

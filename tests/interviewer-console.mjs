@@ -106,10 +106,21 @@ async function checkBrowser(browserType, name, base, enabled) {
 }
 
 async function scenario(enabled, port) {
-  const child = startNext(port, enabled);
   const base = `http://127.0.0.1:${port}`;
+  let child = startNext(port, enabled);
   try {
-    await waitForHttp(`${base}/interviewer`, child);
+    try {
+      await waitForHttp(`${base}/interviewer`, child);
+    } catch (error) {
+      const log = child.log();
+      await stop(child);
+      if (!/Retry the same command/i.test(log)) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`${detail}\n${log}`);
+      }
+      child = startNext(port, enabled);
+      await waitForHttp(`${base}/interviewer`, child);
+    }
     for (const [type, name] of [[chromium, "chromium"], [webkit, "webkit"]]) {
       await checkBrowser(type, name, base, enabled);
     }
