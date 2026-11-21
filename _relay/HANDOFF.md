@@ -47,4 +47,6 @@ status: quick-stats port on twa-odoo
 - `src/lib/pipeline.ts` still uses the older column names. `/funnel` shows the processing stages first. The older campaign matrix is behind the "Campaign columns" disclosure.
 - `exactTextDigest` must stay byte-for-byte with `approvalHash`. It does not import `node:crypto`, so the composer can render it.
 - The visual test launches system Chrome, then Playwright's Chromium, and installs Chromium only if both launches fail. Retries are 0.
+- Full-history gitleaks on 2026-11-21 flagged six historical false positives (test MAC, synthetic Odoo idempotency keys, the `linkedinPublicId` identifier). Exact fingerprints are in `.gitleaksignore`. Do not widen the rules.
+- Local Docker acceptance scales `agents` to 0. That service disables its healthcheck, and `compose up --wait` fails when it is included. The base `twa-odoo` CI failed the same way before this port.
 - Do not touch `mbe-*` or `main`. Do not force-push.

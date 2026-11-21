@@ -93,7 +93,9 @@ async function openSession() {
 }
 try {
   started = true;
-  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300"]);
+  // agents disables its image healthcheck (it is not the web server), so
+  // `up --wait` cannot include it. The acceptance flow does not start it.
+  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300", "--scale", "agents=0"]);
   assert.equal((await fetch(baseUrl + "/api/ready")).status, 200);
   assert.equal((await fetch(baseUrl + "/api/setup/status")).status, 401, "Setup details must require authentication.");
   let token = await loginApi(); // Separate seeded-account auth from browser/CSP/cookie failures.
@@ -132,7 +134,7 @@ try {
   assert.equal((await persisted(token)).campaigns.filter((item) => item.id === campaignId).length, 1);
   await browser.close(); browser = undefined;
   compose(["down"]); // Preserve both volumes; this is the restart acceptance.
-  compose(["up", "--detach", "--wait", "--wait-timeout", "300"]);
+  compose(["up", "--detach", "--wait", "--wait-timeout", "300", "--scale", "agents=0"]);
   page = await openSession();
   token = await loginApi();
   const restored = await persisted(token);
