@@ -99,7 +99,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
+          # HEAD, not --all: fetch-depth 0 already has every branch, and --all
+          # fails this PR on fixtures that live only on other open branches.
+          # This still scans the full history of the commit under test.
+          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='HEAD'
 
   database-security:
     name: Database security
