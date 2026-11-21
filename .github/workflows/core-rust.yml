@@ -81,6 +81,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Prove the p95 gate fails on an injected slowdown
+        run: node --test core/scripts/check-p95.test.mjs
+
       - name: Measure head and parent p95 on this runner
         run: |
           set -euo pipefail
