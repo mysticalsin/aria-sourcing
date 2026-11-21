@@ -24,7 +24,7 @@ const server = createServer((req, res) => {
   publish();
   const status = Number(req.headers["x-aria-fake-status"] ?? "200");
   const challenge = req.headers["x-aria-challenge"] === "1";
-  const delay = Number(req.headers["x-aria-delay"] ?? "0");
+  const slow = req.headers["x-aria-delay"] === "5000";
   const hold = req.headers["x-aria-hold"] === "1";
   req.resume();
   if (hold) {
@@ -47,7 +47,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end('{"id":"fake-msg"}');
   };
-  if (delay > 0) setTimeout(respond, delay);
+  if (slow) setTimeout(respond, 5000);
   else respond();
 });
 
