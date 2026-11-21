@@ -93,9 +93,7 @@ async function openSession() {
 }
 try {
   started = true;
-  // agents disables its image healthcheck (it is not the web server), so
-  // `up --wait` cannot include it. The acceptance flow does not start it.
-  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300", "--scale", "agents=0"]);
+  compose(["up", "--build", "--detach", "--wait", "--wait-timeout", "300"]);
   assert.equal((await fetch(baseUrl + "/api/ready")).status, 200);
   assert.equal((await fetch(baseUrl + "/api/setup/status")).status, 401, "Setup details must require authentication.");
   let token = await loginApi(); // Separate seeded-account auth from browser/CSP/cookie failures.
@@ -115,8 +113,10 @@ try {
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
-  await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person");
-  await dialog.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
+  // Both the LinkedIn and Manual panels label a Name field. The inactive panel
+  // stays mounted and hidden, so fill the one that is actually on screen.
+  await dialog.getByLabel("Name", { exact: true }).filter({ visible: true }).fill(marker + " Person");
+  await dialog.getByLabel("Lawful basis", { exact: true }).filter({ visible: true }).selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;
@@ -134,7 +134,7 @@ try {
   assert.equal((await persisted(token)).campaigns.filter((item) => item.id === campaignId).length, 1);
   await browser.close(); browser = undefined;
   compose(["down"]); // Preserve both volumes; this is the restart acceptance.
-  compose(["up", "--detach", "--wait", "--wait-timeout", "300", "--scale", "agents=0"]);
+  compose(["up", "--detach", "--wait", "--wait-timeout", "300"]);
   page = await openSession();
   token = await loginApi();
   const restored = await persisted(token);

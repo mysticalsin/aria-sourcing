@@ -48,5 +48,6 @@ status: quick-stats port on twa-odoo
 - `exactTextDigest` must stay byte-for-byte with `approvalHash`. It does not import `node:crypto`, so the composer can render it.
 - The visual test launches system Chrome, then Playwright's Chromium, and installs Chromium only if both launches fail. Retries are 0.
 - Full-history gitleaks on 2026-11-21 flagged six historical false positives (test MAC, synthetic Odoo idempotency keys, the `linkedinPublicId` identifier). Exact fingerprints are in `.gitleaksignore`. Do not widen the rules.
-- Local Docker acceptance scales `agents` to 0. That service disables its healthcheck, and `compose up --wait` fails when it is included. The base `twa-odoo` CI failed the same way before this port.
+- `agents` keeps a temporary process-alive healthcheck (`process.kill(1,0)`), the same block as the other open PRs. #168 deletes the service. Acceptance does not scale it to 0.
+- The acceptance script fills the visible Manual-tab Name field (`filter({ visible: true })`), the same as PR #172.
 - Do not touch `mbe-*` or `main`. Do not force-push.
