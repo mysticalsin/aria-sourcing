@@ -164,6 +164,77 @@ class HrApplicant(models.Model):
         for applicant in applicants:
             applicant._aria_audit_gdpr('opt-out recorded')
 
+    def _aria_blocks_outreach(self):
+        """Return a fixed reason when this person must not be contacted."""
+        self.ensure_one()
+        if self.aria_erased:
+            return 'outreach blocked: personal data was erased'
+        if self.aria_opt_out:
+            return 'outreach blocked by opt-out'
+        if self._aria_is_hired_outcome():
+            return 'outreach blocked: applicant is hired'
+        return False
+
+    def _aria_refuse_outreach(self):
+        for applicant in self:
+            reason = applicant._aria_blocks_outreach()
+            if not reason:
+                continue
+            applicant._aria_audit_gdpr(reason, result='refused')
+            raise UserError(reason)
+        return False
+
+    def _aria_message_is_outbound(self, values):
+        """True when this post would leave the database as mail to the person."""
+        message_type = values.get('message_type') or 'notification'
+        if message_type in ('email', 'email_outgoing'):
+            return True
+        subtype_xmlid = values.get('subtype_xmlid')
+        if subtype_xmlid == 'mail.mt_note':
+            return False
+        if subtype_xmlid == 'mail.mt_comment':
+            return True
+        subtype_id = values.get('subtype_id')
+        if subtype_id:
+            comment = self.env.ref('mail.mt_comment', raise_if_not_found=False)
+            note = self.env.ref('mail.mt_note', raise_if_not_found=False)
+            if note and subtype_id == note.id:
+                return False
+            if comment and subtype_id == comment.id:
+                return True
+        return bool(values.get('partner_ids')) and message_type == 'comment'
+
+    def _aria_redact_chatter(self):
+        """Replace stored messages with a stub that has no personal data."""
+        self.ensure_one()
+        messages = self.env['mail.message'].sudo().search([
+            ('model', '=', 'hr.applicant'),
+            ('res_id', '=', self.id),
+        ])
+        if not messages:
+            return
+        tracking = self.env['mail.tracking.value'].sudo().search([
+            ('mail_message_id', 'in', messages.ids),
+        ])
+        if tracking:
+            tracking.unlink()
+        messages.write({
+            'body': Markup('<p>personal data erased</p>'),
+            'subject': False,
+            'email_from': False,
+            'reply_to': False,
+            'record_name': 'Erased',
+        })
+
+    def _aria_drop_contract_files(self):
+        attachments = self.env['ir.attachment'].sudo().search([
+            ('res_model', '=', 'hr.applicant'),
+            ('res_id', '=', self.id),
+            ('aria_document_kind', '=', 'contract'),
+        ])
+        if attachments:
+            attachments.unlink()
+
     def _aria_erase_personal_data(self):
         self.ensure_one()
         if self.aria_erased:
@@ -177,6 +248,7 @@ class HrApplicant(models.Model):
             'aria_smart_candidate_id': False,
             'aria_utm_link': False,
             'aria_contract_filename': False,
+            'aria_contract_pdf': False,
             'aria_erased': True,
             'aria_erased_at': fields.Datetime.now(),
         })
@@ -187,14 +259,101 @@ class HrApplicant(models.Model):
                 'email': False,
                 'phone': False,
             })
+        self._aria_drop_contract_files()
+        self._aria_redact_chatter()
 
     def action_aria_outreach(self):
+        self._aria_refuse_outreach()
         for applicant in self:
-            if applicant.aria_opt_out or applicant.aria_erased:
-                applicant._aria_audit_gdpr('outreach blocked by opt-out', result='refused')
-                raise UserError('Outreach is blocked because this applicant opted out.')
             applicant._aria_audit_gdpr('outreach permitted')
         return True
+
+    def action_aria_approve_outreach(self):
+        """Refuse a new outreach approval once the person opted out, was erased, or is hired."""
+        self._aria_refuse_outreach()
+        for applicant in self:
+            applicant._aria_audit_gdpr('outreach approval permitted')
+        return True
+
+    def message_post(self, **kwargs):
+        if self._aria_message_is_outbound(kwargs):
+            self._aria_refuse_outreach()
+        return super().message_post(**kwargs)
+
+    def _aria_install_hire_guard(self):
+        """Block a direct SQL move onto Hired unless the contract and DNA are stored."""
+        self.env.cr.execute(
+            """
+            CREATE OR REPLACE FUNCTION aria_recruitment_hire_guard()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $guard$
+            DECLARE
+                hired boolean;
+                adapter text;
+                dna text;
+                has_contract boolean;
+            BEGIN
+                IF TG_OP = 'UPDATE' AND NEW.stage_id IS NOT DISTINCT FROM OLD.stage_id THEN
+                    RETURN NEW;
+                END IF;
+                SELECT (COALESCE(aria_stage_key, '') = 'hired' OR COALESCE(hired_stage, false))
+                  INTO hired
+                  FROM hr_recruitment_stage
+                 WHERE id = NEW.stage_id;
+                IF NOT COALESCE(hired, false) THEN
+                    RETURN NEW;
+                END IF;
+                SELECT value INTO adapter
+                  FROM ir_config_parameter
+                 WHERE key = 'aria_recruitment.dna_adapter'
+                 LIMIT 1;
+                adapter := lower(btrim(COALESCE(adapter, '')));
+                dna := lower(btrim(COALESCE(NEW.aria_dna_integration_status, '')));
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM ir_attachment
+                     WHERE res_model = 'hr.applicant'
+                       AND res_id = NEW.id
+                       AND aria_document_kind = 'contract'
+                       AND (
+                            COALESCE(file_size, 0) > 0
+                            OR db_datas IS NOT NULL
+                            OR COALESCE(store_fname, '') <> ''
+                       )
+                ) INTO has_contract;
+                IF adapter IN ('', 'unconfigured', 'none')
+                   OR dna NOT IN ('integrated', 'complete')
+                   OR NOT COALESCE(has_contract, false) THEN
+                    RAISE EXCEPTION 'hire refused: a signed contract and cleared DNA are required'
+                        USING ERRCODE = 'check_violation';
+                END IF;
+                RETURN NEW;
+            END;
+            $guard$
+            """
+        )
+        self.env.cr.execute("DROP TRIGGER IF EXISTS aria_recruitment_hire_guard_trg ON hr_applicant")
+        self.env.cr.execute(
+            """
+            CREATE TRIGGER aria_recruitment_hire_guard_trg
+            BEFORE INSERT OR UPDATE OF stage_id ON hr_applicant
+            FOR EACH ROW
+            EXECUTE FUNCTION aria_recruitment_hire_guard()
+            """
+        )
+
+    def init(self):
+        self.env.cr.execute(
+            """
+            SELECT 1
+              FROM information_schema.columns
+             WHERE table_name = 'ir_attachment'
+               AND column_name = 'aria_document_kind'
+            """
+        )
+        if self.env.cr.fetchone():
+            self._aria_install_hire_guard()
 
     def action_aria_erase(self):
         for applicant in self:

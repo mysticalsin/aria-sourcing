@@ -24,6 +24,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      - name: Confirm exact head
+        run: |
+          set -eu
+          echo "suite=odoo-addon-tests"
+          echo "head=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
       - name: Test aria_recruitment against odoo:19 and postgres:16
         run: bash odoo_addons/aria_recruitment/ci/run.sh
 
@@ -34,6 +41,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Confirm exact head
+        run: |
+          set -eu
+          echo "suite=playwright-hire-flow"
+          echo "head=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Node.js 22
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
