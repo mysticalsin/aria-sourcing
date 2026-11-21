@@ -14,7 +14,7 @@ import { chromium } from "playwright";
 
 const APP = process.env.BASE_URL || "https://aria-mantu-app.fly.dev";
 const CAMP = "camp_mor1jp00097605_enterprise-windows-desktop-engineer";
-const EMAIL = process.env.ARIA_OPERATOR_EMAIL || "Twalteur@amaris.com";
+const EMAIL = process.env.ARIA_OPERATOR_EMAIL || "owner@example.com";
 const PASSWORD = process.env.ARIA_OPERATOR_PASSWORD || process.env.DEMO_ADMIN_PASSWORD || "";
 const COMPUTERS = (process.env.OPENBOT_PUBLIC_BASE || "https://aria-mantu-computers.fly.dev").replace(
   /\/$/,
@@ -25,7 +25,7 @@ const SUPERVISOR_TOKEN = process.env.COMPUTER_SUPERVISOR_TOKEN || "";
 const COMPUTER_TOKEN = process.env.COMPUTER_TOKEN || process.env.OPENBOT_COMPUTER_TOKEN || "";
 const OUT = process.env.VIDEO_OUT || "/opt/cursor/artifacts";
 const CANDIDATE_LI =
-  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/zachary-maggard-b0a1b61b/";
+  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/example-a/";
 
 fs.mkdirSync(OUT, { recursive: true });
 const videoDir = fs.mkdtempSync(path.join("/tmp", "aria-fly-li-e2e-"));

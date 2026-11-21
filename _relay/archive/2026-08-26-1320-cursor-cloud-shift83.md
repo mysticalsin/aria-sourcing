@@ -43,4 +43,4 @@ status: fly-validated-80pct-sourcing
 ## Watch out
 
 - Do not commit `production-readiness/.fly-secrets.env` / `.fly-token.env` (gitignored)
-- E2E used GoTrue admin password reset for `e2e-claude@amaris.com` — rotate if needed
+- E2E used GoTrue admin password reset for `owner@example.com` — rotate if needed

@@ -14,8 +14,8 @@ const COMPUTERS = (process.env.OPENBOT_PUBLIC_BASE || "https://aria-mantu-comput
 const BOT =
   process.env.OPENBOT_BOT_ID || "comp_7fe31958-589b-497f-8de7-c5083bf53ff5";
 const OUT = process.env.VIDEO_OUT || "/opt/cursor/artifacts";
-const PROFILE = "https://www.linkedin.com/in/tonywalteur/?skipRedirect=true";
-const DEMO_USER = process.env.DEMO_ADMIN_USERNAME || "Twalteur@amaris.com";
+const PROFILE = "https://www.linkedin.com/in/example-a/?skipRedirect=true";
+const DEMO_USER = process.env.DEMO_ADMIN_USERNAME || "owner@example.com";
 const DEMO_PASSWORD = (
   process.env.DEMO_ADMIN_PASSWORD || fs.readFileSync("/tmp/aria-e2e/demo_pw.clean", "utf8")
 ).trim();
@@ -73,7 +73,7 @@ async function main() {
   const page = await context.newPage();
 
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await banner(page, "1/5 Demo login · Twalteur@amaris.com");
+  await banner(page, "1/5 Demo login · owner@example.com");
   const login = await page.evaluate(
     async ({ username, password }) => {
       const res = await fetch("/api/auth/demo-login", {
