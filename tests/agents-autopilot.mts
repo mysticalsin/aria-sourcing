@@ -18,6 +18,7 @@ import {
   pickTopCandidates,
 } from "../src/lib/agents/autopilot";
 import { recordLinkedInSent } from "../src/lib/store/workspace-transitions";
+import { outreachDailyCap, outreachKilled } from "../src/lib/agents/qc-gate";
 import {
   runTick,
   type AgentOutreachRow,
@@ -148,6 +149,11 @@ interface World {
   drafts: number;
   now: Date;
   allowlist?: ReadonlySet<string> | null;
+  killed: boolean | null;
+  sentToday: number | null;
+  dailyCap: number;
+  qc: { status: "PASS" | "FAIL"; score: number; qcVersion: string; draftHash: string; capsOk: boolean } | null;
+  qcCalls: { body: string }[];
 }
 
 function world(): World {
@@ -159,6 +165,9 @@ function world(): World {
     missions: [], outreach: [], jobs: [], relationship: { ok: true, relationship: "none", lookupError: null },
     outbox: new Map(), queued: [], started: [], advanced: 0, authorityOk: true, bridge: true, drafts: 0,
     now: new Date("2026-11-09T12:00:00.000Z"),
+    killed: false, sentToday: 0, dailyCap: 25,
+    qc: { status: "PASS", score: 1, qcVersion: "qc.v1", draftHash: "fresh", capsOk: true },
+    qcCalls: [],
   };
 }
 
@@ -223,6 +232,15 @@ function deps(w: World): TickDeps {
         return { ok: true, outboxId };
       },
       outbox: async (row) => (row.outbox_id ? w.outbox.get(row.outbox_id) ?? null : null),
+    },
+    gate: {
+      evaluate: async (draft) => {
+        w.qcCalls.push({ body: draft.body });
+        return w.qc;
+      },
+      killed: async () => w.killed,
+      sentToday: async () => w.sentToday,
+      dailyCap: () => w.dailyCap,
     },
     draft: async ({ kind }) => {
       w.drafts++;
@@ -353,6 +371,43 @@ test("with an allowlist, a finished run picks only allowed profiles", async () =
   await runTick(d);
   await runTick(d);
   assert.deepEqual(w.outreach.map((r) => r.candidate_id), ["cand_t4"]);
+});
+
+async function queueOne(w: World) {
+  w.pilots[0].last_source_at = w.now.toISOString();
+  const d = deps(w);
+  await d.outreach.insert([{ workspace_id: WS, campaign_id: w.pilots[0].campaign_id, candidate_id: "cand_t1", owner_id: OWNER, mission_id: null, state: "selected", score: 91 }]);
+  await runTick(d);
+}
+
+test("autopilot does not queue without a fresh QC pass, when killed, or over the daily cap", async () => {
+  const blocked: Array<(w: World) => void> = [
+    (w) => { w.qc = null; },
+    (w) => { w.qc = { status: "FAIL", score: 0, qcVersion: "qc.v1", draftHash: "fresh", capsOk: false }; },
+    (w) => { w.qc = { status: "PASS", score: 1, qcVersion: "qc.v1", draftHash: "", capsOk: true }; },
+    (w) => { w.qc = { status: "PASS", score: 1, qcVersion: "qc.v1", draftHash: "stale", capsOk: false }; },
+    (w) => { w.killed = true; },
+    (w) => { w.killed = null; },
+    (w) => { w.sentToday = 25; },
+    (w) => { w.sentToday = null; },
+    (w) => { w.dailyCap = 0; },
+  ];
+  for (const setup of blocked) {
+    const w = world();
+    setup(w);
+    await queueOne(w);
+    assert.equal(w.queued.length, 0, "nothing reaches the outbox");
+    assert.ok(w.qcCalls.length >= 1, "the tick evaluates the draft it would send");
+  }
+});
+
+test("the outreach kill switch and daily cap fail closed when the value cannot be read", () => {
+  assert.equal(outreachKilled({}), false);
+  assert.equal(outreachKilled({ ARIA_OUTREACH_KILL_SWITCH: "true" }), true);
+  assert.equal(outreachKilled({ ARIA_OUTREACH_KILL_SWITCH: "maybe" }), null);
+  assert.equal(outreachDailyCap({}), 25);
+  assert.equal(outreachDailyCap({ ARIA_OUTREACH_DAILY_CAP: "10" }), 10);
+  assert.equal(outreachDailyCap({ ARIA_OUTREACH_DAILY_CAP: "lots" }), 0);
 });
 
 test("nothing due: the tick is idle", async () => {

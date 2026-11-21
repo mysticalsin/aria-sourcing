@@ -1,0 +1,31 @@
+name: Go QC
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  qc:
+    name: Go QC
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOPROXY: off
+      GOFLAGS: -mod=readonly
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Test
+        run: go test ./go/qc/...

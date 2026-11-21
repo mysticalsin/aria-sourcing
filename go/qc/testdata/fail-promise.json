@@ -1,0 +1,45 @@
+{
+  "name": "fail-promise",
+  "threshold": 0.9,
+  "wantStatus": "FAIL",
+  "wantScore": 0.9,
+  "wantFailed": [
+    "promises"
+  ],
+  "input": {
+    "draft": {
+      "channel": "email",
+      "subject": "Compiler role at Northwind Labs",
+      "body": "Hello Ada Example,\n\nYour work on the analytical engine compiler stood out. The compiler engineer role on our team is open, and your background is a strong match for the work. If a conversation is useful, reply to this note and we can compare the role with what you want next.\n\nYou can unsubscribe at https://example.com/unsubscribe.\n\nThank you,\nNorthwind Labs recruiting We guarantee the salary.",
+      "claims": [
+        {
+          "text": "analytical engine compiler",
+          "scope": "candidate"
+        },
+        {
+          "text": "compiler engineer role",
+          "scope": "need"
+        }
+      ]
+    },
+    "candidate": {
+      "language": "en",
+      "facts": [
+        {
+          "id": "c1",
+          "scope": "candidate",
+          "text": "Ada Example maintains the analytical engine compiler"
+        }
+      ]
+    },
+    "need": {
+      "facts": [
+        {
+          "id": "n1",
+          "scope": "need",
+          "text": "The role is a compiler engineer role"
+        }
+      ]
+    }
+  }
+}

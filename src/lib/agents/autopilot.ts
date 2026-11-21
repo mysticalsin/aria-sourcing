@@ -99,6 +99,52 @@ export function autopilotSourcePlan(campaign: Campaign, options: { webSearch: bo
   return plan;
 }
 
+/** The exact text a QC evaluation reads. */
+export interface OutreachQcDraft {
+  channel: string;
+  subject: string;
+  body: string;
+  language?: string;
+}
+
+/** A verdict the send boundary can accept. capsOk is the channel-cap re-check. */
+export interface OutreachQcVerdict {
+  status: "PASS" | "FAIL";
+  score: number;
+  qcVersion: string;
+  draftHash: string;
+  capsOk: boolean;
+}
+
+export interface AutomaticSendGate {
+  killed: boolean | null;
+  sentToday: number | null;
+  dailyCap: number;
+  verdict: OutreachQcVerdict | null;
+}
+
+/**
+ * Whether an automatic send may be queued. Unknown kill-switch state, an
+ * unreadable send count, a missing cap, a missing verdict, or a verdict that
+ * is not a PASS bound to a draft all refuse the send.
+ */
+export function admitAutomaticSend(gate: AutomaticSendGate): { ok: true } | { ok: false; reason: string } {
+  if (gate.killed === null) return { ok: false, reason: "Outreach kill switch is unavailable." };
+  if (gate.killed) return { ok: false, reason: "Outreach kill switch is on." };
+  if (gate.sentToday === null || !Number.isInteger(gate.sentToday) || gate.sentToday < 0) {
+    return { ok: false, reason: "Workspace send count is unavailable." };
+  }
+  if (!Number.isInteger(gate.dailyCap) || gate.dailyCap < 1) {
+    return { ok: false, reason: "Workspace daily cap is unavailable." };
+  }
+  if (gate.sentToday >= gate.dailyCap) return { ok: false, reason: "Workspace daily cap is reached." };
+  const verdict = gate.verdict;
+  if (!verdict || verdict.status !== "PASS" || verdict.draftHash.trim() === "" || verdict.capsOk !== true) {
+    return { ok: false, reason: "QC did not pass." };
+  }
+  return { ok: true };
+}
+
 /** Instruction added to the outreach prompt for each LinkedIn kind. */
 export function linkedInCopyRule(kind: "message" | "invitation"): string {
   return kind === "invitation"
