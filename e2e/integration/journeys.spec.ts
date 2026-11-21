@@ -115,7 +115,10 @@ test("sweep 0 physical journeys", async ({ page }) => {
   await run("linkedin-token", async () => {
     await page.goto("/channels/linkedin-token");
     await expect(page.getByRole("heading", { name: /LinkedIn token/i })).toBeVisible();
+    const act = page.getByRole("button", { name: "Act as admin" });
     const sw = page.getByRole("switch").first();
+    await expect(act.or(sw)).toBeVisible();
+    if (await act.isVisible()) await act.click();
     await expect(sw).toBeVisible();
     const checked = await sw.getAttribute("aria-checked");
     if (checked === "true") throw new Error("token toggle defaulted on");

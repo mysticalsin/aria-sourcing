@@ -19,6 +19,14 @@ trap cleanup EXIT
 
 if docker info >/dev/null 2>&1; then D=docker; else D="sudo docker"; fi
 
+# This host's legacy filter drops forwarded bridge packets. Containers on the
+# same network cannot open TCP until that policy accepts them.
+if command -v iptables-legacy >/dev/null 2>&1; then
+  sudo iptables-legacy -P FORWARD ACCEPT || true
+  sudo iptables-legacy -C FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT 2>/dev/null \
+    || sudo iptables-legacy -I FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT || true
+fi
+
 {
   echo "head=$HEAD_SHA"
   $D compose -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" config >/dev/null
@@ -34,8 +42,10 @@ set -e
 $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" ps >"$ART/logs/compose-ps.log" 2>&1 || true
 
 # Hosted Next on loopback for the click path when the app container is not serving yet.
+# ARIA_E2E opens the demo role control. The journey uses it to act as admin.
+export ARIA_E2E=1
 if ! curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3000/; then
-  (cd "$ROOT" && npx next dev --hostname 127.0.0.1 --port 3000 >"$ART/logs/next.log" 2>&1) &
+  (cd "$ROOT" && ARIA_E2E=1 npx next dev --hostname 127.0.0.1 --port 3000 >"$ART/logs/next.log" 2>&1) &
   APP_PID=$!
   for _ in $(seq 1 60); do
     if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3000/; then break; fi
@@ -43,7 +53,15 @@ if ! curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3000/; then
   done
 fi
 
-export ARTIFACT_DIR="$ART" APP_URL="http://127.0.0.1:3000"
+ODOO_URL=""
+for _ in $(seq 1 180); do
+  if curl -sf -o /dev/null --max-time 3 http://127.0.0.1:8069/aria/pipeline; then
+    ODOO_URL="http://127.0.0.1:8069/aria/pipeline"
+    break
+  fi
+  sleep 2
+done
+export ARTIFACT_DIR="$ART" APP_URL="http://127.0.0.1:3000" ODOO_URL="$ODOO_URL"
 set +e
 if command -v xvfb-run >/dev/null 2>&1; then
   xvfb-run -a npx playwright test -c "$ROOT/e2e/integration/playwright.config.ts" >"$ART/logs/playwright.log" 2>&1

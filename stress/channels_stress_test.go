@@ -289,12 +289,24 @@ func TestStressA3AutoPause(t *testing.T) {
 		}, http.StatusOK, `{"ok":true}`)
 		defer fresh.http.srv.Close()
 		fresh.ch.cfg.Pauses = rig.ch.cfg.Pauses
-		resumed := fresh.approved(t, CampaignMode{Mode: "manual"})
-		_, err = fresh.ch.Send(context.Background(), resumed)
+		held := fresh.approved(t, CampaignMode{Mode: "manual"})
+		_, err = fresh.ch.Send(context.Background(), held)
 		if !errors.Is(err, ErrPaused) {
 			t.Fatalf("pause cleared without a human resume: %v", err)
 		}
-		t.Log("A3 pause held; human resume has no PauseStore clear method")
+		if err := rig.ch.cfg.Pauses.Resume(context.Background(), senderKey(heySender)); err != nil {
+			t.Fatal(err)
+		}
+		if err := rig.ch.cfg.Pauses.Resume(context.Background(), accountKey(42)); err != nil {
+			t.Fatal(err)
+		}
+		resumed := fresh.approved(t, CampaignMode{Mode: "manual"})
+		if _, err = fresh.ch.Send(context.Background(), resumed); err != nil {
+			t.Fatalf("send after human resume: %v", err)
+		}
+		if fresh.http.count() != 1 {
+			t.Fatalf("resumed send did not reach the stub: %d", fresh.http.count())
+		}
 	})
 }
 

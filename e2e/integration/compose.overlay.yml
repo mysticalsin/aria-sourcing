@@ -27,6 +27,8 @@ services:
   app:
     mem_limit: 1280m
     memswap_limit: 1280m
+    environment:
+      ARIA_E2E: "1"
 
   odoo-db:
     image: postgres:16-alpine
@@ -58,7 +60,7 @@ services:
       - "127.0.0.1:8069:8069"
     volumes:
       - ./odoo_addons:/mnt/extra-addons:ro
-    command: ["odoo", "--workers=0", "--max-cron-threads=0", "-d", "aria_integration", "-i", "aria_recruitment", "--without-demo=all"]
+    command: ["odoo", "--workers=0", "--max-cron-threads=0", "--no-database-list", "-d", "aria_integration", "--db-filter=^aria_integration$", "-i", "aria_recruitment", "--without-demo=all"]
 
   aria-go:
     build:
