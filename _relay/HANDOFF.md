@@ -46,4 +46,5 @@ status: fairness-audit-draft
 - Other open PRs own `core/` (#170), `services/router` (#169), the approval ledger (#167), `services/channels` (#175), and `odoo_addons/aria_recruitment` (#176).
 - `go/fairness` has no network imports. Tests fail if a non-test file imports `net` or `net/http`.
 - The agents healthcheck is temporary so `compose --wait` can see the runner. PR #168 deletes that service.
+- CI and CodeQL use `ubuntu-24.04`. On 2026-11-21 `ubuntu-latest` queued with no runner.
 - Gitleaks scans full history. Keep fixture strings obviously synthetic (`SYN-000`, `example` domains, no key-shaped literals).
