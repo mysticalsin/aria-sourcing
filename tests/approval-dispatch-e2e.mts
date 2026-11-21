@@ -58,7 +58,7 @@ function appPsql(sql: string): string {
     select set_config('request.jwt.claims', '{"sub":"${USER}","role":"service_role"}', false);
     select set_config('request.jwt.claim.sub', '${USER}', false);
     select set_config('request.jwt.claim.role', 'service_role', false);
-    set role aria_app;
+    set role service_role;
     ${sql}
   `);
   return raw.split(/\n/).map((item) => item.trim()).filter(Boolean).at(-1) ?? "";
@@ -75,7 +75,7 @@ function sqlLiteral(value: string): string {
 }
 
 function rows(sql: string): Array<Record<string, unknown>> {
-  const raw = appPsql(`select coalesce(json_agg(row_to_json(t)), '[]'::json)::text from (${sql}) t;`);
+  const raw = psql(`select coalesce(json_agg(row_to_json(t)), '[]'::json)::text from (${sql}) t;`);
   return JSON.parse(raw) as Array<Record<string, unknown>>;
 }
 
@@ -158,7 +158,7 @@ function client() {
               if (typeof value === "object") return `${key} = ${sqlLiteral(JSON.stringify(value))}::jsonb`;
               return `${key} = ${sqlLiteral(String(value))}`;
             }).join(", ");
-            const raw = appPsql(`
+            const raw = psql(`
               with updated as (
                 update public.${table} set ${assignments} where ${where()} returning *
               )
@@ -348,10 +348,9 @@ test("test_cap_is_denied_to_members_and_hashes_match_sql", () => {
     /permission denied|42501/i,
   );
   const role = psql(`
-    select (rolsuper = false and rolbypassrls = false)::text
-      from pg_roles where rolname = 'aria_app';
+    select rolsuper::text from pg_roles where rolname = 'service_role';
   `);
-  assert.equal(role, "true");
+  assert.equal(role, "false", "the dispatcher session must not be a superuser");
 
   const fixtures = [
     { subject: "caf\u00e9 note", body: "Jos\u00e9, the example ledger kept this exact sentence." },

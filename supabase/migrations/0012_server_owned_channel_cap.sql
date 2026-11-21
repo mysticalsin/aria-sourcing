@@ -19,14 +19,6 @@ alter table public.outreach_channel_daily_sends enable row level security;
 alter table public.outreach_channel_daily_sends force row level security;
 revoke all on table public.outreach_channel_daily_sends from public, anon, authenticated;
 
-do $$
-begin
-  if not exists (select 1 from pg_roles where rolname = 'aria_app') then
-    create role aria_app nosuperuser nobypassrls nocreatedb nocreaterole nologin;
-  end if;
-end $$;
-grant aria_app to postgres;
-
 create or replace function public.outreach_wire_body_hash(p_subject text, p_body text)
 returns text
 language sql
@@ -291,13 +283,6 @@ revoke all on function public.outreach_channel_sent_today(uuid, text) from publi
 revoke all on function public.outreach_wire_body_hash(text, text) from public;
 revoke all on function public.consume_outreach_channel_daily_cap(uuid, text) from public;
 
-grant execute on function public.outreach_channel_sent_today(uuid, text) to service_role, aria_app;
-grant execute on function public.outreach_wire_body_hash(text, text) to service_role, aria_app;
-grant execute on function public.consume_outreach_channel_daily_cap(uuid, text) to service_role, aria_app;
-grant usage on schema public to aria_app;
-grant select, update on table public.messages_outbound to aria_app;
-grant select on table public.outreach_approvals to aria_app;
-grant select, update on table public.outreach_ledger to aria_app;
-grant execute on function public.claim_email_outbound_queued(uuid) to aria_app;
-grant execute on function public.finalize_email_provider_failure(uuid, uuid, text) to aria_app;
-grant execute on function public.record_email_send_message_id(uuid, uuid, text) to aria_app;
+grant execute on function public.outreach_channel_sent_today(uuid, text) to service_role;
+grant execute on function public.outreach_wire_body_hash(text, text) to service_role;
+grant execute on function public.consume_outreach_channel_daily_cap(uuid, text) to service_role;

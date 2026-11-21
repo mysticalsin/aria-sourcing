@@ -15,7 +15,7 @@ test("test_consume_cap_is_service_owned", () => {
   assert.match(latest, /create function public\.consume_outreach_channel_daily_cap\(p_workspace_id uuid, p_channel text\)/i);
   assert.match(latest, /outreach_channel_cap_config/);
   assert.match(latest, /revoke all on function public\.consume_outreach_channel_daily_cap\(uuid, text, integer\) from public, anon, authenticated, service_role/i);
-  assert.match(latest, /grant execute on function public\.consume_outreach_channel_daily_cap\(uuid, text\) to service_role, aria_app/i);
+  assert.match(latest, /grant execute on function public\.consume_outreach_channel_daily_cap\(uuid, text\) to service_role;/i);
   assert.doesNotMatch(latest, /consume_outreach_channel_daily_cap\(uuid, text\) to authenticated/i);
 });
 
