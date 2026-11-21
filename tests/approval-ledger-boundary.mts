@@ -15,6 +15,7 @@ const ACTOR = "operator.synthetic";
 const CAMPAIGN = "campaign-synthetic-1";
 const NOTICE = "art14-lgpd-2026-11-20";
 const RECIPIENT = "ada.candidate@example.test";
+const APPROVED_AT = "2026-11-20T18:53:00.000Z";
 
 const PASSING_QC: QcEvaluation = {
   pass: true,
@@ -37,6 +38,10 @@ function message(overrides: Partial<ExactMessage> = {}): ExactMessage {
   };
 }
 
+function boundHash(message: ExactMessage): string {
+  return exactBodyHash({ ...message, approverId: ACTOR, approvedAt: APPROVED_AT });
+}
+
 function createLedger(overrides: Partial<LedgerOptions> = {}): ApprovalLedger {
   return new ApprovalLedger({
     runMode: "demo",
@@ -56,7 +61,7 @@ test("test_send_refused_without_matching_body_hash", () => {
   const approval = ledger.approveManual(original, ACTOR);
   assert.equal(approval.allowed, true);
   assert.equal(approval.reason, "approved");
-  assert.equal(approval.bodyHash, exactBodyHash(original));
+  assert.equal(approval.bodyHash, boundHash(original));
 
   const expected = createHash("sha256")
     .update(
@@ -64,7 +69,9 @@ test("test_send_refused_without_matching_body_hash", () => {
         lengthPrefixed(original.recipient.trim().toLocaleLowerCase()) +
         lengthPrefixed(sanitizeOutreachSubject(original.subject)) +
         lengthPrefixed(original.body) +
-        lengthPrefixed(original.noticeVersion),
+        lengthPrefixed(original.noticeVersion) +
+        lengthPrefixed("") +
+        lengthPrefixed(""),
       "utf8",
     )
     .digest("hex");
@@ -82,7 +89,7 @@ test("test_send_refused_without_matching_body_hash", () => {
   const sent = ledger.decideSend(original, ACTOR);
   assert.equal(sent.allowed, true);
   assert.equal(sent.reason, "authorized");
-  assert.equal(sent.bodyHash, exactBodyHash(original));
+  assert.equal(sent.bodyHash, boundHash(original));
 
   const edits: Array<[string, ExactMessage]> = [
     ["body", { ...original, body: `${original.body} Edited.` }],
@@ -101,7 +108,7 @@ test("test_send_refused_without_matching_body_hash", () => {
   const replay = ledger.decideSend(original, ACTOR);
   assert.equal(replay.allowed, false);
   assert.equal(replay.reason, "already-authorized");
-  assert.equal(replay.bodyHash, exactBodyHash(original));
+  assert.equal(replay.bodyHash, boundHash(original));
 });
 
 test("test_manual_approval_respects_allowlist", () => {
@@ -131,7 +138,8 @@ test("test_manual_approval_respects_allowlist", () => {
   assert.equal(ledger.decideSend(blocked, ACTOR).reason, "allowlist");
 
   const openDemo = createLedger({ runMode: "demo", allowlist: "", channelCaps: { Email: 2 } });
-  assert.equal(openDemo.approveManual(blocked, ACTOR).allowed, true);
+  assert.equal(openDemo.approveManual(blocked, ACTOR).allowed, false);
+  assert.equal(openDemo.approveManual(blocked, ACTOR).reason, "allowlist");
 
   const policy = approvalPolicyFromEnv(
     { ARIA_MODE: "demo", ARIA_RECIPIENT_ALLOWLIST: "tony.synthetic@example.test" },
@@ -171,11 +179,11 @@ test("test_auto_mode_requires_qc_pass_bound_to_hash", async () => {
   const passed = ledger.recordQualityCheck(original, PASSING_QC, ACTOR);
   assert.equal(passed.allowed, true);
   assert.equal(passed.reason, "qc-passed");
-  assert.equal(passed.bodyHash, exactBodyHash(original));
+  assert.equal(passed.bodyHash, boundHash(original));
   const authorized = ledger.decideSend(original, ACTOR);
   assert.equal(authorized.allowed, true);
   assert.equal(authorized.reason, "authorized");
-  assert.equal(authorized.bodyHash, exactBodyHash(original));
+  assert.equal(authorized.bodyHash, boundHash(original));
 
   const edited = { ...original, body: `${original.body} One more sentence about the example role.` };
   const mismatch = ledger.decideSend(edited, ACTOR);
@@ -189,7 +197,7 @@ test("test_auto_mode_requires_qc_pass_bound_to_hash", async () => {
   });
   const fromAgent = await ledger.recordQualityCheckFromAgent(specific, stubQualityCheckAgent(), ACTOR);
   assert.equal(fromAgent.allowed, true);
-  assert.equal(fromAgent.bodyHash, exactBodyHash(specific));
+  assert.equal(fromAgent.bodyHash, boundHash(specific));
   assert.equal(ledger.decideSend(specific, ACTOR).allowed, true);
 
   const generic = message({
@@ -249,8 +257,9 @@ test("test_kill_switch_blocks_all_sends", () => {
     assert.equal(blocked.ok, false, label);
     if (!blocked.ok) assert.equal(blocked.reason, "kill-switch", label);
   }
-  assert.equal(sendPolicyFromEnv({}, RECIPIENT).ok, true);
-  assert.equal(sendPolicyFromEnv({ ARIA_SEND_KILL_SWITCH: "0" }, RECIPIENT).ok, true);
+  assert.equal(sendPolicyFromEnv({ ARIA_RECIPIENT_ALLOWLIST: RECIPIENT }, RECIPIENT).ok, true);
+  assert.equal(sendPolicyFromEnv({ ARIA_SEND_KILL_SWITCH: "0", ARIA_RECIPIENT_ALLOWLIST: RECIPIENT }, RECIPIENT).ok, true);
+  assert.equal(sendPolicyFromEnv({}, RECIPIENT).ok, false);
 
   const sendRoute = readFileSync("src/app/api/outreach/send/route.ts", "utf8");
   const dispatcher = readFileSync("src/lib/dispatch-outbound.ts", "utf8");

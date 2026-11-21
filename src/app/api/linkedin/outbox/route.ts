@@ -1,13 +1,12 @@
 // Experimental LinkedIn bridge: messages and invitations the signed-in user
 // wrote in ARIA, to sourced candidates only.
-//   GET    the latest outbox items
+//   GET    refused: Aria does not deliver to LinkedIn (no outbox items)
 //   POST   refused: Aria does not deliver to LinkedIn (PR 168 removes this route)
 //   DELETE ?id=  withdraw a message or invitation that has not left yet
 
 import { NextResponse, type NextRequest } from "next/server";
 import { linkedInDeliveryRefusal } from "@/lib/approval/dispatch-guard";
 import {
-  OUTBOX_COLUMNS,
   accountForUser,
   badRequest,
   notFound,
@@ -24,21 +23,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireBridgeUser(req);
   if (!auth.ok) return auth.response;
-  try {
-    const account = await accountForUser(auth.ctx);
-    if (!account) return okJson({ items: [] });
-    const { data, error } = await auth.ctx.svc
-      .from("linkedin_bridge_outbox")
-      .select(OUTBOX_COLUMNS)
-      .eq("account_id", account.id)
-      .neq("status", "cancelled")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (error) return serverError("Outbox unavailable.");
-    return okJson({ items: data ?? [] });
-  } catch {
-    return serverError("Outbox unavailable.");
-  }
+  const refused = linkedInDeliveryRefusal();
+  return NextResponse.json(
+    { ok: false, error: refused.error, reason: refused.reason, items: [] },
+    { status: 410 },
+  );
 }
 
 export async function POST(req: NextRequest) {

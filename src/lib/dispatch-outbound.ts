@@ -19,7 +19,9 @@ import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
 import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
 import { deliveryTargetForChannel, sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
-import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
+import { consultApprovalLedger } from "@/lib/approval/ledger";
+import { approvalScopeHash } from "@/lib/outreach-content";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
@@ -107,8 +109,12 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         continue;
       }
 
+      const profileUrl = typeof (msg as unknown as { profile_url?: unknown }).profile_url === "string"
+        ? (msg as unknown as { profile_url: string }).profile_url
+        : null;
       const deliveryTarget = deliveryTargetForChannel(msg.channel, {
         toAddress: typeof msg.to_address === "string" ? msg.to_address : "",
+        profileUrl: profileUrl,
       });
       const sendPolicy = sendPolicyFromEnv(process.env, deliveryTarget);
       if (!sendPolicy.ok) {
@@ -121,19 +127,29 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       }
 
       // 1. Approval must exist for exactly this message.
-      const bodyHash = approvalHash(msg.subject ?? "", msg.body);
+      const approvalMessageId = msg.approval_message_id ?? msg.id;
+      const { data: approval } = await supabase
+        .from("outreach_approvals")
+        .select("body_hash, approval_scope_hash, approval_source, revoked_at, approved_at, approved_by")
+        .eq("workspace_id", msg.workspace_id)
+        .eq("message_id", approvalMessageId)
+        .maybeSingle();
+      const approvedAt = typeof approval?.approved_at === "string" ? approval.approved_at : "";
+      const approverId = typeof approval?.approved_by === "string" ? approval.approved_by : "";
+      const bodyHash = exactBodyHash({
+        channel: msg.channel,
+        recipient: deliveryTarget,
+        subject: msg.subject ?? "",
+        body: msg.body,
+        noticeVersion: OUTREACH_NOTICE_VERSION,
+        approverId,
+        approvedAt,
+      });
       const scopeHash = approvalScopeHash({
         candidateId: msg.candidate_id,
         channel: msg.channel,
         recipient: deliveryTarget,
       });
-      const approvalMessageId = msg.approval_message_id ?? msg.id;
-      const { data: approval } = await supabase
-        .from("outreach_approvals")
-        .select("body_hash, approval_scope_hash, approval_source, revoked_at, approved_at")
-        .eq("workspace_id", msg.workspace_id)
-        .eq("message_id", approvalMessageId)
-        .maybeSingle();
       if (
         !approval ||
         approval.revoked_at ||
@@ -155,6 +171,22 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
             ? "approval-scope-mismatch"
             : "approval-expired";
         await finish("blocked", { pass: false, reasons: [reason] });
+        continue;
+      }
+      const ledgerDecision = consultApprovalLedger({
+        channel: msg.channel,
+        recipient: deliveryTarget,
+        subject: msg.subject ?? "",
+        body: msg.body,
+        noticeVersion: OUTREACH_NOTICE_VERSION,
+        approverId,
+        approvedAt,
+        storedBodyHash: approval.body_hash,
+        env: process.env,
+        profileUrl,
+      });
+      if (!ledgerDecision.allowed) {
+        await finish("blocked", { pass: false, reasons: [ledgerDecision.reason] });
         continue;
       }
 

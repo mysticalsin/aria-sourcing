@@ -4,6 +4,11 @@ import { exactBodyHash } from "./hash";
 import { qcGateAccepts, type QcEvaluation } from "./qc";
 import type { ExactMessage, LedgerDecision, PolicyEnv, PolicyResult, SendMode } from "./types";
 
+export interface ApprovalBinding {
+  approverId: string;
+  approvedAt: string;
+}
+
 export interface SendGuardInput {
   message: ExactMessage;
   allowlist: RecipientAllowlist;
@@ -16,6 +21,9 @@ export interface SendGuardInput {
   authorizedHash: string | null;
   humanApprovalExpired?: boolean;
   qcPassExpired?: boolean;
+  /** Approver and timestamp bound into the hash that authorized this send. */
+  approverId?: string;
+  approvedAt?: string;
   /** Per-workspace switch for the linkedin_token channel. Off unless explicitly true. */
   linkedinTokenEnabled?: boolean;
 }
@@ -37,9 +45,17 @@ function validMessage(message: ExactMessage): boolean {
   );
 }
 
-export function evaluateManualApproval(message: ExactMessage, allowlist: RecipientAllowlist): LedgerDecision {
+function hashMessage(message: ExactMessage, approverId = "", approvedAt = ""): string {
+  return exactBodyHash({ ...message, approverId, approvedAt });
+}
+
+export function evaluateManualApproval(
+  message: ExactMessage,
+  allowlist: RecipientAllowlist,
+  binding: ApprovalBinding = { approverId: "", approvedAt: "" },
+): LedgerDecision {
   if (!validMessage(message)) return refuse(message.messageId.trim() || null, "invalid-message");
-  const bodyHash = exactBodyHash(message);
+  const bodyHash = hashMessage(message, binding.approverId, binding.approvedAt);
   if (!recipientAllowed(allowlist, message.recipient)) {
     return refuse(message.messageId, "allowlist", bodyHash);
   }
@@ -50,9 +66,10 @@ export function evaluateQcRecord(
   message: ExactMessage,
   evaluation: QcEvaluation,
   allowlist: RecipientAllowlist,
+  binding: ApprovalBinding = { approverId: "", approvedAt: "" },
 ): LedgerDecision {
   if (!validMessage(message)) return refuse(message.messageId.trim() || null, "invalid-message");
-  const bodyHash = exactBodyHash(message);
+  const bodyHash = hashMessage(message, binding.approverId, binding.approvedAt);
   if (!recipientAllowed(allowlist, message.recipient)) {
     return refuse(message.messageId, "allowlist", bodyHash);
   }
@@ -72,7 +89,7 @@ export const LINKEDIN_TOKEN_CHANNEL = "linkedin_token";
 export function evaluateSend(input: SendGuardInput): LedgerDecision {
   const { message } = input;
   if (!validMessage(message)) return refuse(message.messageId.trim() || null, "invalid-message");
-  const bodyHash = exactBodyHash(message);
+  const bodyHash = hashMessage(message, input.approverId ?? "", input.approvedAt ?? "");
   const decision = (allowed: boolean, reason: string): LedgerDecision => ({
     allowed,
     reason,

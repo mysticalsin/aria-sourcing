@@ -12,20 +12,45 @@ export interface RecipientAllowlist {
 
 export type RunMode = "demo" | "test";
 
+const HOMOGLYPHS: Readonly<Record<string, string>> = {
+  "\u0430": "a",
+  "\u0435": "e",
+  "\u043e": "o",
+  "\u0440": "p",
+  "\u0441": "c",
+  "\u0445": "x",
+  "\u0443": "y",
+  "\u0456": "i",
+  "\u0410": "a",
+  "\u0415": "e",
+  "\u041e": "o",
+  "\u0420": "p",
+  "\u0421": "c",
+  "\u0425": "x",
+  "\u0423": "y",
+  "\u0406": "i",
+};
+
+/** NFC, then fold Cyrillic lookalikes, then trim and lowercase. */
+export function normalizeRecipient(value: string): string {
+  const folded = value.normalize("NFC").replace(/[\u0400-\u04FF]/g, (ch) => HOMOGLYPHS[ch] ?? ch);
+  return folded.trim().toLocaleLowerCase();
+}
+
 /** Split a configured list on commas, semicolons, or whitespace. Empty tokens drop out. */
 export function parseAllowlistEntries(raw: string | undefined): Set<string> {
   const entries = new Set<string>();
   if (!raw) return entries;
   for (const part of raw.split(/[\s,;]+/)) {
-    const token = part.trim().toLocaleLowerCase();
+    const token = normalizeRecipient(part);
     if (token) entries.add(token);
   }
   return entries;
 }
 
 /**
- * `live` is refused. Unset and `demo` stay in demo. Only `test` turns on
- * allowlist-only mode when the list itself is empty.
+ * `live` is refused. Unset and `demo` stay in demo. Both demo and test
+ * enforce the allowlist, including when the list itself is empty.
  */
 export function resolveRunMode(value: string | undefined): { ok: true; mode: RunMode } | { ok: false; reason: "live-refused" } {
   if (value === undefined || value === "" || value === "demo") return { ok: true, mode: "demo" };
@@ -34,23 +59,37 @@ export function resolveRunMode(value: string | undefined): { ok: true; mode: Run
 }
 
 /**
- * Test mode is allowlist-only, including an empty list (nobody). A list that
- * is actually configured is enforced in demo too, so a manual approval cannot
- * skip it.
+ * Demo and test both fail closed. An unset or empty list matches nobody.
+ * `mode` is accepted so callers can keep passing the resolved run mode.
  */
 export function recipientAllowlist(mode: RunMode, raw: string | undefined): RecipientAllowlist {
-  const entries = parseAllowlistEntries(raw);
+  void mode;
   return {
-    enforced: mode === "test" || entries.size > 0,
-    entries,
+    enforced: true,
+    entries: parseAllowlistEntries(raw),
   };
 }
 
+function hostOf(value: string): string {
+  const at = value.lastIndexOf("@");
+  return at >= 0 ? value.slice(at + 1) : value;
+}
+
+/**
+ * Exact entry, or a bare host entry matching that host or a dot-boundary
+ * subdomain. `evil-example.com` does not match `example.com`.
+ */
 export function recipientAllowed(allowlist: RecipientAllowlist, recipient: string): boolean {
   if (!allowlist.enforced) return true;
-  const key = recipient.trim().toLocaleLowerCase();
+  const key = normalizeRecipient(recipient);
   if (!key) return false;
-  return allowlist.entries.has(key);
+  if (allowlist.entries.has(key)) return true;
+  const host = hostOf(key);
+  for (const entry of allowlist.entries) {
+    if (entry.includes("@")) continue;
+    if (host === entry || host.endsWith(`.${entry}`)) return true;
+  }
+  return false;
 }
 
 /** Policy for recording a manual approval. The route must call this before the approval RPC. */

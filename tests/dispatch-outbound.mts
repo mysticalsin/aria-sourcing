@@ -1,7 +1,15 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as dispatchModule from "../src/lib/dispatch-outbound";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
 import type { AgentSeat } from "../src/lib/types";
+
+process.env.ARIA_RECIPIENT_ALLOWLIST = [
+  "marco.rossi@example.test",
+  "33612345678",
+  "https://www.linkedin.com/in/ada-example",
+  "https://www.linkedin.com/in/marco-rossi",
+].join(",");
 
 const { dispatchDue } = dispatchModule;
 
@@ -172,6 +180,15 @@ function makeFakeDb(seed: {
 }
 
 const bodyHash = (body: string, subject = "") => createHash("sha256").update(`${subject}\n${body}`).digest("hex");
+const exactApproval = (body: string, subject = "") => exactBodyHash({
+  channel: "Email",
+  recipient: "marco.rossi@example.test",
+  subject,
+  body,
+  noticeVersion: OUTREACH_NOTICE_VERSION,
+  approverId: "",
+  approvedAt: "",
+});
 const GOOD_BODY = "Hi Marco, thanks for the reply! The team works in Go and Postgres. Want a quick call Thursday?";
 const ATTEMPT_ONE = "11111111-1111-4111-8111-111111111111";
 
@@ -288,7 +305,7 @@ for (const channel of ["WhatsApp", "SMS"]) {
 {
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: bodyHash(GOOD_BODY), approval_source: "legacy_unverified" }],
+    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: exactApproval(GOOD_BODY), approval_source: "legacy_unverified" }],
     seats: [LIVE_SEAT],
     claim: { allowed: true },
   });

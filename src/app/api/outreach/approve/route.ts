@@ -7,7 +7,8 @@ import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalPolicyFromEnv } from "@/lib/approval/allowlist";
-import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
+import { approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -90,7 +91,16 @@ export async function POST(req: NextRequest) {
 
   // Hash the EXACT content the operator approved; the send route recomputes this
   // and refuses if it differs (the body was changed after approval).
-  const bodyHash = approvalHash(subject, body);
+  const approvedAt = new Date().toISOString();
+  const bodyHash = exactBodyHash({
+    channel,
+    recipient,
+    subject,
+    body,
+    noticeVersion: OUTREACH_NOTICE_VERSION,
+    approverId: user.id,
+    approvedAt,
+  });
   const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
   if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
   const approvalPolicy = approvalPolicyFromEnv(process.env, recipient);
@@ -114,6 +124,7 @@ export async function POST(req: NextRequest) {
     p_message_id: messageId,
     p_body_hash: bodyHash,
     p_approval_scope_hash: scopeHash,
+    p_approved_at: approvedAt,
   });
   const result = recorded as { ok?: boolean; reason?: string } | null;
   if (error || result?.ok !== true) {

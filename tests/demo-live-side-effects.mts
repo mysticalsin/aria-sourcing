@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import { isPublicDemoSideEffectBlocked } from "../src/lib/demo-side-effect-policy";
-import { approvalHash, approvalScopeHash } from "../src/lib/outreach-content";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
+import { approvalScopeHash } from "../src/lib/outreach-content";
 
 let pass = 0;
 let fail = 0;
@@ -166,7 +167,18 @@ const sendPayload = {
   channel: "Email",
   confirmLive: true,
 };
-const approvedBodyHash = approvalHash(sendPayload.subject, sendPayload.body);
+const approvedAt = new Date().toISOString();
+const approverId = "user-1";
+process.env.ARIA_RECIPIENT_ALLOWLIST = sendPayload.candidateEmail;
+const approvedBodyHash = exactBodyHash({
+  channel: sendPayload.channel,
+  recipient: sendPayload.candidateEmail,
+  subject: sendPayload.subject,
+  body: sendPayload.body,
+  noticeVersion: OUTREACH_NOTICE_VERSION,
+  approverId,
+  approvedAt,
+});
 const approvedScopeHash = approvalScopeHash({
   candidateId: sendPayload.candidateId,
   channel: sendPayload.channel,
@@ -203,7 +215,8 @@ currentSupabase = {
         body_hash: approvedBodyHash,
         approval_scope_hash: approvedScopeHash,
         approval_source: "human",
-        approved_at: new Date().toISOString(),
+        approved_at: approvedAt,
+        approved_by: approverId,
       });
     }
     if (table === "agent_seats") {

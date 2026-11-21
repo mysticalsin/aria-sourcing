@@ -1,8 +1,34 @@
-import { approvalIsCurrent, DEFAULT_APPROVAL_TTL_MS, recipientAllowlist } from "./allowlist";
+import { approvalIsCurrent, approvalTtlMs, DEFAULT_APPROVAL_TTL_MS, recipientAllowlist } from "./allowlist";
 import { AuditLog, type AuditEntry, type AuditKind } from "./audit-log";
-import { evaluateManualApproval, evaluateQcRecord, evaluateSend } from "./dispatch-guard";
+import {
+  deliveryTargetForChannel,
+  evaluateManualApproval,
+  evaluateQcRecord,
+  evaluateSend,
+  sendPolicyFromEnv,
+} from "./dispatch-guard";
+import { exactBodyHash } from "./hash";
 import type { QcEvaluation, QualityCheckAgent } from "./qc";
-import type { ExactMessage, LedgerDecision, SendMode } from "./types";
+import type { ExactMessage, LedgerDecision, PolicyEnv, SendMode } from "./types";
+
+export type ApprovalLifecycleState = "draft" | "pending" | "approved" | "sent" | "invalidated";
+
+const LEGAL_TRANSITIONS: Record<ApprovalLifecycleState, readonly ApprovalLifecycleState[]> = {
+  draft: ["pending", "invalidated"],
+  pending: ["approved", "invalidated"],
+  approved: ["sent", "invalidated"],
+  sent: ["invalidated"],
+  invalidated: [],
+};
+
+/** draft -> pending -> approved -> sent, and any of those may become invalidated. Anything else throws. */
+export function transitionApprovalState(from: string, to: string): ApprovalLifecycleState {
+  const allowed = LEGAL_TRANSITIONS[from as ApprovalLifecycleState];
+  if (!allowed || !allowed.includes(to as ApprovalLifecycleState)) {
+    throw new Error(`illegal approval transition: ${from} -> ${to}`);
+  }
+  return to as ApprovalLifecycleState;
+}
 
 export interface LedgerOptions {
   runMode: "demo" | "test";
@@ -27,10 +53,11 @@ export class ApprovalLedger {
   private readonly now: () => string;
   private readonly audit = new AuditLog();
   private readonly approvalTtlMs: number;
-  private readonly approvals = new Map<string, { hash: string; at: string }>();
-  private readonly qcPasses = new Map<string, { hash: string; at: string }>();
+  private readonly approvals = new Map<string, { hash: string; at: string; approverId: string }>();
+  private readonly qcPasses = new Map<string, { hash: string; at: string; approverId: string }>();
   private readonly automatic = new Set<string>();
-  private readonly sent = new Map<string, number>();
+  private readonly sentByDay = new Map<string, number>();
+  private readonly states = new Map<string, ApprovalLifecycleState>();
   private readonly authorized = new Map<string, string>();
   private killSwitch: boolean;
   private readonly linkedinTokenEnabled: boolean;
@@ -86,9 +113,11 @@ export class ApprovalLedger {
   }
 
   approveManual(message: ExactMessage, actor: string): LedgerDecision {
-    const decision = evaluateManualApproval(message, this.allowlist);
+    const at = this.now();
+    const decision = evaluateManualApproval(message, this.allowlist, { approverId: actor, approvedAt: at });
     if (decision.allowed && decision.bodyHash) {
-      this.approvals.set(message.messageId, { hash: decision.bodyHash, at: this.now() });
+      this.approvals.set(message.messageId, { hash: decision.bodyHash, at, approverId: actor });
+      this.enterApproved(message.messageId);
     }
     return this.record("manual-approval", decision, message, actor);
   }
@@ -98,9 +127,11 @@ export class ApprovalLedger {
   }
 
   recordQualityCheck(message: ExactMessage, evaluation: QcEvaluation, actor: string): LedgerDecision {
-    const decision = evaluateQcRecord(message, evaluation, this.allowlist);
+    const at = this.now();
+    const decision = evaluateQcRecord(message, evaluation, this.allowlist, { approverId: actor, approvedAt: at });
     if (decision.allowed && decision.bodyHash) {
-      this.qcPasses.set(message.messageId, { hash: decision.bodyHash, at: this.now() });
+      this.qcPasses.set(message.messageId, { hash: decision.bodyHash, at, approverId: actor });
+      this.enterApproved(message.messageId);
     }
     return this.record("qc-pass", decision, message, actor);
   }
@@ -127,25 +158,55 @@ export class ApprovalLedger {
     const nowMs = Date.parse(this.now());
     const human = this.approvals.get(message.messageId);
     const qc = this.qcPasses.get(message.messageId);
+    const mode = this.sendMode(message.campaignId, message.channel);
+    const binding = mode === "automatic" ? qc : human;
     const decision = evaluateSend({
       message,
       allowlist: this.allowlist,
       killSwitch: this.killSwitch,
-      mode: this.sendMode(message.campaignId, message.channel),
+      mode,
       humanApprovalHash: human?.hash ?? null,
       qcPassHash: qc?.hash ?? null,
       humanApprovalExpired: Boolean(human && !approvalIsCurrent(human.at, nowMs, this.approvalTtlMs)),
       qcPassExpired: Boolean(qc && !approvalIsCurrent(qc.at, nowMs, this.approvalTtlMs)),
-      sentOnChannel: this.sent.get(message.channel) ?? 0,
+      sentOnChannel: this.sentToday(message.channel),
       channelCap: capFor(this.caps, message.channel),
       authorizedHash: this.authorized.get(message.messageId) ?? null,
+      approverId: binding?.approverId ?? "",
+      approvedAt: binding?.at ?? "",
       linkedinTokenEnabled: this.linkedinTokenEnabled,
     });
     if (decision.allowed && decision.bodyHash) {
       this.authorized.set(message.messageId, decision.bodyHash);
-      this.sent.set(message.channel, (this.sent.get(message.channel) ?? 0) + 1);
+      this.markSentToday(message.channel);
+      this.markSent(message.messageId);
     }
     return this.record("send", decision, message, actor);
+  }
+
+  private sentToday(channel: string): number {
+    return this.sentByDay.get(this.dayKey(channel)) ?? 0;
+  }
+
+  private markSentToday(channel: string): void {
+    const key = this.dayKey(channel);
+    this.sentByDay.set(key, (this.sentByDay.get(key) ?? 0) + 1);
+  }
+
+  private dayKey(channel: string): string {
+    return `${channel}\n${this.now().slice(0, 10)}`;
+  }
+
+  private enterApproved(messageId: string): void {
+    if (this.states.has(messageId)) return;
+    const pending = transitionApprovalState("draft", "pending");
+    this.states.set(messageId, transitionApprovalState(pending, "approved"));
+  }
+
+  private markSent(messageId: string): void {
+    const from = this.states.get(messageId);
+    if (from !== "approved") return;
+    this.states.set(messageId, transitionApprovalState(from, "sent"));
   }
 
   private record(
@@ -179,4 +240,58 @@ function capFor(caps: Readonly<Record<string, number>>, channel: string): number
   const value = caps[channel];
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   return Math.max(0, Math.floor(value));
+}
+
+export interface LedgerConsultInput {
+  channel: string;
+  recipient: string;
+  subject: string;
+  body: string;
+  noticeVersion: string;
+  approverId: string;
+  approvedAt: string | null | undefined;
+  storedBodyHash: string | null | undefined;
+  env: PolicyEnv;
+  nowMs?: number;
+  profileUrl?: string | null;
+  dailyCap?: number;
+}
+
+const consultCounts = new Map<string, number>();
+
+/**
+ * The send route and the dispatcher both call this. It re-checks the exact
+ * approved text, the approval TTL, the allowlist target, and the per-day cap.
+ */
+export function consultApprovalLedger(input: LedgerConsultInput): { allowed: boolean; reason: string } {
+  const nowMs = input.nowMs ?? Date.now();
+  const exact = exactBodyHash({
+    channel: input.channel,
+    recipient: input.recipient,
+    subject: input.subject,
+    body: input.body,
+    noticeVersion: input.noticeVersion,
+    approverId: input.approverId,
+    approvedAt: input.approvedAt ?? "",
+  });
+  if (!input.storedBodyHash || input.storedBodyHash !== exact) {
+    return { allowed: false, reason: "body-hash-mismatch" };
+  }
+  if (!approvalIsCurrent(input.approvedAt, nowMs, approvalTtlMs(input.env))) {
+    return { allowed: false, reason: "approval-expired" };
+  }
+  const target = deliveryTargetForChannel(input.channel, {
+    toAddress: input.recipient,
+    profileUrl: input.profileUrl,
+  });
+  const policy = sendPolicyFromEnv(input.env, target);
+  if (!policy.ok) return { allowed: false, reason: policy.reason };
+  if (typeof input.dailyCap === "number") {
+    const day = new Date(nowMs).toISOString().slice(0, 10);
+    const key = `${input.channel}\n${day}`;
+    const used = consultCounts.get(key) ?? 0;
+    if (used >= input.dailyCap) return { allowed: false, reason: "channel-cap" };
+    consultCounts.set(key, used + 1);
+  }
+  return { allowed: true, reason: "authorized" };
 }

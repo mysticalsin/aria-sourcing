@@ -1,55 +1,54 @@
 ---
 project: MSourcing / ARIA
-shift: 469
+shift: 470
 agent: cursor
-updated: 2026-11-20
-status: approval-ledger-ready-for-review
+updated: 2026-11-21
+status: approval-ledger-devin-gate-fixed
 ---
 
-# Handoff - Shift 469
+# Handoff - Shift 470
 
 ## Current state
 
-- Base branch `twa-odoo` is `e3fa3f594a6d86aec31d42a65414a96be4c8400e` (`docs(relay): shift 468 handoff`). No other commits were added to it. Michael's branches were not rewritten or deleted.
-- Feature branch `cursor/approval-ledger-allowlist-601c` holds the approval ledger. PR targets `twa-odoo`. Not merged.
-- Ledger modules: `src/lib/approval/{types,hash,allowlist,qc,audit-log,dispatch-guard,ledger}.ts`.
-- Tests: `tests/approval-ledger-boundary.mts`, registered in `tests/test-manifest.mjs` (application and security groups).
-- Gate on this branch: `npm run typecheck`, `npm run typecheck:tests`, and `npm test` exited 0. The new file reported 8 passed, 0 failed.
-- No live send, deploy, or provider call was added. Synthetic addresses only (`*.example.test`).
-- Sentinel follow-up on the same branch: LinkedIn delivery, including `vendorApiAdapter`, is refused before any network call. Calendar guest notices stay off until the send policy and an exact invite hash pass. The kill switch fails closed. The ledger hash is length-prefixed and approvals expire after 7 days by default. `ledger.ts`, `audit-log.ts`, and `qc.ts` are the interim TypeScript boundary. The database approval row remains the gate until the Rust ledger lands. PR 168 still owns deleting the LinkedIn routes.
+- Base branch `twa-odoo` is `e3fa3f594a6d86aec31d42a65414a96be4c8400e`. Michael's branches were not rewritten or deleted. This branch was not rebased and was not force-pushed.
+- Feature branch `cursor/approval-ledger-allowlist-601c`. PR #167 targets `twa-odoo`. Not merged.
+- Devin's void gate (head moved `cfcf96ab` -> `8e72cd7f`) is addressed on top of `1047a564`. Failing tests are `9834aba233c64d0032be128f2ee0c9d6ef09a868` (`tests/approval-devin-gate.mts`, 13 failed, 0 passed). The fix commit follows it.
+- `exactBodyHash` NFC-normalizes the text and binds approver id and approval timestamp. The send route and the dispatcher compare that hash, not `approvalHash`.
+- Demo with an unset allowlist fails closed. Host matching is exact or a dot-boundary subdomain. Homoglyph fold and trim stay on.
+- Approval lifecycle is `draft -> pending -> approved -> sent`, plus `invalidated`. Illegal transitions throw. The per-channel cap resets on the UTC day of the injected clock. `consultApprovalLedger` is on the send route and the dispatcher.
+- `claim_email_outbound` in `supabase/migrations/0001_baseline.sql` refuses a null `approved_at` or one older than 7 days. `tests/db/approval-ttl.sql` runs from `tests/schema-authority-db.sh`.
+- `GET /api/linkedin/outbox` returns 410 and no items. Sentinel fixtures use `profiles.example.test`. The Voyager bridge and the extension are still in the tree.
+- Secret scan uses `gitleaks git . --log-opts='--all'` with `fetch-depth: 0`. The `fc1d82a8` line-22 fingerprint is in `.gitleaksignore`. A local `--all` scan after `git fetch origin` reported no leaks.
+- Agents healthcheck is `process.kill(1,0)`. #168 deletes it.
+- `linkedin_token` stays refused unless `linkedinTokenEnabled === true`. This PR does not network-send it.
+- Local gate: `npm run typecheck`, `npm run typecheck:tests`, `npm run lint` (0 errors, 2 pre-existing warnings), and `npm test` exited 0.
 
 ## Done this shift
 
-- Wrote the eight ledger tests first against a stub that skipped the allowlist, left automatic mode on, and recorded no audit entries. That run failed 8, passed 0 (`'stub' !== 'approved'`, manual approval `true !== false`, `sendMode` returned `automatic`, kill switch still allowed a send, the second email was not capped, test-mode reason was `stub` not `allowlist`, audit length `0 !== 9`).
-- Replaced the stub. The same eight tests then passed.
-- `src/app/api/outreach/approve/route.ts` calls `approvalPolicyFromEnv` before `record_outreach_approval`.
-- `src/app/api/outreach/send/route.ts` and `src/lib/dispatch-outbound.ts` call `sendPolicyFromEnv` before `performEmailSend`.
-- Exact body hash reuses `approvalHash` from `src/lib/outreach-content.ts` and also binds channel, recipient, and notice version.
-- LinkedIn bridge and autopilot files were not edited.
+- Committed the failing Devin-gate tests, then the fixes. No force-push, no merge, no rebase.
+- Did not delete the Voyager bridge or the extension.
 
 ## Blockers
 
-- None.
+- None on this branch. Conflicts with #168, #169, #170, and #172 are expected and were not resolved.
 
 ## Next steps
 
-1. Review the PR. Do not merge it from this shift.
-2. Persist the ledger (caps, QC passes, audit entries) and mirror approvals to Odoo in a later PR. This shift's ledger is in memory and is the decision API the tests call.
-3. Do not connect an `automatic` authorization to `performEmailSend` until Tony turns live mode on. `ARIA_MODE=live` is refused.
+1. Wait until every GitHub check on the final head is green, then do not push again.
+2. After #168 merges, rebase #167 onto it. Do not do that in this shift.
+3. Do not merge #167 from this shift.
 
 ## Decisions made (don't relitigate)
 
-- Tony, 20 Nov 2026: MANUAL is the default. A human approves the exact text, one message or a batch. FULL AUTOMATIC is opt-in per campaign and channel. It authorizes a send only after a QC pass bound to that exact body hash. The QC agent in this shift is a stub interface plus a deterministic generic-message detector. No model call.
-- QC pass requires `pass === true`, rubric score >= 80 (`MIN_QC_RUBRIC_SCORE`), and `generic === false`. The ledger hashes the message itself. The agent cannot supply the hash.
-- An edit of body, subject, recipient, channel, or notice version refuses the send with `body-hash-mismatch`. The stored approval still matches the original text. A second send of that same text is `already-authorized`.
-- Allowlist env name is `ARIA_RECIPIENT_ALLOWLIST`. It is enforced when the list is non-empty, and always when `ARIA_MODE=test` (an empty list contacts nobody). Demo with the list unset does not invent a list.
-- Kill switch env name is `ARIA_SEND_KILL_SWITCH` (`1`, `true`, or `on`). It blocks ledger sends and the existing send and dispatch paths. Recording an approval still works while it is on.
-- `AGENTS_LINKEDIN_ALLOWLIST` was not reused. The autopilot files that read it are owned by the removal PR.
-- Owner decisions recorded in the archived shift-468 baton stay archived. This shift does not relitigate them and does not carry the LinkedIn autopilot forward.
+- Tony, 20 Nov 2026: MANUAL is the default. FULL AUTOMATIC is opt-in per campaign and channel and requires a QC pass bound to the exact body hash. The QC agent is a stub. No model call.
+- Tony, 20:30 BRT: the LinkedIn token option is an off-by-default switch. Channel id is `linkedin_token`. It is refused unless the per-workspace flag is on. This PR does not send it.
+- Demo and test both enforce the allowlist. An unset list matches nobody.
+- #168 lands first. #167 is rebased onto #168 only after #168 merges.
+- Owner decisions in the archived shift-469 baton stay archived.
 
 ## Watch out
 
-- `/api/outreach/send` still requires `approval_source === "human"` and the existing SQL claim. A QC pass alone cannot send through that route. The new per-channel cap is enforced inside `ApprovalLedger`, not inside the SQL warmup cap.
-- Demo with `ARIA_RECIPIENT_ALLOWLIST` unset still accepts a manual approval for any recipient. Set the list, or `ARIA_MODE=test`, before any test that must be allowlist-only.
+- `claim_email_outbound_queued` still compares the subject-plus-body wire hash. The interactive `claim_email_outbound` compares the stored hash and now requires `approved_at` within 7 days.
+- The in-memory ledger is not the Rust ledger. A QC pass still does not release `/api/outreach/send` by itself.
 - Audit entries store actor, message id, channel, campaign id, reason, and body hash. They do not store the recipient address or the message text.
-- `tests/store-contracts.mts` still pins the store action count at 118. This shift did not change the store.
+- `.gitleaksignore` now comments every fingerprint and adds the full-history Go fixture fingerprints. #168 also edits that file.

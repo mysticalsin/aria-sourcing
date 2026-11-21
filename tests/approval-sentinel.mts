@@ -28,10 +28,14 @@ test("test_linkedin_delivery_is_hard_refused", () => {
   assert.match(poll, /linkedInDeliveryRefusal|linkedin-delivery-refused/);
   const outboxPost = outbox.slice(outbox.indexOf("export async function POST"));
   assert.ok(outboxPost.indexOf("410") < outboxPost.indexOf("linkedin_bridge_outbox") || !outboxPost.includes(".insert("));
-  const decision = dispatchChannelDecision({ ARIA_MODE: "demo" }, "LinkedIn", {
-    toAddress: "ada.candidate@example.test",
-    profileUrl: "https://www.linkedin.com/in/ada-example",
-  });
+  const decision = dispatchChannelDecision(
+    { ARIA_MODE: "demo", ARIA_RECIPIENT_ALLOWLIST: "https://profiles.example.test/in/ada-example" },
+    "LinkedIn",
+    {
+      toAddress: "ada.candidate@example.test",
+      profileUrl: "https://profiles.example.test/in/ada-example",
+    },
+  );
   assert.equal(decision.ok, false);
   if (!decision.ok) {
     assert.equal(decision.status, 410);
@@ -130,19 +134,19 @@ test("test_allowlist_checks_delivery_target", () => {
   const other = "other.person@example.test";
   const env = { ARIA_MODE: "demo" as const, ARIA_RECIPIENT_ALLOWLIST: allowlisted };
   assert.equal(
-    deliveryTargetForChannel("Email", { toAddress: other, profileUrl: "https://www.linkedin.com/in/ada-example" }),
+    deliveryTargetForChannel("Email", { toAddress: other, profileUrl: "https://profiles.example.test/in/ada-example" }),
     other,
   );
   assert.equal(
-    deliveryTargetForChannel("LinkedIn", { toAddress: allowlisted, profileUrl: "https://www.linkedin.com/in/other-example" }),
-    "https://www.linkedin.com/in/other-example",
+    deliveryTargetForChannel("LinkedIn", { toAddress: allowlisted, profileUrl: "https://profiles.example.test/in/other-example" }),
+    "https://profiles.example.test/in/other-example",
   );
   const email = dispatchChannelDecision(env, "Email", { toAddress: other, profileUrl: allowlisted });
   assert.equal(email.ok, false);
   if (!email.ok) assert.equal(email.reason, "allowlist");
   const linkedin = dispatchChannelDecision(env, "LinkedIn", {
     toAddress: allowlisted,
-    profileUrl: "https://www.linkedin.com/in/other-example",
+    profileUrl: "https://profiles.example.test/in/other-example",
   });
   assert.equal(linkedin.ok, false);
   if (!linkedin.ok) assert.equal(linkedin.reason, "allowlist");
@@ -230,7 +234,7 @@ test("test_linkedin_vendor_adapter_makes_no_network_call", async () => {
       workspaceId: "ws-synthetic",
       messageId: "msg-synthetic",
       candidateId: "candidate-synthetic",
-      profileUrl: "https://www.linkedin.com/in/ada-example",
+      profileUrl: "https://profiles.example.test/in/ada-example",
       subject: "Example note",
       body: "Hello from the example ledger.",
       attemptId: "11111111-1111-4111-8111-111111111111",
@@ -239,7 +243,7 @@ test("test_linkedin_vendor_adapter_makes_no_network_call", async () => {
       workspaceId: "ws-synthetic",
       messageId: "msg-synthetic",
       candidateId: "candidate-synthetic",
-      profileUrl: "https://www.linkedin.com/in/ada-example",
+      profileUrl: "https://profiles.example.test/in/ada-example",
       subject: "Example note",
       body: "Hello from the example ledger.",
       attemptId: "11111111-1111-4111-8111-111111111111",
@@ -266,7 +270,7 @@ test("test_linkedin_token_channel_requires_workspace_flag", () => {
     campaignId: "campaign-synthetic-1",
     candidateId: "candidate-synthetic-1",
     channel: "linkedin_token",
-    recipient: "https://www.linkedin.com/in/ada-example",
+    recipient: "https://profiles.example.test/in/ada-example",
     subject: "Example note",
     body: "Ada, the example ledger is why I wrote, including the hash bound to this exact note.",
     noticeVersion: "art14-lgpd-2026-11-20",
@@ -293,7 +297,10 @@ test("test_linkedin_token_channel_requires_workspace_flag", () => {
   const allowed = on.decideSend(message, "operator.synthetic");
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.reason, "authorized");
-  assert.equal(allowed.bodyHash, exactBodyHash(message));
+  assert.equal(
+    allowed.bodyHash,
+    exactBodyHash({ ...message, approverId: "operator.synthetic", approvedAt: "2026-11-20T18:53:00.000Z" }),
+  );
   const edited = { ...message, body: `${message.body} Edited.` };
   assert.notEqual(exactBodyHash(edited), exactBodyHash(message));
   assert.equal(on.decideSend(edited, "operator.synthetic").reason, "body-hash-mismatch");
