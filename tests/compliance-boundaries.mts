@@ -303,6 +303,10 @@ test("test_no_agents_compose_service", () => {
   assert.doesNotMatch(compose, /\/api\/agent\/tick/);
 });
 
+export function isLinkedInHostNetworkCall(_line: string): boolean {
+  return false;
+}
+
 const STORED_OR_REJECTED_PROFILE = /linkedin\.com\/(?:in|pub|company|school)\b/i;
 const HOST_CHECK_FILES = new Set([
   "src/lib/linkedin-profile-url.ts",
@@ -326,6 +330,29 @@ test("test_no_linkedin_com_or_licdn_outside_stored_profiles", () => {
     });
   }
   assert.deepEqual(hits, [], hits.join("\n"));
+});
+
+test("test_linkedin_network_call_ignores_stored_path_allowance", () => {
+  const calls = [
+    "axios.get('https://www.linkedin.com/in/someone')",
+    "got('https://www.linkedin.com/in/someone')",
+    "http.request('https://www.linkedin.com/in/someone')",
+    "https.request('https://www.linkedin.com/in/someone')",
+    "undici.request('https://www.linkedin.com/in/someone')",
+    "page.goto('https://www.linkedin.com/in/someone')",
+    "fetch('https://www.linkedin.com/in/someone')",
+  ];
+  for (const sample of calls) {
+    assert.equal(isLinkedInHostNetworkCall(sample), true, sample);
+  }
+  assert.equal(isLinkedInHostNetworkCall("const url = 'https://www.linkedin.com/in/someone'"), false);
+});
+
+test("test_bridge_drop_keeps_rows_without_legal_hold_clearance", () => {
+  const sql = read("supabase/migrations/0010_drop_linkedin_bridge.sql");
+  assert.match(sql, /aria\.bridge_legal_hold_cleared/);
+  assert.match(sql, /deletes no bridge rows/i);
+  assert.doesNotMatch(sql, /^drop table\b/im);
 });
 
 test("test_linkedin_token_channel_allowlist_has_exactly_one_entry", () => {
@@ -414,6 +441,8 @@ test("test_spec_derived_boundary_tests_present", () => {
     "test_no_linkedin_vendor_delivery_adapter",
     "test_no_licdn_photo_host",
     "test_no_linkedin_com_or_licdn_outside_stored_profiles",
+    "test_linkedin_network_call_ignores_stored_path_allowance",
+    "test_bridge_drop_keeps_rows_without_legal_hold_clearance",
     "test_linkedin_token_channel_allowlist_has_exactly_one_entry",
     "test_no_linkedin_integration_surface",
     "test_forward_only_drop_is_safe_on_existing_dbs",
