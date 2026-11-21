@@ -272,6 +272,23 @@ async function recordNext(browser) {
   });
 }
 
+async function hideRealHosts(page) {
+  await page.evaluate(() => {
+    const rewrite = (value) => value.replace(/https?:\/\/(?:www\.)?linkedin\.com\/\S*/gi, "example.test/ada");
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE && /linkedin\.com/i.test(node.nodeValue || "")) {
+        node.nodeValue = rewrite(node.nodeValue || "");
+      }
+      for (const child of node.childNodes) walk(child);
+    };
+    walk(document.body);
+    for (const el of document.querySelectorAll("[placeholder]")) {
+      const hint = el.getAttribute("placeholder") || "";
+      if (/linkedin\.com/i.test(hint)) el.setAttribute("placeholder", rewrite(hint));
+    }
+  });
+}
+
 async function moveToHire(page) {
   const stages = ["To Assess", "To Interview", "Shoot", "QM", "To Hire"];
   for (const label of stages) {
@@ -312,10 +329,25 @@ async function recordOdoo(browser) {
     storageState: storage,
     recordVideo: { dir, size: { width: WIDTH, height: HEIGHT } },
   });
+  await recording.addInitScript(() => {
+    const rewrite = (value) => value.replace(/https?:\/\/(?:www\.)?linkedin\.com\/\S*/gi, "example.test/ada");
+    const scrub = () => {
+      const walk = (node) => {
+        if (node.nodeType === Node.TEXT_NODE && /linkedin\.com/i.test(node.nodeValue || "")) {
+          node.nodeValue = rewrite(node.nodeValue || "");
+        }
+        for (const child of node.childNodes) walk(child);
+      };
+      if (document.body) walk(document.body);
+    };
+    new MutationObserver(scrub).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    scrub();
+  });
   const shot = await recording.newPage();
   await shot.goto(`${ODOO}/odoo/recruitment-applications`, { waitUntil: "domcontentloaded" });
   await shot.getByText("Ada Example", { exact: true }).first().click();
   await shot.getByRole("radio", { name: "To Hire", checked: true }).waitFor({ timeout: 60000 });
+  await hideRealHosts(shot);
   await shot.waitForTimeout(900);
   const hired = shot.getByRole("radio", { name: "Hired" }).first();
   if (await hired.count() && await hired.isVisible()) await hired.click();
@@ -324,6 +356,7 @@ async function recordOdoo(browser) {
     await shot.getByRole("menuitem", { name: "Hired" }).click();
   }
   await shot.getByRole("dialog").filter({ hasText: "contract" }).waitFor({ timeout: 30000 });
+  await hideRealHosts(shot);
   await shot.waitForTimeout(1600);
   const video = shot.video();
   await recording.close();
