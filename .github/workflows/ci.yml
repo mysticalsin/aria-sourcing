@@ -9,10 +9,16 @@ on:
 permissions:
   contents: read
 
+# One run per ref. A newer push cancels a run whose jobs are still queued,
+# so the release gate is not left waiting on a superseded head.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -45,7 +51,7 @@ jobs:
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -66,7 +72,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -103,7 +109,7 @@ jobs:
 
   database-security:
     name: Database security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -171,7 +177,7 @@ jobs:
     name: Release gate
     if: always()
     needs: [quality, dependency-audit, secret-scan, database-security, local-demo]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:

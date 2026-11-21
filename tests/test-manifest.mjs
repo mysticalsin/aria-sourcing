@@ -147,6 +147,7 @@ export const testManifest = {
     {"id":"build-output","executable":"tsx","argv":["tests/build-output.mts"]},
     {"id":"isolated-build","executable":"tsx","argv":["tests/isolated-build.mts"]},
     {"id":"declared-dependencies","executable":"tsx","argv":["tests/declared-dependencies.mts"]},
+    {"id":"next-version","executable":"tsx","argv":["tests/next-version.mts"]},
     {"id":"intake-grounding","executable":"tsx","argv":["tests/intake-grounding.mts"]},
     {"id":"launch-sample-readiness","executable":"tsx","argv":["tests/launch-sample-readiness.mts"]},
     {"id":"sourcing-agent-contract","executable":"tsx","argv":["tests/sourcing-agent-contract.mts"]},
@@ -196,6 +197,7 @@ export const testManifest = {
       "sourcing-learning-authority",
     ],
     "application": [
+      "next-version",
       "fleet",
       "humanizer",
       "mock-ai",
@@ -333,6 +335,7 @@ export const testManifest = {
       "candidate-erasure-route",
     ],
     "security": [
+      "next-version",
       "agent-operational-authority",
       "public-fetch",
       "public-fetch-node-transport",

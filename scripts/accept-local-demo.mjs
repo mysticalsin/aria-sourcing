@@ -113,8 +113,12 @@ try {
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
   await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
-  await dialog.getByLabel("Name", { exact: true }).fill(marker + " Person");
-  await dialog.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
+  // LinkedIn and Manual each render a Name field. The LinkedIn one stays
+  // mounted and hidden, so a dialog-wide label matches that hidden input
+  // and waits on it. Stay inside the visible Manual panel.
+  const manualPanel = dialog.locator('[role="tabpanel"][id$="-panel-manual"]:not([hidden])');
+  await manualPanel.getByLabel("Name", { exact: true }).fill(marker + " Person");
+  await manualPanel.getByLabel("Lawful basis", { exact: true }).selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;
