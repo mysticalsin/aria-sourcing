@@ -177,15 +177,17 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         continue;
       }
       const dailyCap = channelDailyCapFromEnv(process.env);
-      const utcDay = new Date().toISOString().slice(0, 10);
-      const { data: capRow } = await supabase
-        .from("outreach_channel_daily_sends")
-        .select("sent_count")
-        .eq("workspace_id", msg.workspace_id)
-        .eq("channel", msg.channel)
-        .eq("send_day", utcDay)
-        .maybeSingle();
-      const sentToday = typeof capRow?.sent_count === "number" ? capRow.sent_count : Number(capRow?.sent_count ?? 0);
+      const { data: capRow, error: capReadError } = await supabase.rpc("outreach_channel_sent_today", {
+        p_workspace_id: msg.workspace_id,
+        p_channel: msg.channel,
+      });
+      const capRecord = capRow as { sent_count?: number; reason?: string } | null;
+      const sentToday = capRecord?.sent_count;
+      if (capReadError || capRecord?.reason || typeof sentToday !== "number" || !Number.isFinite(sentToday)) {
+        safeLog("dispatch-outbound: daily count unavailable", { message: capReadError?.message ?? capRecord?.reason ?? "missing count" });
+        await finish("blocked", { pass: false, reasons: ["daily-count-unavailable"] });
+        continue;
+      }
       const ledgerDecision = consultApprovalLedger({
         channel: msg.channel,
         recipient: deliveryTarget,
@@ -199,20 +201,10 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         env: process.env,
         profileUrl,
         dailyCap: dailyCap,
-        sentToday: Number.isFinite(sentToday) ? sentToday : 0,
+        sentToday,
       });
       if (!ledgerDecision.allowed) {
         await finish("blocked", { pass: false, reasons: [ledgerDecision.reason] });
-        continue;
-      }
-      const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
-        p_workspace_id: msg.workspace_id,
-        p_channel: msg.channel,
-        p_cap: dailyCap,
-      });
-      const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
-      if (capError || capDecision?.allowed !== true) {
-        await finish("blocked", { pass: false, reasons: [capDecision?.reason ?? "channel-cap"] });
         continue;
       }
 
@@ -279,6 +271,20 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         }
         deliveryAttemptId = emailClaim.delivery_attempt_id ?? null;
         const rfcMessageId = emailClaim.rfc_message_id ?? "";
+        const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
+          p_workspace_id: msg.workspace_id,
+          p_channel: msg.channel,
+        });
+        const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
+        if (capError || capDecision?.allowed !== true) {
+          await supabase.rpc("finalize_email_provider_failure", {
+            p_message_id: msg.id,
+            p_delivery_attempt_id: deliveryAttemptId,
+            p_reason: "Channel daily cap reached.",
+          });
+          stats.blocked++;
+          continue;
+        }
         if (
           !deliveryAttemptId ||
           !UUID_PATTERN.test(deliveryAttemptId) ||

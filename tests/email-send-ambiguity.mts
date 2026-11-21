@@ -362,6 +362,11 @@ try {
   };
 
   const serviceSupabase = {
+    rpc: async (name: string) => {
+      if (name === "outreach_channel_sent_today") return { data: { sent_count: 0 }, error: null };
+      if (name === "consume_outreach_channel_daily_cap") return { data: { allowed: true, reason: "authorized" }, error: null };
+      return { data: null, error: null };
+    },
     from: (table: string) => {
       if (table === "outreach_ledger") {
         return chainQuery({

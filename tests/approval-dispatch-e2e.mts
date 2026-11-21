@@ -53,14 +53,19 @@ function psql(sql: string): string {
   return result.stdout.trim();
 }
 
-function serviceJson(call: string): Record<string, unknown> {
+function appPsql(sql: string): string {
   const raw = psql(`
     select set_config('request.jwt.claims', '{"sub":"${USER}","role":"service_role"}', false);
     select set_config('request.jwt.claim.sub', '${USER}', false);
     select set_config('request.jwt.claim.role', 'service_role', false);
-    set role service_role;
-    select (${call})::text;
+    set role aria_app;
+    ${sql}
   `);
+  return raw.split(/\n/).map((item) => item.trim()).filter(Boolean).at(-1) ?? "";
+}
+
+function serviceJson(call: string): Record<string, unknown> {
+  const raw = appPsql(`select (${call})::text;`);
   const line = raw.split(/\n/).map((item) => item.trim()).filter(Boolean).at(-1) ?? "";
   return JSON.parse(line) as Record<string, unknown>;
 }
@@ -70,7 +75,7 @@ function sqlLiteral(value: string): string {
 }
 
 function rows(sql: string): Array<Record<string, unknown>> {
-  const raw = psql(`select coalesce(json_agg(row_to_json(t)), '[]'::json)::text from (${sql}) t;`);
+  const raw = appPsql(`select coalesce(json_agg(row_to_json(t)), '[]'::json)::text from (${sql}) t;`);
   return JSON.parse(raw) as Array<Record<string, unknown>>;
 }
 
@@ -153,7 +158,7 @@ function client() {
               if (typeof value === "object") return `${key} = ${sqlLiteral(JSON.stringify(value))}::jsonb`;
               return `${key} = ${sqlLiteral(String(value))}`;
             }).join(", ");
-            const raw = psql(`
+            const raw = appPsql(`
               with updated as (
                 update public.${table} set ${assignments} where ${where()} returning *
               )
@@ -289,7 +294,8 @@ test("test_approved_email_passes_claim_trigger_and_dispatcher", async () => {
   const status = psql(`select status from public.messages_outbound where id = '${OK_ROW}';`);
   assert.ok(status === "failed" || status === "dispatching", status);
 
-  const second = serviceJson(`public.consume_outreach_channel_daily_cap('${WS}'::uuid, 'Email', 1)`);
+  psql(`update public.outreach_channel_cap_config set daily_cap = 1 where channel = '*';`);
+  const second = serviceJson(`public.consume_outreach_channel_daily_cap('${WS}'::uuid, 'Email')`);
   assert.equal(second.allowed, false);
   assert.equal(second.reason, "channel-cap");
 });

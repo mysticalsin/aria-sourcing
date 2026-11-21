@@ -244,40 +244,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
   }
 
-  const dailyCap = channelDailyCapFromEnv(process.env);
-  const { data: sentTodayRow } = await supabase.rpc("outreach_channel_sent_today", {
-    p_workspace_id: approvalWid,
-    p_channel: channel,
-  });
-  const sentTodayRecord = sentTodayRow as { sent_count?: number } | null;
-  const sentToday = typeof sentTodayRecord?.sent_count === "number" ? sentTodayRecord.sent_count : 0;
-  const capPreview = consultApprovalLedger({
-    channel,
-    recipient: candidateEmail,
-    subject,
-    body,
-    noticeVersion: OUTREACH_NOTICE_VERSION,
-    approverId,
-    approvedAt,
-    storedBodyHash: storedExact,
-    storedWireHash: approval.body_hash,
-    env: process.env,
-    dailyCap: dailyCap,
-    sentToday,
-  });
-  if (!capPreview.allowed) {
-    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
-  }
-  const { data: consumed } = await supabase.rpc("consume_outreach_channel_daily_cap", {
-    p_workspace_id: approvalWid,
-    p_channel: channel,
-    p_cap: dailyCap,
-  });
-  const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
-  if (capDecision?.allowed !== true) {
-    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
-  }
-
   // Domain verification happens before the irreversible claim. A dry-run
   // decision must never leave a claimed ledger row that blocks later outreach.
   if (!seat.domain_verified) {
@@ -329,9 +295,43 @@ export async function POST(req: NextRequest) {
   // Atomic approval + guardrail claim: locks the active human approval and creates
   // the ledger claim in one transaction, so a revoke cannot land between the
   // client-visible approval validation and the provider dispatch.
+  const serviceForCap = getServiceSupabase();
+  if (!serviceForCap) {
+    safeLog("outreach-send: daily count unavailable", { message: "service client missing" });
+    return NextResponse.json({ status: "error", detail: "Channel daily count is unavailable." }, { status: 503 });
+  }
+  const dailyCap = channelDailyCapFromEnv(process.env);
+  const { data: sentTodayRow, error: capReadError } = await serviceForCap.rpc("outreach_channel_sent_today", {
+    p_workspace_id: approvalWid,
+    p_channel: channel,
+  });
+  const sentTodayRecord = sentTodayRow as { sent_count?: number; reason?: string } | null;
+  const sentToday = sentTodayRecord?.sent_count;
+  if (capReadError || sentTodayRecord?.reason || typeof sentToday !== "number") {
+    safeLog("outreach-send: daily count unavailable", { message: capReadError?.message ?? sentTodayRecord?.reason ?? "missing count" });
+    return NextResponse.json({ status: "error", detail: "Channel daily count is unavailable." }, { status: 503 });
+  }
+  const capPreview = consultApprovalLedger({
+    channel,
+    recipient: candidateEmail,
+    subject,
+    body,
+    noticeVersion: OUTREACH_NOTICE_VERSION,
+    approverId,
+    approvedAt,
+    storedBodyHash: storedExact,
+    storedWireHash: approval.body_hash,
+    env: process.env,
+    dailyCap: dailyCap,
+    sentToday,
+  });
+  if (!capPreview.allowed) {
+    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
+  }
+
   const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound", {
     p_message_id: payload.messageId,
-    p_body_hash: approvedContentHash,
+    p_body_hash: wireHash,
     p_approval_scope_hash: approvedScopeHash,
     p_candidate_id: candidateId,
     p_candidate_email: candidateEmail,
@@ -347,6 +347,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "skipped", detail: `Guardrail blocked: ${claimObj?.reason ?? "blocked by guardrails"}` });
   }
   const ledgerId = claimObj.ledger_id;
+  const { data: consumed, error: capError } = await serviceForCap.rpc("consume_outreach_channel_daily_cap", {
+    p_workspace_id: approvalWid,
+    p_channel: channel,
+  });
+  const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
+  if (capError || capDecision?.allowed !== true) {
+    if (ledgerId) await supabase.from("outreach_ledger").update({ status: "skipped", reason: "channel-cap" }).eq("id", ledgerId);
+    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
+  }
   const reconcile = async (status: "sent" | "skipped" | "ambiguous", reason: string | null) => {
     if (ledgerId) await supabase.from("outreach_ledger").update({ status, reason }).eq("id", ledgerId);
   };
