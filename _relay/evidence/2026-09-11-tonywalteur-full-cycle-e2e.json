@@ -9,7 +9,7 @@
     "url": "https://www.linkedin.com/login/?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Ffeed%2F"
   },
   "liveView": "https://aria-mantu-computers.fly.dev/view/comp_tony_01?fs=1",
-  "profile": "https://www.linkedin.com/in/tonywalteur/",
+  "profile": "https://www.linkedin.com/in/example-a/",
   "demoLoginStatus": 200,
   "note": "LinkedIn login required once via Take control; session persists on openbot_profiles volume"
 }
