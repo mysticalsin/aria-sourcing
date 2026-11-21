@@ -1,35 +1,40 @@
 ---
 project: MSourcing / ARIA
-shift: 474
+shift: 475
 agent: cursor
 updated: 2026-11-21
-status: integration-sweep-1
+status: integration-sweep-2
 ---
 
-# Handoff - Shift 474
+# Handoff - Shift 475
 
 ## Current state
 
-- `integration/aria-all` carries the sweep 1 fixes. The click head recorded in the artifact is `07c6f17e51eec97b0a1c658fd2f1de35b1455ffe`. A later commit passes `APP_PORT` through `sudo` and records this sweep.
-- Sweep 1 click run: 13 pass, 0 fail. Artifact `e2e-artifacts/20261121T055210Z/`. Notes: `docs/integration/SWEEP-01.md`.
-- Stress A1–A7 pass on that head. A5 no longer stores a touch after hire. A3 resumes a pause. A8 passed at 1800.045s in `e2e-artifacts/20261121T052026Z/`.
-- Odoo serves `http://127.0.0.1:8069/aria/pipeline`. The host's legacy filter was dropping bridge packets; the sweep script accepts `172.16.0.0/12` to `172.16.0.0/12` before compose.
-- Draft fix PRs: #210 (base), #211 (#172), #212 (#177), #214 (#171), #216 (#175), #217 (#174), #220 (#176). #214 and #220 are not stacked; #203 and #202 already sit above those parents.
+- Suite head `94164d39921a346fceeefce7b934be10c760732f` on `integration/aria-all`. Artifact `e2e-artifacts/20261121T063931Z/`. Playwright exit 0. Compose exit 0. Notes: `docs/integration/SWEEP-02.md`.
+- 14 click steps pass, including the original 13 and the synthetic CV upload. Quick-stat numbers stay clickable after Skip, and a return to Home has no dialog.
+- Stress A1–A8 pass. A8 is 600.074s (`STRESS_SOAK_SECONDS=600`).
+- Ingest image is healthy: `ingest serve` on `127.0.0.1:8091`, healthcheck `ingest ready`. The log line has the upload id, byte size, and state.
+- `scripts/sandbox-bridge.sh` prints `apply` only for CI or a VM sandbox. Darwin always prints `skip: host firewall is not changed on macOS`.
+- Draft PRs touched this shift: #210, #212, #284 (stacked on #217), #208. Product heads are in SWEEP-02.
 
 ## Done this shift
 
-- Root-caused the sweep 0 failures and fixed them on the owning heads, then merged those heads back here.
-- A typed `example.test` person can be added in the demo. Outreach opens one exact-text draft and posts one dry-run send. HeyReach is shown off. A hired applicant refuses a message touch. A pause can be resumed. The ingest poppler pin is `deb12u3`. The Odoo addon publishes `/aria/pipeline`.
-- The token page starts as member. The harness sets `ARIA_E2E=1` and the journey acts as admin. There is no refresh RPC.
+- Closed the first-run dialog when the path leaves Home (#212, red `60e8ef68`).
+- Added the candidate CV upload and the ingest HTTP handler (#284, red `4da47449`).
+- Stopped the demo from requesting sourcing feedback while Supabase is off. The route still returns 503 (#210, red `b733c2ab`).
+- Replaced the ingest sleep image with the real service.
+- Guarded the bridge accept rule (red `dfcebafb`).
 
 ## Blockers
 
-- None for the 13 journeys. The packaged app did not bind in the recorded run because `sudo` dropped `APP_PORT`. The script now passes that variable. `compose config` publishes the app on 3010.
+- Four compliance checks on this integration branch still fail. They name banned token labels from the token-channel tests and from `docs/integration/CONFLICTS.md`. The HeyReach catalog check passes. Do not merge this branch.
+- Next.js printed a security advisory during `next dev` (nudge `fb1edeee-6b73-4b7d-93d2-1fd835d631d3`). #179 owns the upgrade. It was not run.
 
 ## Next steps
 
-1. Read `docs/integration/SWEEP-01.md`.
+1. Read `docs/integration/SWEEP-02.md`.
 2. Do not merge `integration/aria-all`.
+3. Leave the product heads frozen at the suite SHA above.
 
 ## Decisions made (don't relitigate)
 
@@ -39,10 +44,13 @@ status: integration-sweep-1
 - ADR 0002 stays withdrawn. Do not put the agents service back.
 - This branch is a test vehicle. Do not merge it.
 - The token channel has no refresh RPC. Do not add one unless a later design says so.
+- #282 owns the agents `process.kill(1,0)` healthcheck. Do not add it on #210.
+- #179 owns the Next.js security upgrade. Do not run it on this branch.
 
 ## Watch out
 
 - One Compose healthcheck: the app ready probe. Do not re-add `process.kill(1,0)` on an agents service.
 - One accept-script locator: the visible Manual tabpanel Name field in `scripts/accept-local-demo.mjs`.
 - Do not force-push or delete `mbe-branch`, `mbe-ngrok`, `mbe-test`, or `twa-odoo`.
-- `sudo docker` drops `APP_PORT` unless the script passes it. The click demo stays on port 3000.
+- `sudo docker` drops `APP_PORT` unless the script passes it. The click demo stays on port 3000. The packaged app publishes on 3010.
+- The bridge rule must go through `scripts/sandbox-bridge.sh`. A developer Mac never gets the iptables change.
