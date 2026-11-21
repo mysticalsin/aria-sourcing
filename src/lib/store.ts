@@ -40,10 +40,7 @@ import {
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultTools, STATE_VERSION } from "./seed";
 import {
-  computeCampaignMetrics,
-  firstInterviewElapsedHours,
   globalKpis,
-  realFunnelFacts,
   type GlobalKpis,
 } from "./metrics";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
@@ -109,13 +106,7 @@ import type {
   Candidate,
   CandidateStage,
   ChatboxSubmission,
-  ChatboxSubmissionStatus,
   ClassifiedReply,
-  InterviewKind,
-  InterviewRecord,
-  LeadSource,
-  PrequalOutcome,
-  PrequalRecord,
   StarRating,
   DustAgentSummary,
   DustRegion,
@@ -134,7 +125,6 @@ import type {
   ReplyIntent,
   SavedModel,
   SkillKey,
-  SkillUpdate,
   SuppressionEntry,
   SystemSettings,
   ToolId,
@@ -5235,6 +5225,11 @@ function useSlice<T>(select: (state: WorkspaceState) => T): T {
   const store = useWorkspaceStore();
   const read = () => select(store.getState() ?? EMPTY);
   return useSyncExternalStore(store.subscribe, read, read);
+}
+
+/** The workspace snapshot the console client reads. Stable until the next commit. */
+export function useWorkspaceSnapshot(): WorkspaceState {
+  return useSlice((state) => state);
 }
 
 export function useSettings(): SystemSettings {

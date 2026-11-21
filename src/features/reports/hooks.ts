@@ -2,17 +2,21 @@
 
 import { useMemo } from "react";
 import { bindConsoleCommands } from "@/features/api/commands";
-import { useOdooSyncPreview } from "@/features/odoo-sync/hooks";
-import { readReports } from "@/features/reports/selectors";
-import { useActions, useActiveCampaignId, useCampaigns, useReports } from "@/lib/store";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
+import { useActions, useWorkspaceSnapshot } from "@/lib/store";
 
 export function useReportsDesk() {
-  const reports = useReports();
-  const campaigns = useCampaigns();
-  const activeId = useActiveCampaignId();
-  const odoo = useOdooSyncPreview();
-  const view = useMemo(() => readReports(reports), [reports]);
-  return { campaigns, activeId, reports: view.reports, forCampaign: view.forCampaign, odoo };
+  const state = useWorkspaceSnapshot();
+  const client = useMemo(() => createWorkspaceConsoleClient(state), [state]);
+  const reports = useMemo(() => client.reports(), [client]);
+  const odoo = useMemo(() => client.odoo().preview, [client]);
+  return {
+    campaigns: state.campaigns,
+    activeId: state.activeCampaignId,
+    reports: reports.reports,
+    forCampaign: reports.forCampaign,
+    odoo,
+  };
 }
 
 export function useReportCommands() {

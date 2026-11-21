@@ -1,6 +1,6 @@
 import type { OdooSyncView } from "@/features/odoo-sync/projection";
 
-export type OdooSyncPhase = "idle" | "preview" | "queued" | "mirrored";
+export type OdooSyncPhase = "idle" | "preview" | "queued" | "recorded";
 
 export interface OdooSyncState {
   phase: OdooSyncPhase;
@@ -22,9 +22,9 @@ function canQueue(state: OdooSyncState): boolean {
 }
 
 /**
- * Preview → queue → local mirror.
+ * Preview, then queue, then a local record of that preview.
  * Queue is refused unless every record in the preview is ready.
- * Mirror is refused until the batch is queued. Nothing here contacts Odoo.
+ * Record is refused until the batch is queued. This step does not call Odoo.
  */
 export function reduceOdooSync(state: OdooSyncState, event: OdooSyncEvent): OdooSyncState {
   switch (event.type) {
@@ -33,7 +33,7 @@ export function reduceOdooSync(state: OdooSyncState, event: OdooSyncEvent): Odoo
     case "queue":
       return canQueue(state) ? { ...state, phase: "queued" } : state;
     case "mirror":
-      return state.phase === "queued" ? { ...state, phase: "mirrored" } : state;
+      return state.phase === "queued" ? { ...state, phase: "recorded" } : state;
     case "reset":
       return initialOdooSync();
     default:

@@ -2,12 +2,12 @@
 
 import { useMemo } from "react";
 import { bindConsoleCommands } from "@/features/api/commands";
-import { readOutreach } from "@/features/outreach/selectors";
-import { useActions, useOutreach } from "@/lib/store";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
+import { useActions, useWorkspaceSnapshot } from "@/lib/store";
 
 export function useOutreachQueueData() {
-  const messages = useOutreach();
-  return useMemo(() => readOutreach(messages), [messages]);
+  const state = useWorkspaceSnapshot();
+  return useMemo(() => createWorkspaceConsoleClient(state).outreach(), [state]);
 }
 
 export function useOutreachCommands() {

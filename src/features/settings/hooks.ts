@@ -2,18 +2,19 @@
 
 import { useMemo } from "react";
 import { bindConsoleCommands } from "@/features/api/commands";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
 import { projectSettingsIntegrations } from "@/features/settings/selectors";
-import { useActions, useIntegrations, useSettings } from "@/lib/store";
+import { useActions, useWorkspaceSnapshot } from "@/lib/store";
 import { supabaseEnabled } from "@/lib/supabase/config";
 
 export function useSettingsDesk() {
-  const settings = useSettings();
-  const stored = useIntegrations();
+  const state = useWorkspaceSnapshot();
+  const view = useMemo(() => createWorkspaceConsoleClient(state).settings(), [state]);
   const integrations = useMemo(
-    () => projectSettingsIntegrations(stored, supabaseEnabled),
-    [stored],
+    () => projectSettingsIntegrations(view.integrations, supabaseEnabled),
+    [view.integrations],
   );
-  return { settings, integrations };
+  return { settings: view.settings, integrations };
 }
 
 export function useSettingsCommands() {

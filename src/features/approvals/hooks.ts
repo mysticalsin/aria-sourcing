@@ -2,12 +2,12 @@
 
 import { useMemo } from "react";
 import { bindConsoleCommands } from "@/features/api/commands";
-import { readApprovals } from "@/features/approvals/selectors";
-import { useActions, useOutreach } from "@/lib/store";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
+import { useActions, useWorkspaceSnapshot } from "@/lib/store";
 
 export function useApprovalQueue() {
-  const messages = useOutreach();
-  return useMemo(() => readApprovals(messages).pending, [messages]);
+  const state = useWorkspaceSnapshot();
+  return useMemo(() => createWorkspaceConsoleClient(state).approvals().pending, [state]);
 }
 
 export function useApprovalCommands() {

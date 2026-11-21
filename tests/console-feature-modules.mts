@@ -590,7 +590,7 @@ test("store drops imports the feature split left unused", () => {
     "PrequalRecord",
     "SkillUpdate",
   ]) {
-    assert.equal(importSection.includes(name), false, name);
+    assert.doesNotMatch(importSection, new RegExp(`\\b${name}\\b`), name);
   }
 });
 

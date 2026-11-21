@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { readPipeline } from "@/features/pipeline/selectors";
 import { bindConsoleCommands } from "@/features/api/commands";
-import { useActions, useCampaigns, useCandidates } from "@/lib/store";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
+import { useActions, useWorkspaceSnapshot } from "@/lib/store";
 
 export function usePipelineBoard() {
-  const campaigns = useCampaigns();
-  const candidates = useCandidates();
-  return useMemo(() => readPipeline(campaigns, candidates), [campaigns, candidates]);
+  const state = useWorkspaceSnapshot();
+  return useMemo(() => createWorkspaceConsoleClient(state).pipeline(), [state]);
 }
 
 export function usePipelineCommands() {

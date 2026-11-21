@@ -10,6 +10,8 @@ export const ODOO_SYNC_SOURCES = [
 
 export type OdooSyncSource = (typeof ODOO_SYNC_SOURCES)[number];
 
+export type OdooIntake = "recruiter-csv" | "rsc" | "job-application" | "candidate-supplied";
+
 export interface OdooSyncInput {
   id: string;
   campaignId: string;
@@ -17,6 +19,8 @@ export interface OdooSyncInput {
   name: string;
   leadSource?: LeadSource | null;
   sourcePlatform?: SourcePlatform | null;
+  /** Closed intake label. When set, it selects the Odoo source directly. */
+  intake?: OdooIntake | null;
 }
 
 export interface OdooSyncRecord {
@@ -37,6 +41,10 @@ export interface OdooSyncView {
 }
 
 function sanctionedSource(input: OdooSyncInput): OdooSyncSource | null {
+  if (input.intake === "recruiter-csv") return "LinkedIn Recruiter CSV";
+  if (input.intake === "rsc") return "RSC/ATS";
+  if (input.intake === "job-application") return "Job application";
+  if (input.intake === "candidate-supplied") return "Candidate-supplied";
   if (input.leadSource === "Applicant") return "Job application";
   if (input.leadSource === "Referral") return "Candidate-supplied";
   if (input.leadSource === "Outbound" && input.sourcePlatform === "Manual") return "Candidate-supplied";

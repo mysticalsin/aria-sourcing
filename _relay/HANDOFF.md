@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 469
 agent: cursor-cloud
-updated: 2026-11-20
+updated: 2026-11-21
 status: console-feature-modules
 ---
 
@@ -11,7 +11,7 @@ status: console-feature-modules
 ## Current state
 
 - Branch `cursor/console-feature-modules-271e` cut from `twa-odoo` at `e3fa3f59`. Michael's branches were not touched.
-- `src/lib/store.ts` is 5521 lines (was 5941). It still owns hydration, the 118-action object, and the approval/send bodies that source-scan tests pin in this file.
+- `src/lib/store.ts` is 5516 lines (was 5941). It still owns hydration, the 118-action object, and the approval/send bodies that source-scan tests pin in this file.
 - Console features live under `src/features/{pipeline,outreach,approvals,odoo-sync,reports,settings}` plus `src/features/api` (workspace-backed `ConsoleClient`).
 - Gate green on this shift: `npm run typecheck`, `npm run typecheck:tests`, `npm run lint` (2 pre-existing warnings, 0 errors), `npm test` exit 0.
 - Synthetic data only. No Go client is wired. `createWorkspaceConsoleClient` reads the current workspace snapshot.
@@ -22,7 +22,9 @@ status: console-feature-modules
 - Pipeline candidate mutations and settings mutations moved to React-free factories: `src/features/pipeline/actions.ts`, `src/features/settings/actions.ts`. The store wires them and still lists every action by name.
 - Pages now drive explicit reducers: candidates list, outreach queue, approval batch, reports selection, settings tab/accordion, exec period. Funnel reads `usePipelineBoard`.
 - Settings accordion chrome moved to `src/features/settings/section.tsx`. Section `n=".."` markers stay in `src/app/settings/page.tsx`. `useDeliverApprovedLinkedIn(` stays in `src/app/outreach/page.tsx`.
-- Odoo sync is a local preview plus an idle → preview → queued → mirrored machine. It does not write or call the network. Unsanctioned sources and blank emails are blocked.
+- Odoo sync is a local preview plus an idle → preview → queued → recorded machine. The terminal phase is a local record of the preview. It does not call Odoo. An explicit `intake` selects LinkedIn Recruiter CSV, RSC/ATS, Job application, or Candidate-supplied. Unsanctioned sources and blank emails stay blocked.
+- Feature hooks read through `createWorkspaceConsoleClient`. The reports page shows the preview counts and states that no record is written.
+- `src/lib/store.ts` no longer imports the metrics and types the split left unused.
 
 ## Blockers
 
@@ -32,7 +34,7 @@ status: console-feature-modules
 
 1. When `services/` aria-api is available, add a `ConsoleClient` with `backend: "go-api"` and keep these hooks on the interface. Do not switch the default off `workspace` until that client passes the same characterization tests.
 2. Leave `approveOutreach`, `sendApprovedOutreach`, `rejectOutreach`, and `confirmManualSend` in `src/lib/store.ts` until the ledger PR says otherwise. Tests still slice those bodies out of this file.
-3. Do not mount an Odoo sync screen. `useOdooSyncPreview` is a read model only.
+3. Do not mount an Odoo sync screen. `useOdooSyncPreview` and the reports line are a read model only. The phase name is `recorded`, not a completed Odoo write.
 4. Do not edit `extensions/linkedin-bridge`, autopilot, `src/lib/outreach-approval.ts`, or `src/lib/dispatch-outbound.ts` from this split.
 
 ## Decisions made (don't relitigate)

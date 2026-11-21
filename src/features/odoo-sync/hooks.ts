@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { projectOdooSync } from "@/features/odoo-sync/projection";
-import { useCandidates } from "@/lib/store";
+import { createWorkspaceConsoleClient } from "@/features/api/workspace-client";
+import { useWorkspaceSnapshot } from "@/lib/store";
 
-/** What the current workspace would hand to Odoo. Read-only. */
+/** Local preview of what the workspace would hand to Odoo. No write. */
 export function useOdooSyncPreview() {
-  const candidates = useCandidates();
-  return useMemo(() => projectOdooSync(candidates), [candidates]);
+  const state = useWorkspaceSnapshot();
+  return useMemo(() => createWorkspaceConsoleClient(state).odoo().preview, [state]);
 }

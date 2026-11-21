@@ -101,6 +101,9 @@ export default function ReportsPage() {
           </div>
         }
       >
+        <p className="mb-6 text-sm text-muted">
+          Odoo hand-off preview: {desk.odoo.ready} ready, {desk.odoo.blocked} blocked. No record is written.
+        </p>
         {campaigns.length === 0 ? (
           <EmptyState
             icon={<Inbox className="h-7 w-7" />}
