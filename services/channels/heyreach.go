@@ -28,7 +28,7 @@ func (h *HeyReach) Prepare(ctx context.Context, draft Draft) (ExactText, error) 
 			return ExactText{}, ErrChannel
 		}
 	}
-	recipient, err := CanonicalRecipient(draft.Recipient)
+	recipient, err := canonicalDelivery(draft.Recipient)
 	if err != nil {
 		return ExactText{}, err
 	}
@@ -59,9 +59,6 @@ func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, e
 	if msg.SenderAccountID <= 0 {
 		return h.refuse(ctx, now, msg, exact, ErrConfig)
 	}
-	if err := h.paused(ctx, msg, now); err != nil {
-		return h.refuse(ctx, now, msg, exact, err)
-	}
 	endpoint, apiKey, err := h.destination()
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
@@ -88,29 +85,40 @@ func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, e
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
 	}
-	release, err := h.limits.reserve(msg.SenderID, now, daily, weekly, gap)
+	account, err := providerAccount("heyreach", msg.From, msg.SenderAccountID)
 	if err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
 	}
-	if err := postChatter(ctx, h.cfg.Auditor, now, "authorized", "", msg, exact); err != nil {
-		release(false)
-		return SendResult{}, ErrAudit
+	unlock := h.limits.flight.lock(account)
+	defer unlock()
+	if err := h.paused(ctx, msg, now); err != nil {
+		return h.refuse(ctx, now, msg, exact, err)
 	}
 	nonce, err := verifyToken(h.cfg.TokenKey, msg.Token, heyReachBound(msg, exact), now)
 	if err != nil {
-		release(false)
 		return h.refuse(ctx, now, msg, exact, err)
 	}
-	if err := h.cfg.Consumed.Consume(ctx, nonce); err != nil {
-		release(false)
+	if err := h.cfg.Consumed.Reserve(ctx, nonce); err != nil {
 		return h.refuse(ctx, now, msg, exact, err)
+	}
+	release, err := h.limits.reserve(account, now, daily, weekly, gap)
+	if err != nil {
+		_ = h.cfg.Consumed.Release(context.Background(), nonce)
+		return h.refuse(ctx, now, msg, exact, err)
+	}
+	if err := postChatter(ctx, h.cfg.Auditor, now, "authorized", "", msg, exact); err != nil {
+		_ = h.cfg.Consumed.Release(context.Background(), nonce)
+		release(false)
+		return SendResult{}, ErrAudit
 	}
 	if err := ctx.Err(); err != nil {
+		_ = h.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		return SendResult{}, err
 	}
-	warning, err := h.postMessage(ctx, endpoint, apiKey, exact, msg.SenderAccountID)
+	status, warning, err := h.postMessage(ctx, endpoint, apiKey, exact, msg.SenderAccountID)
 	if warning {
+		_ = h.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		h.noteFailure(ctx, msg, now, threshold, window, pauseFor)
 		_ = h.cfg.Pauses.Pause(ctx, senderKey(msg.SenderID), time.Time{}, "account-warning")
@@ -118,12 +126,22 @@ func (h *HeyReach) Send(ctx context.Context, msg ApprovedMessage) (SendResult, e
 		_ = postChatter(ctx, h.cfg.Auditor, now, "refused", ErrAccountWarning.Reason, msg, exact)
 		return SendResult{}, ErrAccountWarning
 	}
-	if err != nil {
+	unknown, refused := classifyDelivery(status, err)
+	if unknown {
+		_ = h.cfg.Consumed.MarkUnknown(context.Background(), nonce)
+		release(true)
+		h.noteFailure(ctx, msg, now, threshold, window, pauseFor)
+		_ = postChatter(ctx, h.cfg.Auditor, now, "unknown", ErrOutcomeUnknown.Reason, msg, exact)
+		return SendResult{}, ErrOutcomeUnknown
+	}
+	if refused {
+		_ = h.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		h.noteFailure(ctx, msg, now, threshold, window, pauseFor)
 		_ = postChatter(ctx, h.cfg.Auditor, now, "refused", ErrDelivery.Reason, msg, exact)
 		return SendResult{}, ErrDelivery
 	}
+	_ = h.cfg.Consumed.Commit(context.Background(), nonce)
 	release(true)
 	if err := postChatter(ctx, h.cfg.Auditor, now, "delivered", "", msg, exact); err != nil {
 		return SendResult{}, ErrSentAuditFailed
@@ -291,7 +309,7 @@ func errorPolicy(env LiveEnv) (int, time.Duration, time.Duration, error) {
 	return threshold, window, pauseFor, nil
 }
 
-func (h *HeyReach) postMessage(ctx context.Context, endpoint *url.URL, apiKey string, exact ExactText, accountID int64) (bool, error) {
+func (h *HeyReach) postMessage(ctx context.Context, endpoint *url.URL, apiKey string, exact ExactText, accountID int64) (int, bool, error) {
 	// Field names match POST /api/public/inbox/SendMessage on the public API.
 	payload := map[string]any{
 		"message":           exact.Body,
@@ -301,41 +319,56 @@ func (h *HeyReach) postMessage(ctx context.Context, endpoint *url.URL, apiKey st
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-API-KEY", apiKey)
 	req.Header.Set("User-Agent", "aria-channels")
 	if heyReachPathDenied(req.URL.Path) || heyReachPathDenied(req.URL.String()) {
-		return false, ErrConfig
+		return 0, false, ErrConfig
 	}
 	resp, err := h.client().Do(req)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	defer resp.Body.Close()
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
-		return false, err
+		return resp.StatusCode, false, err
 	}
 	if accountWarning(buf) {
-		return true, nil
+		return resp.StatusCode, true, nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, ErrDelivery
+	return resp.StatusCode, false, nil
+}
+
+func classifyDelivery(status int, err error) (unknown, refused bool) {
+	if err != nil {
+		return true, false
 	}
-	return false, nil
+	switch {
+	case status >= 200 && status < 300:
+		return false, false
+	case status >= 300 && status < 400:
+		return false, true
+	case status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500:
+		return true, false
+	case status >= 400 && status < 500:
+		return false, true
+	default:
+		return true, false
+	}
 }
 
 func (h *HeyReach) client() *http.Client {
 	base := h.cfg.HTTP
 	if base == nil {
-		base = &http.Client{Transport: &http.Transport{Proxy: nil}}
+		base = &http.Client{Transport: refusingTransport{}}
 	}
 	clone := *base
 	clone.Jar = nil
@@ -346,9 +379,17 @@ func (h *HeyReach) client() *http.Client {
 		clone.Timeout = 10 * time.Second
 	}
 	if clone.Transport == nil {
-		clone.Transport = &http.Transport{Proxy: nil}
+		clone.Transport = refusingTransport{}
 	}
 	return &clone
+}
+
+// refusingTransport does not open a connection. Callers inject a client when
+// a real or fake server should be reached.
+type refusingTransport struct{}
+
+func (refusingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, ErrConfig
 }
 
 func accountWarning(body []byte) bool {

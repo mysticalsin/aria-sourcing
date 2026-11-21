@@ -124,8 +124,10 @@ func TestHeyReachStatusDecidesTokenAndCap(t *testing.T) {
 }
 
 func TestHeyReachClientTimeoutLeavesOutcomeUnknown(t *testing.T) {
+	var hits int32
 	srv := newHeyServer(http.StatusOK, `{"ok":true}`)
 	srv.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -161,8 +163,8 @@ func TestHeyReachClientTimeoutLeavesOutcomeUnknown(t *testing.T) {
 	if _, err := ch.Send(context.Background(), msg); !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("retry of unknown token: %v", err)
 	}
-	if srv.count() != 1 {
-		t.Fatalf("hits = %d, want 1", srv.count())
+	if atomic.LoadInt32(&hits) != 1 {
+		t.Fatalf("hits = %d, want 1", hits)
 	}
 }
 

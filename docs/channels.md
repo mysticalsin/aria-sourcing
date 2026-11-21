@@ -38,11 +38,11 @@ CI runs `go vet` and `go test -race` in the Channel adapters job. Tests use synt
 2. HeyReach enable flag. Off unless set to `1`, `true`, or `on`.
 3. Recipient allowlist (`ARIA_RECIPIENT_ALLOWLIST`) on `DeliverTo`, the value the transport actually receives. An unset list allows nobody.
 4. Sender allowlist (`ARIA_SENDER_ALLOWLIST`) on the From address or the HeyReach sender account id. An unset list allows nobody.
-5. Approval token. The token binds channel, recipient, subject, body hash, List-Unsubscribe URL, mode, QC pass, auto opt-in, From, sender account id, issue time, expiry, and a nonce. It is single-use through a `ConsumedStore`.
+5. Approval token. The token binds channel, recipient, subject, body hash, List-Unsubscribe URL, mode, QC pass, auto opt-in, From, sender account id, issue time, expiry, and a nonce. `ConsumedStore` reserves the nonce, then commits it, releases it, or marks the outcome unknown. An unknown outcome blocks a retry of that nonce.
 6. Mode. Empty or `manual` is the default. `auto` sends only when that same token says the campaign opted in and QC passed.
-7. Sender caps and, for HeyReach, the pacing slot. Both are reserved under one lock before the transport runs and released if the transport fails.
+7. Caps and, for HeyReach, the pacing slot. Both are keyed on the provider account bound in the token (the canonical From mailbox, or the HeyReach account id), not on the sender label. A token whose From or account id does not match the send is refused. One in-flight request is allowed per account. The slot is reserved before the transport runs. A definite refusal releases it. A timeout or a 5xx after the request was sent keeps it, so the accepted-plus-unknown count never exceeds the cap.
 8. HeyReach pause store. An account warning pauses that sender until the store is cleared. Delivery failures are counted in a rolling window (`ARIA_HEYREACH_ERROR_THRESHOLD`, default 3; `ARIA_HEYREACH_ERROR_WINDOW_SECONDS`, default 3600) and pause for `ARIA_HEYREACH_ERROR_PAUSE_SECONDS` (default 3600).
-9. An audit note before the transport. If that note fails, nothing is sent. If the note after a successful send fails, `Send` returns `ErrSentAuditFailed`. Callers must not retry that token. The nonce is already consumed, so a retry cannot send it again.
+9. An audit note after the token is verified and before the transport. The authorized note is not written for a token that fails verification. If that note fails, nothing is sent. If the note after a successful send fails, `Send` returns `ErrSentAuditFailed`. Callers must not retry that token. The nonce is already committed, so a retry cannot send it again.
 
 ## Token layout
 
@@ -53,7 +53,7 @@ UTF-8. Each field is an 8-byte big-endian length followed by its bytes.
 - Token material, in order: channel, recipient, subject, body hash, unsubscribe URL, mode (`manual` or `auto`), QC pass (`1` or `0`), auto opt-in (`1` or `0`), From, sender account id (decimal), issue time (decimal Unix seconds), expiry (decimal Unix seconds), nonce.
 - Token: `v1.` + base64url(material) + `.` + base64url(HMAC-SHA256(key, material)), without padding.
 
-A token's expiry must be after its issue time and at most 24 hours later (`MaxTokenLifetime`). Verification allows `ClockSkew` (2 minutes) of peer-clock disagreement. Channel is trimmed and lowercased. A recipient or From that contains `@` is trimmed and lowercased. Subject is trimmed and rejected when it contains control characters. The shared key is at least 16 bytes. This module does not store or log it.
+A token's expiry must be after its issue time and at most 24 hours later (`MaxTokenLifetime`). Verification allows `ClockSkew` (2 minutes) of peer-clock disagreement. Channel is trimmed and lowercased. A recipient or From that contains `@` must be one mailbox (`local@domain` with a dotted domain) and is lowercased. A HeyReach conversation id with no `@` stays a single-line id. Subject is trimmed and rejected when it contains control characters. The shared key is at least 16 bytes. This module does not store or log it.
 
 `ConsumedStore` is the single-use ledger. `MemoryConsumedStore` is the in-process implementation. A database or the Rust ledger can implement the same interface.
 
@@ -61,19 +61,19 @@ A token's expiry must be after its issue time and at most 24 hours later (`MaxTo
 
 The email adapter talks to SMTP only through the `SMTP` interface. `Prepare` appends the caller-supplied lawful-basis text, a fixed GDPR Article 14 / LGPD transparency sentence, and an unsubscribe URL. The URL must be `https` and its host must equal `ARIA_UNSUBSCRIBE_HOST`. `Send` sets `List-Unsubscribe` from that same URL, and the token binds it.
 
-`ARIA_EMAIL_SENDER_DAILY_CAP` is a per-sender UTC-day cap. Unset, empty, or `0` refuses every send. A transport error releases the reserved slot. The nonce stays consumed.
+`ARIA_EMAIL_SENDER_DAILY_CAP` is a per-mailbox UTC-day cap. The mailbox is the canonical From address, so a second sender label on that address shares the cap. Unset, empty, or `0` refuses every send before the nonce is spent. A transport error after SMTP was asked to send holds the slot and marks the nonce unknown.
 
 ## HeyReach
 
-Production construction (`NewHeyReach`) accepts only `https://api.heyreach.io` with no userinfo, port, query, or extra path. The API key is sent only to that host. Redirects are not followed.
+Production construction (`NewHeyReach`) accepts only `https://api.heyreach.io` with no userinfo, port, query, or extra path. The API key is sent only to that host. Redirects are not followed. A nil HTTP client refuses the network instead of dialing.
 
 | Variable | Behavior |
 |---|---|
 | `ARIA_HEYREACH_ENABLED` | Off unless set to `1`, `true`, or `on` |
 | `ARIA_HEYREACH_KILL_SWITCH` | Same fail-closed rule as the global switch, read on every Send |
-| `ARIA_HEYREACH_SENDER_DAILY_CAP` | Per sender, UTC day. Unset or `0` refuses |
-| `ARIA_HEYREACH_SENDER_WEEKLY_CAP` | Per sender, ISO week (Monday, UTC). Unset or `0` refuses |
-| `ARIA_HEYREACH_MIN_GAP_SECONDS` | Minimum gap between reserved sends for one sender. Unset refuses. `0` means no extra gap |
+| `ARIA_HEYREACH_SENDER_DAILY_CAP` | Per HeyReach account id, UTC day. Unset or `0` refuses |
+| `ARIA_HEYREACH_SENDER_WEEKLY_CAP` | Per HeyReach account id, ISO week (Monday, UTC). Unset or `0` refuses |
+| `ARIA_HEYREACH_MIN_GAP_SECONDS` | Minimum gap between reserved sends for one account id. Unset refuses. `0` means no extra gap |
 | `ARIA_HEYREACH_ERROR_THRESHOLD` | Failures inside the window that pause the sender. Default 3 |
 | `ARIA_HEYREACH_ERROR_WINDOW_SECONDS` | Rolling window for that count. Default 3600 |
 | `ARIA_HEYREACH_ERROR_PAUSE_SECONDS` | How long an error-rate pause lasts. Default 3600 |

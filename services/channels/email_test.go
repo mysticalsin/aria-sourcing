@@ -243,16 +243,25 @@ func TestEmailSendModeDefaultsManualAndAutoNeedsOptInPlusQC(t *testing.T) {
 }
 
 func TestEmailSendHonorsPerSenderDailyCap(t *testing.T) {
-	rig := newEmailRig(emailEnv(map[string]string{"ARIA_EMAIL_SENDER_DAILY_CAP": "1"}))
+	env := NewLiveEnv(map[string]string{
+		"ARIA_RECIPIENT_ALLOWLIST":    adaRecipient,
+		"ARIA_SENDER_ALLOWLIST":       "recruiting@example.com,other@example.com",
+		"ARIA_UNSUBSCRIBE_HOST":       "example.com",
+		"ARIA_EMAIL_SENDER_DAILY_CAP": "1",
+	})
+	rig := newEmailRig(env)
 	msg := rig.approved(t, CampaignMode{Mode: "manual"})
 	if _, err := rig.email.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
-	_, err := rig.email.Send(context.Background(), msg)
+	again := msg
+	again.Token = mint(t, again.Exact, again.Campaign, again.From, 0, rig.clock.Now())
+	_, err := rig.email.Send(context.Background(), again)
 	if !errors.Is(err, ErrDailyCap) {
 		t.Fatalf("second send: %v", err)
 	}
 	other := msg
+	other.From = "other@example.com"
 	other.SenderID = "sender-synthetic-2"
 	other.Token = mint(t, other.Exact, other.Campaign, other.From, 0, rig.clock.Now())
 	if _, err := rig.email.Send(context.Background(), other); err != nil {
@@ -284,7 +293,12 @@ func TestEmailSendRefusesWhenDailyCapUnset(t *testing.T) {
 
 func TestEmailDailyCapIsRaceSafe(t *testing.T) {
 	rig := newEmailRig(emailEnv(map[string]string{"ARIA_EMAIL_SENDER_DAILY_CAP": "1"}))
-	msg := rig.approved(t, CampaignMode{})
+	base := rig.approved(t, CampaignMode{})
+	msgs := make([]ApprovedMessage, 16)
+	for i := range msgs {
+		msgs[i] = base
+		msgs[i].Token = mint(t, base.Exact, base.Campaign, base.From, 0, rig.clock.Now())
+	}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	okCount := 0
@@ -292,7 +306,7 @@ func TestEmailDailyCapIsRaceSafe(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := rig.email.Send(context.Background(), msg)
+			_, err := rig.email.Send(context.Background(), msgs[i])
 			if err == nil {
 				mu.Lock()
 				okCount++
@@ -311,17 +325,17 @@ func TestEmailDailyCapIsRaceSafe(t *testing.T) {
 	}
 }
 
-func TestEmailSendDoesNotConsumeCapWhenMailerFails(t *testing.T) {
+func TestEmailMailboxErrorHoldsCap(t *testing.T) {
 	rig := newEmailRig(emailEnv(map[string]string{"ARIA_EMAIL_SENDER_DAILY_CAP": "1"}))
 	rig.mailer.err = errors.New("synthetic mailbox down")
 	msg := rig.approved(t, CampaignMode{})
-	if _, err := rig.email.Send(context.Background(), msg); !errors.Is(err, ErrDelivery) {
+	if _, err := rig.email.Send(context.Background(), msg); !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("first: %v", err)
 	}
 	rig.mailer.err = nil
 	msg.Token = mint(t, msg.Exact, msg.Campaign, msg.From, 0, rig.clock.Now())
-	if _, err := rig.email.Send(context.Background(), msg); err != nil {
-		t.Fatalf("retry: %v", err)
+	if _, err := rig.email.Send(context.Background(), msg); !errors.Is(err, ErrDailyCap) {
+		t.Fatalf("fresh token should see the held cap: %v", err)
 	}
 }
 

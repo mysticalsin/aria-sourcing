@@ -6,10 +6,15 @@ import (
 	"time"
 )
 
-// ConsumedStore records approval-token nonces. A database or the Rust ledger
-// can implement it. Consume must be safe for concurrent callers.
+// ConsumedStore records approval-token nonces. Reserve holds a nonce for one
+// attempt. Commit spends it after a known acceptance. Release returns it
+// after a definite refusal. MarkUnknown keeps it blocked when the provider
+// outcome is not known, until a later reconciliation.
 type ConsumedStore interface {
-	Consume(ctx context.Context, nonce string) error
+	Reserve(ctx context.Context, nonce string) error
+	Commit(ctx context.Context, nonce string) error
+	Release(ctx context.Context, nonce string) error
+	MarkUnknown(ctx context.Context, nonce string) error
 }
 
 // PauseStore records sender pauses for a database or Odoo-backed implementation.
@@ -20,19 +25,28 @@ type PauseStore interface {
 	NoteFailure(ctx context.Context, key string, now time.Time, window time.Duration) (int, error)
 }
 
+type noncePhase int
+
+const (
+	nonceFree noncePhase = iota
+	nonceHeld
+	nonceSpent
+	nonceUnknown
+)
+
 // MemoryConsumedStore is the in-process nonce ledger.
 type MemoryConsumedStore struct {
-	mu   sync.Mutex
-	used map[string]struct{}
+	mu    sync.Mutex
+	phase map[string]noncePhase
 }
 
 // NewMemoryConsumedStore returns an empty in-memory nonce store.
 func NewMemoryConsumedStore() *MemoryConsumedStore {
-	return &MemoryConsumedStore{used: map[string]struct{}{}}
+	return &MemoryConsumedStore{phase: map[string]noncePhase{}}
 }
 
-// Consume accepts a nonce once.
-func (s *MemoryConsumedStore) Consume(ctx context.Context, nonce string) error {
+// Reserve holds a nonce for one in-flight attempt.
+func (s *MemoryConsumedStore) Reserve(ctx context.Context, nonce string) error {
 	if s == nil {
 		return ErrConfig
 	}
@@ -44,10 +58,51 @@ func (s *MemoryConsumedStore) Consume(ctx context.Context, nonce string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.used[nonce]; ok {
+	switch s.phase[nonce] {
+	case nonceFree:
+		s.phase[nonce] = nonceHeld
+		return nil
+	case nonceUnknown:
+		return ErrOutcomeUnknown
+	default:
 		return ErrTokenUsed
 	}
-	s.used[nonce] = struct{}{}
+}
+
+// Commit spends a held nonce after the provider accepted the message.
+func (s *MemoryConsumedStore) Commit(ctx context.Context, nonce string) error {
+	return s.finish(nonce, nonceSpent)
+}
+
+// Release returns a held nonce after a definite refusal.
+func (s *MemoryConsumedStore) Release(ctx context.Context, nonce string) error {
+	if s == nil {
+		return ErrConfig
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.phase[nonce] != nonceHeld {
+		return ErrToken
+	}
+	delete(s.phase, nonce)
+	return nil
+}
+
+// MarkUnknown blocks a held nonce because the provider outcome is not known.
+func (s *MemoryConsumedStore) MarkUnknown(ctx context.Context, nonce string) error {
+	return s.finish(nonce, nonceUnknown)
+}
+
+func (s *MemoryConsumedStore) finish(nonce string, next noncePhase) error {
+	if s == nil {
+		return ErrConfig
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.phase[nonce] != nonceHeld {
+		return ErrToken
+	}
+	s.phase[nonce] = next
 	return nil
 }
 

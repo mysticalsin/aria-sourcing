@@ -283,6 +283,7 @@ func TestHeyReachCapsAndPacing(t *testing.T) {
 	if _, err := rig.ch.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
+	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
 	_, err := rig.ch.Send(context.Background(), msg)
 	if !errors.Is(err, ErrPacing) {
 		t.Fatalf("gap: %v", err)
@@ -293,6 +294,7 @@ func TestHeyReachCapsAndPacing(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig.clock.Advance(2 * time.Minute)
+	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
 	_, err = rig.ch.Send(context.Background(), msg)
 	if !errors.Is(err, ErrDailyCap) && !errors.Is(err, ErrWeeklyCap) {
 		t.Fatalf("cap: %v", err)
@@ -304,8 +306,8 @@ func TestHeyReachCapsAndPacing(t *testing.T) {
 	other := msg
 	other.SenderID = "sender-synthetic-2"
 	other.Token = mint(t, other.Exact, other.Campaign, "", 42, rig.clock.Now())
-	if _, err := rig.ch.Send(context.Background(), other); err != nil {
-		t.Fatalf("other sender: %v", err)
+	if _, err := rig.ch.Send(context.Background(), other); !errors.Is(err, ErrDailyCap) && !errors.Is(err, ErrPacing) && !errors.Is(err, ErrWeeklyCap) {
+		t.Fatalf("same account, other label: %v", err)
 	}
 }
 
@@ -321,6 +323,7 @@ func TestHeyReachWeeklyCapResetsOnTheNextISOWeek(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig.clock.Advance(24 * time.Hour)
+	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
 	_, err := rig.ch.Send(context.Background(), msg)
 	if !errors.Is(err, ErrWeeklyCap) {
 		t.Fatalf("same week: %v", err)

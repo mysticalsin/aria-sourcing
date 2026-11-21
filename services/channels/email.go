@@ -65,35 +65,44 @@ func (e *Email) Send(ctx context.Context, msg ApprovedMessage) (SendResult, erro
 	if err := validateFrom(msg.From); err != nil {
 		return e.refuse(ctx, now, msg, exact, err)
 	}
+	nonce, err := verifyToken(e.cfg.TokenKey, msg.Token, emailBound(msg, exact), now)
+	if err != nil {
+		return e.refuse(ctx, now, msg, exact, err)
+	}
+	if err := e.cfg.Consumed.Reserve(ctx, nonce); err != nil {
+		return e.refuse(ctx, now, msg, exact, err)
+	}
 	daily, err := parseCap(e.cfg.Env, "ARIA_EMAIL_SENDER_DAILY_CAP")
 	if err != nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		return e.refuse(ctx, now, msg, exact, err)
 	}
 	if daily <= 0 {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		return e.refuse(ctx, now, msg, exact, ErrDailyCap)
 	}
-	release, err := e.limits.reserve(msg.SenderID, now, daily, 0, 0)
+	account, err := providerAccount("email", msg.From, 0)
 	if err != nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
+		return e.refuse(ctx, now, msg, exact, err)
+	}
+	release, err := e.limits.reserve(account, now, daily, 0, 0)
+	if err != nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		return e.refuse(ctx, now, msg, exact, err)
 	}
 	if err := postChatter(ctx, e.cfg.Auditor, now, "authorized", "", msg, exact); err != nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		return SendResult{}, ErrAudit
 	}
-	nonce, err := verifyToken(e.cfg.TokenKey, msg.Token, emailBound(msg, exact), now)
-	if err != nil {
-		release(false)
-		return e.refuse(ctx, now, msg, exact, err)
-	}
-	if err := e.cfg.Consumed.Consume(ctx, nonce); err != nil {
-		release(false)
-		return e.refuse(ctx, now, msg, exact, err)
-	}
 	if err := ctx.Err(); err != nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		return SendResult{}, err
 	}
 	if e.cfg.SMTP == nil {
+		_ = e.cfg.Consumed.Release(context.Background(), nonce)
 		release(false)
 		return SendResult{}, ErrConfig
 	}
@@ -108,10 +117,12 @@ func (e *Email) Send(ctx context.Context, msg ApprovedMessage) (SendResult, erro
 		},
 	}
 	if err := e.cfg.SMTP.Send(ctx, outbound); err != nil {
-		release(false)
-		_ = postChatter(ctx, e.cfg.Auditor, now, "refused", ErrDelivery.Reason, msg, exact)
-		return SendResult{}, ErrDelivery
+		_ = e.cfg.Consumed.MarkUnknown(context.Background(), nonce)
+		release(true)
+		_ = postChatter(ctx, e.cfg.Auditor, now, "unknown", ErrOutcomeUnknown.Reason, msg, exact)
+		return SendResult{}, ErrOutcomeUnknown
 	}
+	_ = e.cfg.Consumed.Commit(context.Background(), nonce)
 	release(true)
 	if err := postChatter(ctx, e.cfg.Auditor, now, "delivered", "", msg, exact); err != nil {
 		return SendResult{}, ErrSentAuditFailed

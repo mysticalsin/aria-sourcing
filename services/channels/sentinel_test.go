@@ -43,16 +43,18 @@ func TestPacingReservationIsAtomic(t *testing.T) {
 		time.Sleep(80 * time.Millisecond)
 		return base.RoundTrip(r)
 	})}
-	msg := rig.approved(t, CampaignMode{})
+	first := rig.approved(t, CampaignMode{})
+	second := first
+	second.Token = mint(t, second.Exact, second.Campaign, "", 42, rig.clock.Now())
 	errCh := make(chan error, 2)
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
+	for _, msg := range []ApprovedMessage{first, second} {
 		wg.Add(1)
-		go func() {
+		go func(msg ApprovedMessage) {
 			defer wg.Done()
 			_, err := rig.ch.Send(context.Background(), msg)
 			errCh <- err
-		}()
+		}(msg)
 	}
 	wg.Wait()
 	close(errCh)
@@ -152,11 +154,11 @@ func TestHeyReachErrorRatePauseIsPersistent(t *testing.T) {
 	defer rig.http.srv.Close()
 	rig.ch.cfg.Pauses = store
 	msg := rig.approved(t, CampaignMode{})
-	if _, err := rig.ch.Send(context.Background(), msg); !errors.Is(err, ErrDelivery) {
+	if _, err := rig.ch.Send(context.Background(), msg); !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("first: %v", err)
 	}
 	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())
-	if _, err := rig.ch.Send(context.Background(), msg); !errors.Is(err, ErrDelivery) {
+	if _, err := rig.ch.Send(context.Background(), msg); !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("second: %v", err)
 	}
 	msg.Token = mint(t, msg.Exact, msg.Campaign, "", 42, rig.clock.Now())

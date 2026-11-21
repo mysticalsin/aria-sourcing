@@ -1,51 +1,37 @@
 ---
 project: MSourcing / ARIA
-shift: 468
-agent: claude-code
-updated: 2026-11-17
-status: demo-day-checked
+shift: 469
+agent: grok
+updated: 2026-11-21
+status: channels-adapters-unfrozen-fix
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 469
 
 ## Current state
 
-- Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
-  (fix(intake): keep skills Claude reworded from the brief's own words).
-  Gate green (typecheck, typecheck:tests, npm test exit 0). App + agents
-  restarted on the image rebuilt from 75f8b8bb; /api/health healthy.
-- Owner workspace still empty (wiped shift 467): no campaign yet for the demo.
-- LinkedIn bridge: owner account paired (extension 0.3.0), last seen
-  2026-11-10; 6 outbox rows, all sent. A conversation with Tony exists.
-- The owner's demo cheat sheet is a private Claude Doc, not in the repo
-  (owner asked: never commit it).
+- Branch `cursor/outreach-channel-adapters-8d82`. Base `twa-odoo`. PR #175. Do not merge.
+- Origin was `f2fc8d01` at shift start. Local red-first commits not yet on origin when this snapshot was written: `8913ccdf`, `c178ea64`, `d7dcc30b`. The implementation commit is the one that lands with this handoff.
+- Nested module `services/channels`. Caps and pacing are keyed on the canonical From mailbox (`mbox:`) or the HeyReach account id (`acct:`), both bound in the approval token. A mismatch is `ErrBinding`.
+- `ConsumedStore` is reserve, then commit, release, or mark unknown. Timeout and 5xx hold the cap and block a retry of that nonce. A definite refusal (4xx other than 408/429, including 3xx) releases the token and the cap.
+- Unset `ARIA_RECIPIENT_ALLOWLIST` denies. `CanonicalRecipient` requires `local@domain` with a dotted domain. HeyReach conversation ids with no `@` use `canonicalDelivery`. A nil HeyReach HTTP client returns `ErrConfig` and does not dial.
+- `cursor/aria-stack-shared-config` was not on origin. Shared-file edits on this branch stay: `.github/workflows/ci.yml`, `.gitleaksignore`, `docker-compose.yml`, `docs/channels.md`, `scripts/accept-local-demo.mjs`.
+- Full-history gitleaks must stay clean. Do not force-push. Do not put a high-entropy hex next to the word token.
 
 ## Done this shift
 
-- Demo-day check: OrbStack was stopped; started it, stack came back healthy
-  (the db answered slowly for the first minutes after boot).
-- Playwright smoke of every in-scope page (/, /campaigns, /campaigns/new,
-  /candidates, /funnel, /outreach, /exec, /costs, /sessions, /settings,
-  /linkedin -> settings): no console error, no 5xx.
-- Live parse of "Load Mantu need" (no campaign created): Claude returned 7
-  Murex skills, `groundLiveIntakeFields` dropped them all (exact-substring
-  check vs reworded skills). Fixed: a skill is also grounded when every word
-  (or its plural) is in the brief; invented words still drop it. Test added
-  in tests/intake-grounding.mts. Re-tested live: Murex skills kept.
+- Red-first tests for unknown provider outcomes, in-flight pause, closed allowlist, strict recipients, a refusing nil client, the second-label cap bypass, chatter-after-token, and the two daily-cap guards.
+- Implementation of those checks in `services/channels` and the matching sentences in `docs/channels.md`.
 
 ## Blockers
 
-- None.
+- None in the module. CI on the new head was not terminal at the moment this file was written; the shift-end report carries the conclusions.
 
 ## Next steps
 
-1. Owner, before the demo: create the demo campaign and run sourcing ahead
-   of time; verify one profile (Reveal contact -> Evidence & contact ->
-   Save and rescore), record the contact basis, draft for Tony only.
-2. Owner: Chrome open with the ARIA extension and LinkedIn signed in.
-3. After the demo: empty AGENTS_LINKEDIN_ALLOWLIST before real autopilot use.
-4. Carried over: issue `.scratch/linkedin-bridge/issues/01-stale-candidate-conversation-link.md`,
-   VM POC (issue 07), server config (issue 10).
+1. If CI on the new head is red for a reason that already fails on `twa-odoo`, cite that base run. Do not merge.
+2. When `cursor/aria-stack-shared-config` lands, ordinary-merge it and drop this PR's overlapping shared-file edits. Keep `docs/channels.md` if that branch does not own it.
+3. Leave the branch frozen after the CI report unless a later message unfreezes a named fix.
 
 ## Decisions made (don't relitigate)
 

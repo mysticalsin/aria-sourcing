@@ -16,7 +16,7 @@ func normalizeExact(exact ExactText, expectChannel string) (ExactText, error) {
 	if expectChannel != "" && channel != expectChannel {
 		return ExactText{}, ErrChannel
 	}
-	recipient, err := CanonicalRecipient(exact.Recipient)
+	recipient, err := canonicalDelivery(exact.Recipient)
 	if err != nil {
 		return ExactText{}, err
 	}
@@ -48,23 +48,74 @@ func CanonicalChannel(raw string) (string, error) {
 	}
 }
 
-// CanonicalRecipient trims the delivery target. Addresses that contain @
-// are compared case-insensitively. Other ids keep their case.
+// CanonicalRecipient accepts one mailbox: local@domain, with a dotted domain.
+// Incomplete values such as "ada@" and non-addresses such as "not-an-email"
+// are refused. Comparison is case-insensitive.
 func CanonicalRecipient(raw string) (string, error) {
+	recipient := strings.ToLower(strings.TrimSpace(raw))
+	if recipient == "" || strings.ContainsAny(recipient, " \t\r\n") {
+		return "", ErrConfig
+	}
+	local, domain, ok := strings.Cut(recipient, "@")
+	if !ok || local == "" || domain == "" || strings.Contains(local, "@") {
+		return "", ErrConfig
+	}
+	if !validMailboxLocal(local) || !validMailboxDomain(domain) {
+		return "", ErrConfig
+	}
+	return recipient, nil
+}
+
+func validMailboxLocal(local string) bool {
+	if len(local) > 64 {
+		return false
+	}
+	for _, r := range local {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '%' || r == '+' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validMailboxDomain(domain string) bool {
+	if len(domain) > 253 || !strings.Contains(domain, ".") || strings.Contains(domain, "..") {
+		return false
+	}
+	if strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// canonicalDelivery accepts a mailbox or a single-line conversation id.
+func canonicalDelivery(raw string) (string, error) {
+	if strings.Contains(raw, "@") {
+		return CanonicalRecipient(raw)
+	}
 	recipient := strings.TrimSpace(raw)
-	if recipient == "" || strings.ContainsAny(recipient, "\r\n") {
+	if recipient == "" || strings.ContainsAny(recipient, " \t\r\n") {
 		return "", ErrConfig
 	}
 	for _, r := range recipient {
-		if r < 0x20 || r == 0x7f {
+		if r <= 0x20 || r >= 0x7f {
 			return "", ErrConfig
 		}
-	}
-	if strings.Contains(recipient, "@") {
-		if strings.ContainsAny(recipient, " \t") {
-			return "", ErrConfig
-		}
-		recipient = strings.ToLower(recipient)
 	}
 	return recipient, nil
 }
@@ -102,7 +153,7 @@ func allowlisted(env LiveEnv, recipient string) bool {
 		return false
 	}
 	for _, part := range splitList(raw) {
-		canonical, err := CanonicalRecipient(part)
+		canonical, err := canonicalDelivery(part)
 		if err != nil {
 			continue
 		}
@@ -254,7 +305,7 @@ func authorize(env LiveEnv, msg ApprovedMessage, channel string, extraKill []str
 			return msg.Exact, err
 		}
 	}
-	deliver, err := CanonicalRecipient(msg.DeliverTo)
+	deliver, err := canonicalDelivery(msg.DeliverTo)
 	if err != nil {
 		return msg.Exact, err
 	}
