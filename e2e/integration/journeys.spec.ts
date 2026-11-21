@@ -120,6 +120,7 @@ test("sweep 0 physical journeys", async ({ page }) => {
     await expect(act.or(sw)).toBeVisible();
     if (await act.isVisible()) await act.click();
     await expect(sw).toBeVisible();
+    await expect(page.getByRole("button", { name: "Kill switch" })).toBeVisible();
     const checked = await sw.getAttribute("aria-checked");
     if (checked === "true") throw new Error("token toggle defaulted on");
     return "toggle is off by default";

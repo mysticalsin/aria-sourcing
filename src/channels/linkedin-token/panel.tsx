@@ -47,33 +47,39 @@ export function LinkedInTokenPanel() {
   const [approvalSeconds, setApprovalSeconds] = React.useState("3600");
   const [busy, setBusy] = React.useState("");
   const generation = React.useRef(0);
+  const sessionTicket = React.useRef(0);
 
-  const refresh = React.useCallback(async () => {
+  const refresh = React.useCallback(async (ticket?: number) => {
     const response = await fetch(`/api/channels/linkedin-token?workspaceId=${WORKSPACE}`, { cache: "no-store" });
+    if (ticket !== undefined && sessionTicket.current !== ticket) return;
     const payload = (await response.json()) as View;
     setView(payload);
   }, []);
 
   React.useEffect(() => {
+    const ticket = ++sessionTicket.current;
     void (async () => {
       const session = (await (await fetch("/api/channels/linkedin-token/session", { cache: "no-store" })).json()) as {
         role?: string;
         e2e?: boolean;
       };
+      if (sessionTicket.current !== ticket) return;
       setRole(session.role ?? "member");
       setDemo(session.e2e === true);
-      await refresh();
+      await refresh(ticket);
     })();
   }, [refresh]);
 
   async function chooseRole(next: string) {
+    const ticket = ++sessionTicket.current;
     await fetch("/api/channels/linkedin-token/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ role: next }),
     });
+    if (sessionTicket.current !== ticket) return;
     setRole(next);
-    await refresh();
+    await refresh(ticket);
   }
 
   async function enable() {
