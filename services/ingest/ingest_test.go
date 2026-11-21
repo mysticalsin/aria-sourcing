@@ -629,6 +629,40 @@ func (blockOCR) Recognize(ctx context.Context, _ []byte, _ string) (string, erro
 	return "", ctx.Err()
 }
 
+func TestUserUnitPageIsRefusedBeforeRaster(t *testing.T) {
+	// A letter page with UserUnit 100 is 100 times too large. The cap has
+	// to see that scale and refuse the file before pdftoppm starts.
+	pdf := bytes.Replace(
+		extract.BuildTextPDF(nil),
+		[]byte("/MediaBox [0 0 612 792]"),
+		[]byte("/MediaBox [0 0 612 792] /UserUnit 100"),
+		1,
+	)
+	if !bytes.Contains(pdf, []byte("/UserUnit 100")) {
+		t.Fatal("fixture did not carry UserUnit")
+	}
+	w, _, _ := testWorker(t, ingest.Options{})
+	res, err := w.Ingest(context.Background(), ingest.Upload{
+		ID: "unit-1", Bytes: pdf, Origin: holding(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != state.ErrorQueue || res.Reason != state.ReasonUnreadable {
+		t.Fatalf("state %s reason %s history %v", res.State, res.Reason, res.History)
+	}
+}
+
+func TestComposeRunsWorkerWithNoNetwork(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(moduleRoot(t), "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte("network_mode: none")) {
+		t.Fatal("services/ingest/compose.yaml must set network_mode: none for the worker")
+	}
+}
+
 func TestFileTooLargeDoesNotKeepBytes(t *testing.T) {
 	w, _, sink := testWorker(t, ingest.Options{MaxBytes: 32})
 	body := bytes.Repeat([]byte("x"), 64)
