@@ -2,7 +2,7 @@
   "ok": true,
   "video": "/opt/cursor/artifacts/tonywalteur-reachout-e2e.mp4",
   "webm": "/opt/cursor/artifacts/tonywalteur-reachout-e2e.webm",
-  "profile": "https://www.linkedin.com/in/tonywalteur/",
+  "profile": "https://www.linkedin.com/in/example-a/",
   "demoLoginStatus": 200,
   "bot": "comp_tony_01",
   "linkedInSession": {
@@ -15,13 +15,13 @@
       {
         "id": "tab-1",
         "title": "Sign Up | LinkedIn",
-        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/tonywalteur/",
+        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/example-a/",
         "active": false
       },
       {
         "id": "tab-2",
         "title": "Sign Up | LinkedIn",
-        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/tonywalteur/",
+        "url": "https://www.linkedin.com/authwall?sessionRedirect=https://www.linkedin.com/in/example-a/",
         "active": false
       },
       {

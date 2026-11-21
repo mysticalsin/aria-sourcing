@@ -110,7 +110,7 @@
     {
       "step": "bot-navigate-profile",
       "title": "Tony Walteur - Amaris Consulting | LinkedIn",
-      "url": "https://www.linkedin.com/in/tonywalteur"
+      "url": "https://www.linkedin.com/in/example-a"
     },
     {
       "step": "15-vm-profile",
@@ -121,7 +121,7 @@
       "step": "bot-navigate-messaging",
       "title": "LinkedIn Login, Sign in | LinkedIn",
       "url": "https://www.linkedin.com/uas/login?session_redirect=https%3A%2F%2Fwww.linkedin.com%2Fmessaging%2F",
-      "textPreview": "0 notifications\n\nWe’re signing you in\n\nIf you remain on this page, you’ll be signed in. Learn more\n\nLinkedIn User\n\nt*****@gmail.com\n\nCancel sign in\n\nLinkedIn Corporation © 2026\n\nUser Agreement\n\nPrivacy Policy\n\nCommunity Guidelines\n\nCookie Policy\n\nCopyright Policy\n\nSend Feedback\n\n"
+      "textPreview": "0 notifications\n\nWe’re signing you in\n\nIf you remain on this page, you’ll be signed in. Learn more\n\nLinkedIn User\n\nt*****@example.com\n\nCancel sign in\n\nLinkedIn Corporation © 2026\n\nUser Agreement\n\nPrivacy Policy\n\nCommunity Guidelines\n\nCookie Policy\n\nCopyright Policy\n\nSend Feedback\n\n"
     },
     {
       "step": "16-vm-messaging",
