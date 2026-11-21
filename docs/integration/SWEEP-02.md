@@ -44,11 +44,11 @@ Sweep 1 was 13 pass. This run is those 13 plus the CV upload, 14 pass, 0 fail.
 | PR | Base | Head | Tree | Red-first |
 |---|---|---|---|---|
 | [#210](https://github.com/mysticalsin/aria-sourcing/pull/210) | `twa-odoo` | `c61327c460706c558ddd861b1b02a91a44f05063` | `21fba3bb1830b4580d0a9db237ff14251d177940` | `b733c2ab` (learning). Intake red remains `fbc0d5cd`. |
-| [#212](https://github.com/mysticalsin/aria-sourcing/pull/212) | `cursor/tony-quick-stats-9bce` (#177) | `672fee366b40018f4c46b63d5c5bd64d5568db72` | `8d3dcff74d1eee59de3818afea7552caf88205cb` | `60e8ef68` (tour). HeyReach red remains `2926fcd1`. |
-| [#284](https://github.com/mysticalsin/aria-sourcing/pull/284) | `cursor/aria-174-e2e-fix-e95d` (#217) | `948d42352fbda715245c964cf4dfaa25ff1c90cd` | `0f037751c471d18173973635b4be383862906fc9` | `4da47449` |
+| [#212](https://github.com/mysticalsin/aria-sourcing/pull/212) | `cursor/tony-quick-stats-9bce` (#177) | `e859a278b151eb4a0a02e938e762a9d8d11cfb09` | `ff33461c37736b5978631de1e23f589341fa40ac` | `60e8ef68` (tour). HeyReach red remains `2926fcd1`. |
+| [#284](https://github.com/mysticalsin/aria-sourcing/pull/284) | `cursor/aria-174-e2e-fix-e95d` (#217) | `2c1d20476b3dd550e0109549770e024d30eb3f11` | `c1fa4d205264fcfd17f5beda6393de153b68ca67` | `4da47449` |
 | [#208](https://github.com/mysticalsin/aria-sourcing/pull/208) | `twa-odoo` | suite `94164d39921a346fceeefce7b934be10c760732f` | `2fb268870b73c51bf064b9bb409471315cb0239c` | `dfcebafb` |
 
-#284 is stacked on #217. Product commits stop at the suite head above. A later commit on this branch only adds this note and the screenshots.
+#284 is stacked on #217. The click and stress suite ran at `94164d39`, which contains the tour, learning, CV, and ingest fixes. #212 and #284 each have one later commit that excludes `e2e` from the Next typecheck, because those branches do not install `@playwright/test` and the image build was failing on the new spec. This branch's later commit is the writeup.
 
 ## Stress
 
