@@ -1,3 +1,5 @@
+import base64
+
 from odoo.exceptions import UserError, ValidationError
 from odoo.service.model import call_kw
 from odoo.tests import tagged
@@ -263,3 +265,26 @@ class TestHireGate(AriaRecruitmentCommon):
             self.assertIn('DNA', self.audits(other, result='refused')[0].reason)
         finally:
             unregister_adapter('scripted')
+
+    def test_filename_does_not_make_html_a_contract(self):
+        applicant = self.applicant('to_hire')
+        applicant.aria_dna_integration_status = 'complete'
+        with self.assertRaises(ValidationError):
+            self.env['ir.attachment'].create({
+                'name': 'contract.pdf',
+                'datas': base64.b64encode(b'<html>synthetic</html>'),
+                'mimetype': 'application/pdf',
+                'res_model': 'hr.applicant',
+                'res_id': applicant.id,
+                'type': 'binary',
+                'aria_document_kind': 'contract',
+            })
+        self.assertFalse(applicant._aria_contract_attached())
+
+    def test_pdf_magic_still_counts_as_a_contract(self):
+        applicant = self.applicant('to_hire')
+        applicant.aria_dna_integration_status = 'complete'
+        self.contract(applicant)
+        self.assertTrue(applicant._aria_contract_attached())
+        applicant.write({'stage_id': self.stage['hired'].id})
+        self.assertEqual(applicant.stage_id.aria_stage_key, 'hired')
