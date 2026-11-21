@@ -9,8 +9,8 @@
 // a random one is generated and printed once. Each user connects their own
 // LinkedIn (Settings › Integrations › LinkedIn).
 //
-// Local only: it talks to http://localhost:${API_PORT:-54321} with the public
-// demo keys from docker-compose.yml and refuses any other host.
+// Local only: it talks to http://localhost:${API_PORT:-54321} with the tokens
+// generated for this stack and refuses any other host.
 
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -35,10 +35,18 @@ if (password.length < 8) fail("--password needs 8 characters or more");
 
 const api = `http://localhost:${process.env.API_PORT ?? "54321"}`;
 if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(api)) fail("local stack only");
-const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
-const key = (anchor) => new RegExp(`${anchor}: &${anchor} "([^"]+)"`).exec(compose)?.[1] ?? fail(`no ${anchor} in docker-compose.yml`);
-const service = process.env.SUPABASE_SERVICE_ROLE_KEY || key("service_key");
-const anon = process.env.SUPABASE_ANON_KEY || key("anon_key");
+try {
+  const saved = readFileSync(new URL("../.local/jwt.env", import.meta.url), "utf8");
+  for (const line of saved.split("\n")) {
+    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+    if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
+  }
+} catch {
+  // The stack file is optional when the variables are already exported.
+}
+const service = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const anon = process.env.SUPABASE_ANON_KEY ?? "";
+if (!service || !anon) fail("set SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY, or start the stack with npm run demo:up");
 
 async function call(path, { method = "GET", token = service, apikey = service, body } = {}) {
   const res = await fetch(`${api}${path}`, {

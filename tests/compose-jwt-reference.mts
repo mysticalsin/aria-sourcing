@@ -5,6 +5,8 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { RETIRED_JWT_SECRET_SHA256, jwtSecretAcceptable } from "../scripts/jwt-secret-policy.mjs";
+
 let pass = 0;
 let fail = 0;
 function ok(name: string, cond: boolean) {
@@ -22,14 +24,9 @@ ok(
   /jwt_secret:\s*&jwt_secret\s+\$\{SUPABASE_JWT_SECRET:\?[^}]+\}/.test(jwtLine) && !jwtLine.includes(":-") && !jwtLine.includes('"'),
 );
 
-function jwtSecretAcceptable(secret: string): boolean {
-  if (Buffer.byteLength(secret) < 32) return false;
-  if (/\s/.test(secret)) return false;
-  return true;
-}
-
 ok("a generated 32-byte value passes", jwtSecretAcceptable(randomBytes(32).toString("base64url")));
 ok("a short value is refused", jwtSecretAcceptable("short-synthetic") === false);
+ok("the retired sample digest is recorded", /^[a-f0-9]{64}$/.test(RETIRED_JWT_SECRET_SHA256));
 
 const gitleaks = readFileSync(new URL("../.gitleaks.toml", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");

@@ -4,6 +4,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright";
+import { ensureLocalJwtEnv } from "./jwt-secret-policy.mjs";
+
+ensureLocalJwtEnv();
+if (!process.env.ARIA_CORS_ORIGINS) {
+  process.env.ARIA_CORS_ORIGINS = `http://localhost:${process.env.APP_PORT || "3000"}`;
+}
 
 const project = process.env.ARIA_ACCEPTANCE_PROJECT ?? "";
 if (process.env.ARIA_LOCAL_ACCEPTANCE !== "1" || !/^aria-acceptance-[a-z0-9-]{4,80}$/.test(project)) {
