@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,6 +67,26 @@ test("the recruitment addon names opt-out, erasure, and a pipeline page", () => 
   assert.match(controller, /opt-out/);
   assert.match(controller, /[Ee]rasure/);
   assert.match(controller, /\/aria\/pipeline/);
+});
+
+test("the bridge rule never changes a Mac firewall and skips outside a sandbox", () => {
+  const script = new URL("../scripts/sandbox-bridge.sh", import.meta.url);
+  const run = (env: NodeJS.ProcessEnv) =>
+    execFileSync("sh", [script.pathname], {
+      env: {
+        PATH: process.env.PATH ?? "",
+        SANDBOX_UNAME: env.SANDBOX_UNAME,
+        CI: env.CI,
+        GITHUB_ACTIONS: env.GITHUB_ACTIONS,
+        CURSOR_AGENT: env.CURSOR_AGENT,
+        ARIA_SANDBOX: env.ARIA_SANDBOX,
+      },
+      encoding: "utf8",
+    }).trim();
+  assert.match(run({ SANDBOX_UNAME: "Darwin", CI: "true", CURSOR_AGENT: "1" }), /skip:.*macOS/);
+  assert.match(run({ SANDBOX_UNAME: "Linux" }), /skip:.*sandbox/);
+  assert.equal(run({ SANDBOX_UNAME: "Linux", CI: "true" }), "apply");
+  assert.equal(run({ SANDBOX_UNAME: "Linux", CURSOR_AGENT: "1" }), "apply");
 });
 
 test("the ingest image does not pin the withdrawn poppler revision", () => {
