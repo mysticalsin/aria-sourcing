@@ -179,6 +179,9 @@ func (h *HeyReach) destination() (*url.URL, string, error) {
 	if err != nil || endpoint.Host != base.Host || !strings.HasSuffix(endpoint.Path, "/"+heyReachSendPath) {
 		return nil, "", ErrConfig
 	}
+	if heyReachPathDenied(endpoint.Path) || heyReachPathDenied(endpoint.RequestURI()) {
+		return nil, "", ErrConfig
+	}
 	apiKey, ok := lookup(h.cfg.Env, "HEYREACH_API_KEY")
 	if !ok || strings.TrimSpace(apiKey) == "" {
 		return nil, "", ErrConfig
@@ -308,6 +311,9 @@ func (h *HeyReach) postMessage(ctx context.Context, endpoint *url.URL, apiKey st
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-API-KEY", apiKey)
 	req.Header.Set("User-Agent", "aria-channels")
+	if heyReachPathDenied(req.URL.Path) || heyReachPathDenied(req.URL.String()) {
+		return false, ErrConfig
+	}
 	resp, err := h.client().Do(req)
 	if err != nil {
 		return false, err
