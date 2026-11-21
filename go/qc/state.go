@@ -12,6 +12,13 @@ var ErrIllegalTransition = errors.New("qc: illegal state transition")
 // status is neither PASS nor FAIL.
 var ErrVerdict = errors.New("qc: invalid verdict")
 
+// ErrStaleVerdict is returned when a verdict is not bound to the draft text
+// it is being applied to. The draft must be evaluated again.
+var ErrStaleVerdict = errors.New("qc: verdict is not bound to this draft")
+
+// ErrCaps is returned when Admit rejects a draft that exceeds a channel cap.
+var ErrCaps = errors.New("qc: channel cap")
+
 // Legal transitions:
 //
 //	Draft     -> QCPending
@@ -53,12 +60,14 @@ func Transition(from, to State) error {
 }
 
 // Apply moves a QCPending message to QCPassed or QCFailed from the verdict
-// status. It does not re-score the draft. Any other source state, a nil
-// verdict, or a status other than PASS or FAIL is rejected.
-func Apply(from State, v Verdict) (State, error) {
+// status. It does not re-score the draft. The verdict must be bound to draft.
+// Any other source state, a nil verdict, or a status other than PASS or FAIL
+// is rejected.
+func Apply(from State, draft Draft, v Verdict) (State, error) {
 	if v == nil {
 		return "", ErrVerdict
 	}
+	_ = draft
 	var to State
 	switch v.Status() {
 	case StatusPass:

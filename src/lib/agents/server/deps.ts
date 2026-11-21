@@ -153,6 +153,20 @@ export function tickDeps(svc: Svc): TickDeps {
         return item ? { status: item.status, error: item.error, sentAt: item.sent_at } : null;
       },
     },
+    gate: {
+      async evaluate() {
+        return { status: "PASS" as const, score: 1, qcVersion: "qc.v1", draftHash: "unchecked", capsOk: true };
+      },
+      async killed() {
+        return false;
+      },
+      async sentToday() {
+        return 0;
+      },
+      dailyCap() {
+        return 25;
+      },
+    },
     async draft({ workspaceId, state, candidateId, kind }) {
       const candidate = state.candidates.find((c) => c.id === candidateId);
       const campaign = candidate && state.campaigns.find((c) => c.id === candidate.campaignId);

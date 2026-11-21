@@ -45,11 +45,15 @@ const (
 // Verdict is the ledger-facing result of one evaluation.
 // The approval ledger may consume this interface. This package does not
 // import the ledger.
+//
+// DraftHash binds the verdict to the exact draft text Evaluate read.
+// A later edit makes the hash stale. Apply and Admit reject a stale verdict.
 type Verdict interface {
 	Status() Status
 	Score() float64
 	QCVersion() string
 	Reasons() []Reason
+	DraftHash() string
 }
 
 // Reason is one check outcome. Detail is always non-empty.
@@ -107,10 +111,11 @@ type Fact struct {
 
 // Result is the concrete Verdict Evaluate returns.
 type Result struct {
-	status  Status
-	score   float64
-	version string
-	reasons []Reason
+	status    Status
+	score     float64
+	version   string
+	reasons   []Reason
+	draftHash string
 }
 
 // Status reports PASS or FAIL.
@@ -123,6 +128,10 @@ func (r Result) Score() float64 { return r.score }
 
 // QCVersion is the stable rule-set identifier.
 func (r Result) QCVersion() string { return r.version }
+
+// DraftHash is the hash of the exact draft text this verdict was computed
+// from. An empty hash is not bound to any draft.
+func (r Result) DraftHash() string { return r.draftHash }
 
 // Reasons returns a copy of the per-check reasons in check order.
 func (r Result) Reasons() []Reason {

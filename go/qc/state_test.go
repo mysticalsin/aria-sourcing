@@ -2,6 +2,7 @@ package qc_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/mysticalsin/aria-sourcing/go/qc"
@@ -42,18 +43,21 @@ type scriptedVerdict struct {
 	score   float64
 	version string
 	reasons []qc.Reason
+	hash    string
 }
 
 func (s scriptedVerdict) Status() qc.Status { return s.status }
 func (s scriptedVerdict) Score() float64    { return s.score }
 func (s scriptedVerdict) QCVersion() string { return s.version }
+func (s scriptedVerdict) DraftHash() string { return s.hash }
 func (s scriptedVerdict) Reasons() []qc.Reason {
 	return append([]qc.Reason(nil), s.reasons...)
 }
 
 func TestApply(t *testing.T) {
-	pass := scriptedVerdict{status: qc.StatusPass, score: 1, version: qc.QCVersion}
-	fail := scriptedVerdict{status: qc.StatusFail, score: 0.8, version: qc.QCVersion}
+	draft := baseline().Draft
+	pass := scriptedVerdict{status: qc.StatusPass, score: 1, version: qc.QCVersion, hash: qc.DraftHash(draft)}
+	fail := scriptedVerdict{status: qc.StatusFail, score: 0.8, version: qc.QCVersion, hash: qc.DraftHash(draft)}
 	cases := []struct {
 		name string
 		from qc.State
@@ -73,7 +77,7 @@ func TestApply(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := qc.Apply(tc.from, tc.v)
+			got, err := qc.Apply(tc.from, draft, tc.v)
 			if tc.ok {
 				if err != nil || got != tc.want {
 					t.Fatalf("got %s err %v", got, err)
@@ -95,29 +99,90 @@ func TestApply(t *testing.T) {
 		})
 	}
 	var none qc.Verdict
-	if _, err := qc.Apply(qc.StateQCPending, none); !errors.Is(err, qc.ErrVerdict) {
+	if _, err := qc.Apply(qc.StateQCPending, draft, none); !errors.Is(err, qc.ErrVerdict) {
 		t.Fatal(err)
 	}
 }
 
 func TestApplyEvaluate(t *testing.T) {
-	pass, err := qc.Evaluate(baseline(), 0.9)
+	good := baseline()
+	pass, err := qc.Evaluate(good, 0.9)
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := qc.Apply(qc.StateQCPending, pass)
+	next, err := qc.Apply(qc.StateQCPending, good.Draft, pass)
 	if err != nil || next != qc.StateQCPassed {
 		t.Fatalf("pass -> %s %v", next, err)
 	}
-	fail, err := qc.Evaluate(withBody(baseline(), baselineBodyNoOpt), 0.9)
+	bad := withBody(good, baselineBodyNoOpt)
+	fail, err := qc.Evaluate(bad, 0.9)
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err = qc.Apply(qc.StateQCPending, fail)
+	next, err = qc.Apply(qc.StateQCPending, bad.Draft, fail)
 	if err != nil || next != qc.StateQCFailed {
 		t.Fatalf("fail -> %s %v", next, err)
 	}
-	if _, err := qc.Apply(qc.StateDraft, pass); !errors.Is(err, qc.ErrIllegalTransition) {
+	if _, err := qc.Apply(qc.StateDraft, good.Draft, pass); !errors.Is(err, qc.ErrIllegalTransition) {
+		t.Fatal(err)
+	}
+}
+
+func TestStalePassDoesNotPromoteEditedDraft(t *testing.T) {
+	good := baseline()
+	pass, err := qc.Evaluate(good, 0.9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pass.DraftHash() == "" || pass.DraftHash() != qc.DraftHash(good.Draft) {
+		t.Fatalf("verdict hash %q is not the draft hash %q", pass.DraftHash(), qc.DraftHash(good.Draft))
+	}
+	edited := withBody(good, baselineBodyNoOpt)
+	if qc.DraftHash(edited.Draft) == pass.DraftHash() {
+		t.Fatal("an edit left the draft hash unchanged")
+	}
+	if err := qc.Transition(qc.StateQCFailed, qc.StateQCPending); err != nil {
+		t.Fatal(err)
+	}
+	next, err := qc.Apply(qc.StateQCPending, edited.Draft, pass)
+	if !errors.Is(err, qc.ErrStaleVerdict) || next == qc.StateQCPassed {
+		t.Fatalf("QCFailed -> QCPending -> %s with a stale PASS, err=%v", next, err)
+	}
+	fresh, err := qc.Evaluate(edited, 0.9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status() != qc.StatusFail {
+		t.Fatalf("edited draft status %s", fresh.Status())
+	}
+	next, err = qc.Apply(qc.StateQCPending, edited.Draft, fresh)
+	if err != nil || next != qc.StateQCFailed {
+		t.Fatalf("fresh fail -> %s %v", next, err)
+	}
+	next, err = qc.Apply(qc.StateQCPending, good.Draft, pass)
+	if err != nil || next != qc.StateQCPassed {
+		t.Fatalf("matching pass -> %s %v", next, err)
+	}
+}
+
+func TestAdmitRejectsOverCapPass(t *testing.T) {
+	draft := baseline().Draft
+	draft.Body = strings.Repeat("a", qc.EmailBodyMax+1)
+	verdict := scriptedVerdict{
+		status:  qc.StatusPass,
+		score:   1,
+		version: qc.QCVersion,
+		hash:    qc.DraftHash(draft),
+	}
+	if err := qc.Admit(draft, verdict); err == nil || !errors.Is(err, qc.ErrCaps) {
+		t.Fatalf("over-cap PASS admitted: %v", err)
+	}
+	good := baseline()
+	pass, err := qc.Evaluate(good, 0.9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := qc.Admit(good.Draft, pass); err != nil {
 		t.Fatal(err)
 	}
 }

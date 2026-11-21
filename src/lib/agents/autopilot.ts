@@ -99,6 +99,39 @@ export function autopilotSourcePlan(campaign: Campaign, options: { webSearch: bo
   return plan;
 }
 
+/** The exact text a QC evaluation reads. */
+export interface OutreachQcDraft {
+  channel: string;
+  subject: string;
+  body: string;
+  language?: string;
+}
+
+/** A verdict the send boundary can accept. capsOk is the channel-cap re-check. */
+export interface OutreachQcVerdict {
+  status: "PASS" | "FAIL";
+  score: number;
+  qcVersion: string;
+  draftHash: string;
+  capsOk: boolean;
+}
+
+export interface AutomaticSendGate {
+  killed: boolean | null;
+  sentToday: number | null;
+  dailyCap: number;
+  verdict: OutreachQcVerdict | null;
+}
+
+/**
+ * Whether an automatic send may be queued. The red gate allows every call.
+ * A fresh PASS, a clear kill switch, and room under the daily cap are not
+ * required yet.
+ */
+export function admitAutomaticSend(_gate: AutomaticSendGate): { ok: true } | { ok: false; reason: string } {
+  return { ok: true };
+}
+
 /** Instruction added to the outreach prompt for each LinkedIn kind. */
 export function linkedInCopyRule(kind: "message" | "invitation"): string {
   return kind === "invitation"

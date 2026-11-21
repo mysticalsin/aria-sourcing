@@ -18,7 +18,7 @@
 import type { Campaign, WorkspaceState } from "@/lib/types";
 import type { AgentDraft } from "./server/draft";
 import type { CampaignSourcingJob, SourceChoice } from "@/lib/sourcing/unified-contract";
-import { agentContactBlocker, agentOutreachMessage, autopilotSourcePlan, pickTopCandidates } from "./autopilot";
+import { agentContactBlocker, agentOutreachMessage, autopilotSourcePlan, pickTopCandidates, type OutreachQcDraft, type OutreachQcVerdict } from "./autopilot";
 import { recordLinkedInSent, makeActivity, withActivity } from "@/lib/store/workspace-transitions";
 import { campaignAllowsLiveSourcing } from "@/lib/sourcing/campaign-lifecycle";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
@@ -117,6 +117,12 @@ export interface TickDeps {
     outbox(row: AgentOutreachRow): Promise<OutboxStatus | null>;
   };
   draft(input: { workspaceId: string; state: WorkspaceState; candidateId: string; kind: "message" | "invitation" }): Promise<AgentDraft | null>;
+  gate: {
+    evaluate(draft: OutreachQcDraft): Promise<OutreachQcVerdict | null>;
+    killed(workspaceId: string): Promise<boolean | null>;
+    sentToday(workspaceId: string): Promise<number | null>;
+    dailyCap(workspaceId: string): number;
+  };
 }
 
 export interface TickResult {
