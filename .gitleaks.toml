@@ -4,3 +4,10 @@ title = "aria-sourcing-demo gitleaks config"
 # or on the single synthetic line that triggers a rule; never allowlist a path.
 [extend]
 useDefault = true
+
+[allowlist]
+description = "Historical false positive: linkedinUrl = linkedinPublicId matched linkedin-client-secret. That commit has no other finding."
+commits = ["da301b172b1796738f402b779297dfa9fadced88"]
+fingerprints = [
+  "da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333",
+]
