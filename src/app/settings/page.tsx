@@ -5,11 +5,9 @@ import Link from "next/link";
 import {
   Card,
   CardContent,
-  Eyebrow,
   Field,
   Input,
   Select,
-  Switch,
   Button,
   Badge,
   EmptyState,
@@ -19,6 +17,18 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
+import {
+  SettingsAccordionContext,
+  SettingsSection,
+  SettingsTabContext,
+  SettingsToggleRow,
+} from "@/features/settings/section";
+import { useSettingsCommands, useSettingsDesk } from "@/features/settings/hooks";
+import {
+  initialSettingsConsole,
+  reduceSettingsConsole,
+  type SettingsConsoleEvent,
+} from "@/features/settings/machine";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
@@ -33,7 +43,7 @@ import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
-import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
+import { useHydrated, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
 import { integrationCounts, integrationStateLabel } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -54,46 +64,15 @@ import {
   Shuffle,
   Cpu,
   Info,
-  ChevronDown,
 } from "lucide-react";
 import {
-  SETTINGS_N_TO_TAB,
   readSettingsOpenSectionSession,
-  resolveSettingsOpenSection,
   settingsHeaderId,
-  settingsNeighborSection,
-  settingsPanelId,
-  settingsSectionId,
-  settingsSectionsForTab,
-  settingsTabFromHash,
   writeSettingsOpenSectionSession,
 } from "@/lib/settings-accordion";
 
 /* ---- tabbed navigation -------------------------------------------------- */
 
-const SettingsTabContext = React.createContext("integrations");
-
-type AccordionCtx = {
-  openSection: string | null;
-  setOpenSection: (n: string) => void;
-  focusSectionHeader: (n: string) => void;
-};
-
-const SettingsAccordionContext = React.createContext<AccordionCtx>({
-  openSection: null,
-  setOpenSection: () => {},
-  focusSectionHeader: () => {},
-});
-
-const VALID_TABS = new Set([
-  "integrations",
-  "ai",
-  "fleet",
-  "compliance",
-  "voice",
-  "access",
-  "workspace",
-]);
 
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
@@ -104,185 +83,6 @@ const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
   { id: "workspace", label: "Workspace", icon: <Users className="h-4 w-4" /> },
 ];
-
-/* ---- small presentational helpers --------------------------------------- */
-
-function Section({
-  n,
-  eyebrow,
-  title,
-  description,
-  children,
-}: {
-  n: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  const activeTab = React.useContext(SettingsTabContext);
-  const { openSection, setOpenSection, focusSectionHeader } =
-    React.useContext(SettingsAccordionContext);
-  if (SETTINGS_N_TO_TAB[n] && SETTINGS_N_TO_TAB[n] !== activeTab) return null;
-
-  const siblings = settingsSectionsForTab(activeTab);
-  const isSolo = siblings.length <= 1;
-  const isOpen = isSolo || openSection === n;
-  const panelId = settingsPanelId(n);
-  const headerId = settingsHeaderId(n);
-
-  const onAccordionKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    let direction: "next" | "prev" | "first" | "last" | null = null;
-    if (e.key === "ArrowDown") direction = "next";
-    else if (e.key === "ArrowUp") direction = "prev";
-    else if (e.key === "Home") direction = "first";
-    else if (e.key === "End") direction = "last";
-    if (!direction) return;
-    e.preventDefault();
-    const target = settingsNeighborSection(activeTab, n, direction);
-    if (!target) return;
-    setOpenSection(target);
-    focusSectionHeader(target);
-  };
-
-  // Solo tabs: dense always-open panel (no accordion chrome).
-  if (isSolo) {
-    return (
-      <section
-        id={settingsSectionId(n)}
-        className="scroll-mt-20 border-t border-line py-4 first:border-t-0 first:pt-0"
-      >
-        <div className="mb-3 flex items-start gap-3">
-          <div className="min-w-0">
-            <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className="display text-lg text-ink sm:text-xl">{title}</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p>
-          </div>
-        </div>
-        <div className="space-y-3">{children}</div>
-      </section>
-    );
-  }
-
-  return (
-    <section
-      id={settingsSectionId(n)}
-      className="scroll-mt-20 border-t border-line first:border-t-0"
-    >
-      <h2 className="m-0">
-        <button
-          type="button"
-          id={headerId}
-          aria-expanded={isOpen}
-          aria-controls={panelId}
-          onClick={() => setOpenSection(n)}
-          onKeyDown={onAccordionKeyDown}
-          className={cn(
-            "flex w-full items-center gap-3 py-2.5 text-left transition-colors",
-            "hover:bg-ink/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric",
-            isOpen ? "bg-ink/[0.02]" : "",
-          )}
-        >
-          <div className="min-w-0 flex-1">
-            <Eyebrow>{eyebrow}</Eyebrow>
-            <span className="display block text-base text-ink sm:text-lg">{title}</span>
-            <span
-              className={cn(
-                "mt-0.5 line-clamp-1 block text-xs text-muted",
-                isOpen && "invisible",
-              )}
-              aria-hidden={isOpen}
-            >
-              {description}
-            </span>
-          </div>
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 shrink-0 text-muted transition-transform duration-150",
-              isOpen && "rotate-180",
-            )}
-            aria-hidden
-          />
-        </button>
-      </h2>
-      <AccordionPanel id={panelId} headerId={headerId} isOpen={isOpen}>
-        <p className="text-sm text-muted">{description}</p>
-        {children}
-      </AccordionPanel>
-    </section>
-  );
-}
-
-function AccordionPanel({
-  id,
-  headerId,
-  isOpen,
-  children,
-}: {
-  id: string;
-  headerId: string;
-  isOpen: boolean;
-  children: React.ReactNode;
-}) {
-  const [mounted, setMounted] = React.useState(isOpen);
-  React.useEffect(() => {
-    if (isOpen) setMounted(true);
-  }, [isOpen]);
-  return (
-    <div
-      id={id}
-      role="region"
-      aria-labelledby={headerId}
-      hidden={!isOpen}
-      className="space-y-3 pb-4 pt-1"
-    >
-      {mounted ? children : null}
-    </div>
-  );
-}
-
-function ToggleRow({
-  id,
-  icon,
-  label,
-  description,
-  checked,
-  onCheckedChange,
-  disabled,
-}: {
-  id: string;
-  icon?: React.ReactNode;
-  label: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-4">
-      <div className="flex min-w-0 items-start gap-3">
-        {icon && (
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-ink/[0.06] text-ink-soft" aria-hidden>
-            {icon}
-          </div>
-        )}
-        <div className="min-w-0">
-          <label htmlFor={id} className="text-sm font-semibold text-ink">
-            {label}
-          </label>
-          <p className="mt-0.5 text-xs text-muted">{description}</p>
-        </div>
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        label={label}
-        disabled={disabled}
-      />
-    </div>
-  );
-}
 
 /* A few of the AI-isms the always-on Humanizer strips from every draft. */
 const BANNED_AI_ISMS = [
@@ -305,35 +105,15 @@ const BANNED_AI_ISMS = [
 export default function SettingsPage() {
   const isAdmin = useRole() === "admin";
   const hydrated = useHydrated();
-  const settings = useSettings();
-  const storedIntegrations = useIntegrations();
-  // The Supabase card's stored status is seed data, frozen at whatever it was
-  // when this workspace was first created — it can never reflect a later env
-  // change. Override it live from the actual runtime flag every render, same
-  // way login/persistence already gate on `supabaseEnabled` elsewhere, so the
-  // card can't say "not configured" while the app is demonstrably running on
-  // live Supabase (or the reverse).
-  const integrations = React.useMemo(
-    () =>
-      storedIntegrations.map((i) =>
-        i.id === "int_supabase"
-          ? {
-              ...i,
-              status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
-              mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
-              errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
-            }
-          : i,
-      ),
-    [storedIntegrations],
-  );
+  const { settings, integrations } = useSettingsDesk();
+  const settingsCommands = useSettingsCommands();
   const actions = useActions();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [activeTab, setActiveTab] = React.useState("integrations");
-  const [openSection, setOpenSectionState] = React.useState<string | null>(() =>
-    resolveSettingsOpenSection({ tab: "integrations" }),
-  );
+  const [consoleState, setConsoleState] = React.useState(initialSettingsConsole);
+  const consoleRef = React.useRef(consoleState);
+  consoleRef.current = consoleState;
+  const { tab: activeTab, openSection } = consoleState;
   const pendingScrollHashRef = React.useRef<string | null>(null);
   const scrollGenerationRef = React.useRef(0);
   const canResetSyntheticDemo = !supabaseEnabled;
@@ -344,6 +124,30 @@ export default function SettingsPage() {
     scrollGenerationRef.current += 1;
   }, []);
 
+  const applySettings = React.useCallback((event: SettingsConsoleEvent) => {
+    const next = reduceSettingsConsole(consoleRef.current, event, readSettingsOpenSectionSession);
+    consoleRef.current = next.state;
+    setConsoleState(next.state);
+    for (const effect of next.effects) {
+      if (effect.type === "persist-section") {
+        writeSettingsOpenSectionSession(effect.tab, effect.section);
+      } else if (effect.type === "replace-url") {
+        if (typeof window === "undefined") continue;
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", effect.tab);
+        window.history.replaceState(
+          {},
+          "",
+          effect.hash
+            ? `${url.pathname}?${url.searchParams.toString()}#${effect.hash}`
+            : `${url.pathname}?${url.searchParams.toString()}`,
+        );
+      } else {
+        queueHashScroll(effect.hash);
+      }
+    }
+  }, [queueHashScroll]);
+
   const focusSectionHeader = React.useCallback((n: string) => {
     if (typeof document === "undefined") return;
     window.requestAnimationFrame(() => {
@@ -352,38 +156,14 @@ export default function SettingsPage() {
   }, []);
 
   const setOpenSection = React.useCallback((n: string) => {
-    setOpenSectionState(n);
-    const tab = SETTINGS_N_TO_TAB[n];
-    if (tab) writeSettingsOpenSectionSession(tab, n);
-  }, []);
+    applySettings({ type: "open-section", section: n });
+  }, [applySettings]);
 
   const goTab = React.useCallback(
     (id: string, opts?: { hash?: string | null }) => {
-      if (!VALID_TABS.has(id)) return;
-      const hash = opts?.hash?.replace(/^#/, "") || null;
-      const nextOpen = resolveSettingsOpenSection({
-        tab: id,
-        hash,
-        currentOpen: null,
-        sessionOpen: hash ? null : readSettingsOpenSectionSession(id),
-      });
-      setActiveTab(id);
-      setOpenSectionState(nextOpen);
-      if (nextOpen) writeSettingsOpenSectionSession(id, nextOpen);
-      if (hash) queueHashScroll(hash);
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        url.searchParams.set("tab", id);
-        window.history.replaceState(
-          {},
-          "",
-          hash
-            ? `${url.pathname}?${url.searchParams.toString()}#${hash}`
-            : `${url.pathname}?${url.searchParams.toString()}`,
-        );
-      }
+      applySettings({ type: "go-tab", tab: id, hash: opts?.hash ?? null });
     },
-    [queueHashScroll],
+    [applySettings],
   );
 
   React.useEffect(() => {
@@ -391,41 +171,18 @@ export default function SettingsPage() {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
     const hash = window.location.hash.replace(/^#/, "");
-    const resolvedTab =
-      (tabParam && VALID_TABS.has(tabParam) ? tabParam : null) ??
-      settingsTabFromHash(hash) ??
-      "integrations";
-    const nextOpen = resolveSettingsOpenSection({
-      tab: resolvedTab,
-      hash: hash || null,
-      currentOpen: null,
-      sessionOpen: hash ? null : readSettingsOpenSectionSession(resolvedTab),
-    });
-    setActiveTab(resolvedTab);
-    setOpenSectionState(nextOpen);
-    if (nextOpen) writeSettingsOpenSectionSession(resolvedTab, nextOpen);
-    if (hash) queueHashScroll(hash);
-
-    if ((!tabParam || !VALID_TABS.has(tabParam)) && settingsTabFromHash(hash)) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("tab", resolvedTab);
-      window.history.replaceState(
-        {},
-        "",
-        `${url.pathname}?${url.searchParams.toString()}${hash ? `#${hash}` : ""}`,
-      );
-    }
+    applySettings({ type: "apply-location", tabParam, hash });
 
     const oauth = params.get("oauth");
     const message = params.get("message");
     if (oauth === "success") {
       toast({ title: "Mailbox connected", description: message ?? "", variant: "success" });
-      goTab("integrations", { hash: "email-connections-panel" });
+      applySettings({ type: "go-tab", tab: "integrations", hash: "email-connections-panel" });
     } else if (oauth === "error") {
       toast({ title: "Mailbox connection failed", description: message ?? "", variant: "error" });
-      goTab("integrations");
+      applySettings({ type: "go-tab", tab: "integrations", hash: null });
     }
-  }, [toast, goTab, queueHashScroll]);
+  }, [toast, applySettings]);
 
   React.useEffect(() => {
     const hash = pendingScrollHashRef.current;
@@ -456,36 +213,17 @@ export default function SettingsPage() {
     if (typeof window === "undefined") return;
     function onHashChange() {
       const hash = window.location.hash.replace(/^#/, "");
-      if (!hash) return;
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab");
-      const tabFromHash = settingsTabFromHash(hash);
-      const tab =
-        tabFromHash ??
-        (tabParam && VALID_TABS.has(tabParam) ? tabParam : null) ??
-        activeTab;
-      const nextOpen = resolveSettingsOpenSection({
-        tab,
+      applySettings({
+        type: "hash-change",
+        tabParam: params.get("tab"),
         hash,
-        currentOpen: null,
+        currentTab: consoleRef.current.tab,
       });
-      setActiveTab(tab);
-      setOpenSectionState(nextOpen);
-      if (nextOpen) writeSettingsOpenSectionSession(tab, nextOpen);
-      if (tabParam !== tab) {
-        const url = new URL(window.location.href);
-        url.searchParams.set("tab", tab);
-        window.history.replaceState(
-          {},
-          "",
-          `${url.pathname}?${url.searchParams.toString()}#${hash}`,
-        );
-      }
-      queueHashScroll(hash);
     }
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [activeTab, queueHashScroll]);
+  }, [applySettings]);
 
   const summary = integrationCounts(integrations);
 
@@ -494,7 +232,7 @@ export default function SettingsPage() {
   }
 
   function setToggle(patch: Partial<SystemSettings>, label: string, on: boolean) {
-    actions.updateSettings(patch);
+    settingsCommands.updateSettings(patch);
     toast({
       title: `${label} ${on ? "enabled" : "disabled"}`,
       variant: on ? "success" : "info",
@@ -502,11 +240,11 @@ export default function SettingsPage() {
   }
 
   function patchRate(key: keyof SystemSettings["rateLimits"], value: number) {
-    actions.updateSettings({ rateLimits: { ...settings.rateLimits, [key]: value } });
+    settingsCommands.updateSettings({ rateLimits: { ...settings.rateLimits, [key]: value } });
   }
 
   function patchNotify(key: keyof SystemSettings["notifications"], value: boolean) {
-    actions.updateSettings({ notifications: { ...settings.notifications, [key]: value } });
+    settingsCommands.updateSettings({ notifications: { ...settings.notifications, [key]: value } });
     toast({
       title: `${key === "slack" ? "Slack" : key === "telegram" ? "Telegram" : "Email"} alerts ${
         value ? "enabled" : "disabled"
@@ -516,7 +254,7 @@ export default function SettingsPage() {
   }
 
   function patchFleet(patch: Partial<SystemSettings["fleet"]>) {
-    actions.updateSettings({ fleet: { ...settings.fleet, ...patch } });
+    settingsCommands.updateSettings({ fleet: { ...settings.fleet, ...patch } });
   }
 
   function toggleFleet(key: keyof SystemSettings["fleet"], label: string, on: boolean) {
@@ -619,7 +357,7 @@ export default function SettingsPage() {
             >
           {/* 01 — System identity */}
           {activeTab === "workspace" && isAdmin && <div className="mb-6"><SetupStatusPanel /></div>}
-          <Section
+          <SettingsSection
             n="01"
             eyebrow="Identity"
             title="System identity"
@@ -635,7 +373,7 @@ export default function SettingsPage() {
                   <Input
                     id="operatorName"
                     value={settings.operatorName}
-                    onChange={(e) => actions.updateSettings({ operatorName: e.target.value })}
+                    onChange={(e) => settingsCommands.updateSettings({ operatorName: e.target.value })}
                     onBlur={savedToast}
                     placeholder="e.g. Talent Operations"
                   />
@@ -648,17 +386,17 @@ export default function SettingsPage() {
                   <Input
                     id="systemIdentity"
                     value={settings.systemIdentity}
-                    onChange={(e) => actions.updateSettings({ systemIdentity: e.target.value })}
+                    onChange={(e) => settingsCommands.updateSettings({ systemIdentity: e.target.value })}
                     onBlur={savedToast}
                     placeholder="e.g. Aria Sourcing Assistant"
                   />
                 </Field>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 02 — Autonomy & approval */}
-          <Section
+          <SettingsSection
             n="02"
             eyebrow="Autonomy"
             title="Approval gate"
@@ -679,7 +417,7 @@ export default function SettingsPage() {
                     </div>
                     <Badge tone="success" size="sm">Always on</Badge>
                   </div>
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="dryRunMode"
                     icon={<Lock className="h-4 w-4" />}
                     label="Dry-run mode"
@@ -702,7 +440,7 @@ export default function SettingsPage() {
                       max={100}
                       value={settings.minScoreToContact}
                       onChange={(e) =>
-                        actions.updateSettings({
+                        settingsCommands.updateSettings({
                           minScoreToContact: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
                         })
                       }
@@ -720,7 +458,7 @@ export default function SettingsPage() {
                       min={1}
                       value={settings.slaMinutes}
                       onChange={(e) =>
-                        actions.updateSettings({
+                        settingsCommands.updateSettings({
                           slaMinutes: Math.max(1, Number(e.target.value) || 0),
                         })
                       }
@@ -730,10 +468,10 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 03 — Rate limits */}
-          <Section
+          <SettingsSection
             n="03"
             eyebrow="Throughput"
             title="Rate limits"
@@ -805,10 +543,10 @@ export default function SettingsPage() {
                 </Field>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 20 — LinkedIn (personal bridge): the integration the live POC runs on, so it comes first */}
-          <Section
+          <SettingsSection
             n="20"
             eyebrow="Your LinkedIn"
             title="LinkedIn"
@@ -817,10 +555,10 @@ export default function SettingsPage() {
             <div id="linkedin">
               <LinkedInSettingsPanel />
             </div>
-          </Section>
+          </SettingsSection>
 
           {/* 04 — Integrations */}
-          <Section
+          <SettingsSection
             n="04"
             eyebrow="Connections"
             title="Integrations"
@@ -879,20 +617,20 @@ export default function SettingsPage() {
                 )}
               </>
             )}
-          </Section>
+          </SettingsSection>
 
           {/* 05 — Compliance */}
-          <Section
+          <SettingsSection
             n="05"
             eyebrow="Governance"
             title="Compliance"
             description="GDPR & CCPA controls, unsubscribe enforcement, and how long each record is retained."
           >
             <CompliancePanel />
-          </Section>
+          </SettingsSection>
 
           {/* 06 — Notifications */}
-          <Section
+          <SettingsSection
             n="06"
             eyebrow="Alerts"
             title="Notifications"
@@ -901,7 +639,7 @@ export default function SettingsPage() {
             <Card>
               <CardContent>
                 <div className="divide-y divide-line rounded-2xl border border-line">
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="notify-slack"
                     icon={<Slack className="h-4 w-4" />}
                     label="Slack"
@@ -909,7 +647,7 @@ export default function SettingsPage() {
                     checked={settings.notifications.slack}
                     onCheckedChange={(v) => patchNotify("slack", v)}
                   />
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="notify-telegram"
                     icon={<Send className="h-4 w-4" />}
                     label="Telegram"
@@ -917,7 +655,7 @@ export default function SettingsPage() {
                     checked={settings.notifications.telegram}
                     onCheckedChange={(v) => patchNotify("telegram", v)}
                   />
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="notify-email"
                     icon={<Mail className="h-4 w-4" />}
                     label="Email"
@@ -933,10 +671,10 @@ export default function SettingsPage() {
                 </p>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 07 — Confidentiality */}
-          <Section
+          <SettingsSection
             n="07"
             eyebrow="Privacy"
             title="Confidentiality"
@@ -945,7 +683,7 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="space-y-4">
                 <div className="rounded-2xl border border-line">
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="confidentialityMode"
                     icon={<EyeOff className="h-4 w-4" />}
                     label="Confidentiality mode"
@@ -965,10 +703,10 @@ export default function SettingsPage() {
                 </p>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 08 — Humanizer */}
-          <Section
+          <SettingsSection
             n="08"
             eyebrow="Voice"
             title="Humanizer"
@@ -977,7 +715,7 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="space-y-5">
                 <div className="rounded-2xl border border-line">
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="humanizer-enforced"
                     icon={<Sparkles className="h-4 w-4" />}
                     label="Enforced on every draft"
@@ -1009,10 +747,10 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 09 — Fleet guardrails */}
-          <Section
+          <SettingsSection
             n="09"
             eyebrow="Fleet"
             title="Fleet guardrails"
@@ -1082,7 +820,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="divide-y divide-line rounded-2xl border border-line">
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="enforceBusinessHours"
                     icon={<Clock className="h-4 w-4" />}
                     label="Enforce business hours"
@@ -1092,7 +830,7 @@ export default function SettingsPage() {
                       toggleFleet("enforceBusinessHours", "Business-hours enforcement", v)
                     }
                   />
-                  <ToggleRow
+                  <SettingsToggleRow
                     id="jitter"
                     icon={<Shuffle className="h-4 w-4" />}
                     label="Human-paced jitter"
@@ -1124,10 +862,10 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 10 — Scale & localization */}
-          <Section
+          <SettingsSection
             n="10"
             eyebrow="Scale"
             title="Scale & localization"
@@ -1145,7 +883,7 @@ export default function SettingsPage() {
                       id="defaultLanguage"
                       value={settings.defaultLanguage}
                       onChange={(e) => {
-                        actions.updateSettings({ defaultLanguage: e.target.value });
+                        settingsCommands.updateSettings({ defaultLanguage: e.target.value });
                         savedToast();
                       }}
                       options={LANGUAGES.map((l) => ({ value: l.code, label: `${l.label} (${l.native})` }))}
@@ -1199,50 +937,50 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
-          </Section>
+          </SettingsSection>
 
           {/* 11 — API keys */}
-          <Section
+          <SettingsSection
             n="11"
             eyebrow="Secrets"
             title="API keys"
             description="Add a provider key and test it. Secrets are stored server-side and never shown again (admins only)."
           >
             <ApiKeysPanel />
-          </Section>
+          </SettingsSection>
 
           {/* 12 — Access & roles */}
-          <Section
+          <SettingsSection
             n="12"
             eyebrow="Access"
             title="Access & roles"
             description="Admin, member and viewer. Roles gate who can manage settings, keys, the fleet, and who is read-only."
           >
             <RolesPanel />
-          </Section>
+          </SettingsSection>
 
           {/* 13 — Guardrails & Aria */}
-          <Section
+          <SettingsSection
             n="13"
             eyebrow="Guardrails"
             title="Guardrails & Aria"
             description="The adjustable brain. Edit Aria's master prompt, manage the rules every agent follows, or just ask Aria. No .env, no code."
           >
             <GuardrailsPanel />
-          </Section>
+          </SettingsSection>
 
           {/* 14 — LLM providers */}
-          <Section
+          <SettingsSection
             n="14"
             eyebrow="AI backbone"
             title="LLM providers"
             description="Connect the language model backends the sourcing fleet runs on. Each provider links to a saved API key (secrets never leave the server). Admin only."
           >
             <ProvidersPanel />
-          </Section>
+          </SettingsSection>
 
           {/* 15 — Models */}
-          <Section
+          <SettingsSection
             n="15"
             eyebrow="Models"
             title="Saved models"
@@ -1252,10 +990,10 @@ export default function SettingsPage() {
             <div className="mt-6 border-t border-line pt-5">
               <AiUsagePanel />
             </div>
-          </Section>
+          </SettingsSection>
 
           {/* 16 — Tools */}
-          <Section
+          <SettingsSection
             n="16"
             eyebrow="Capabilities"
             title="Tools"
@@ -1270,28 +1008,28 @@ export default function SettingsPage() {
               </p>
               <McpServersPanel />
             </div>
-          </Section>
+          </SettingsSection>
 
 
           {/* 19 — Dust agent platform */}
-          <Section
+          <SettingsSection
             n="19"
             eyebrow="Agent platform"
             title="Dust agents"
             description="Connect a Dust (dust.tt) workspace and lock which of your own agents runs each recruiting task, starting with JD analysis on intake. Admin only."
           >
             <DustAgentPanel />
-          </Section>
+          </SettingsSection>
 
           {/* 18 — Schedules */}
-          <Section
+          <SettingsSection
             n="18"
             eyebrow="Automation"
             title="Schedules"
             description="Recurring fleet jobs: sourcing sweeps, outreach batches, and reports on a cadence. Each run still passes through the approval gate. Admin only."
           >
             <SchedulesPanel />
-          </Section>
+          </SettingsSection>
             </div>
             </SettingsAccordionContext.Provider>
           </SettingsTabContext.Provider>
