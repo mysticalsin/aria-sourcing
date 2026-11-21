@@ -330,7 +330,10 @@ func (r *Router) Route(ctx context.Context, req Request) (Result, error) {
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD)
+	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
+		acc.add(call)
+		return r.budgetStop(m, req, acc, start)
+	}
 	acc.add(call)
 
 	if !confident(comp, r.cfg.ConfidenceThreshold) {
@@ -368,7 +371,10 @@ func (r *Router) runBig(ctx context.Context, m *Machine, req Request, key string
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD)
+	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
+		acc.add(call)
+		return r.budgetStop(m, req, acc, start)
+	}
 	acc.add(call)
 	res := Result{
 		RequestID:  req.ID,
@@ -464,9 +470,14 @@ func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request) (
 		Prompt:    buildPrompt(req, tier),
 		MaxTokens: r.maxTokens(req, tier),
 	}
-	t0 := time.Now()
-	comp, err := p.Complete(ctx, creq)
-	lat := time.Since(t0)
+	comp, lat, err := r.completeOnce(ctx, p, creq)
+	if isTimeout(err) {
+		comp, lat, err = r.completeOnce(ctx, p, creq)
+		if isTimeout(err) {
+			r.infra.Add(1)
+			return Completion{}, ProviderCall{}, ErrInfra
+		}
+	}
 	if err != nil {
 		return Completion{}, ProviderCall{}, err
 	}
@@ -481,6 +492,29 @@ func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request) (
 		USD:          costUSD(r.cfg, tier, int64(comp.InputTokens), int64(comp.OutputTokens)),
 	}
 	return comp, pc, nil
+}
+
+func (r *Router) completeOnce(ctx context.Context, p Provider, req CompletionRequest) (comp Completion, lat time.Duration, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.infra.Add(1)
+			panic(ErrInfra)
+		}
+	}()
+	started := time.Now()
+	comp, err = p.Complete(ctx, req)
+	lat = time.Since(started)
+	if err == nil {
+		return comp, lat, nil
+	}
+	if isTimeout(err) {
+		return Completion{}, lat, context.DeadlineExceeded
+	}
+	return Completion{}, lat, errors.New("provider error")
+}
+
+func isTimeout(err error) bool {
+	return err != nil && errors.Is(err, context.DeadlineExceeded)
 }
 
 func (r *Router) tokenEstimate(req Request, tier Tier) (in, out int64) {

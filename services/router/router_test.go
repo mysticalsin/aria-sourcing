@@ -677,6 +677,151 @@ func Test_test_synthetic_workload_hit_rates(t *testing.T) {
 	}
 }
 
+func TestClauseMutations(t *testing.T) {
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	l := newLedger(DefaultConfig())
+	if _, err := l.tryReserve(now, -1, 0); err == nil || errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("negative tokens: %v", err)
+	}
+	if _, err := l.tryReserve(now, 0, -1); err == nil || errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("negative usd: %v", err)
+	}
+	if _, err := l.tryReserve(now, 0, math.NaN()); err == nil || errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("nan usd: %v", err)
+	}
+	if _, err := l.tryReserve(now, 0, math.Inf(1)); err == nil || errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("inf usd: %v", err)
+	}
+	if !tokenFits(10, 0, 0, 10) {
+		t.Fatal("used == limit and add 0 must fit")
+	}
+	if !tokenFits(0, 5, 0, 5) {
+		t.Fatal("reserved == room and add 0 must fit")
+	}
+	if tokenFits(-1, 0, 1, 10) || tokenFits(0, -1, 1, 10) || tokenFits(1, 0, 1, -1) {
+		t.Fatal("negative inputs must not fit")
+	}
+	if usdFits(math.NaN(), 0, 1, 10) || usdFits(0, math.NaN(), 1, 10) || usdFits(0, 0, math.NaN(), 10) || usdFits(0, 0, 1, math.NaN()) ||
+		usdFits(math.Inf(1), 0, 1, 10) || usdFits(0, math.Inf(1), 1, 10) || usdFits(0, 0, math.Inf(1), 10) || usdFits(0, 0, 1, math.Inf(1)) ||
+		usdFits(0, 0, -1, 10) || usdFits(0, -1, 1, 10) || usdFits(0, 0, 1, -1) || usdFits(-1, 0, 1, 10) {
+		t.Fatal("nan, inf, or negative usd must not fit")
+	}
+	if subFloor(1, 5) != 0 || subFloorF(math.NaN(), 0) != 0 || subFloorF(-1, 0) != 0 {
+		t.Fatal("subFloor must clamp")
+	}
+
+	h, err := l.tryReserve(now, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.beginRun("other")
+	if err := l.commit(h, 10, -1); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.usage(); got.RunTokens != 0 || got.DailyTokens != 10 || got.DailyUSD != 0 {
+		t.Fatalf("epoch and negative usd clamp: %+v", got)
+	}
+
+	l2 := newLedger(Config{RunTokenBudget: 1000, DailyTokenBudget: 1000, MonthlyTokenBudget: 1000, DailyBudgetUSD: 10, MonthlyBudgetUSD: 10})
+	h, err = l2.tryReserve(now, 100, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2.setTokenLimits(10, 10, 10)
+	if err := l2.commit(h, 100, 1); err != nil || l2.tripped {
+		t.Fatalf("exact reservation must not trip when only the ceiling moved: err=%v tripped=%v", err, l2.tripped)
+	}
+
+	wide := Config{RunTokenBudget: 1000, DailyTokenBudget: 1000, MonthlyTokenBudget: 1000, DailyBudgetUSD: 100, MonthlyBudgetUSD: 100}
+	l3 := newLedger(wide)
+	h, err = l3.tryReserve(now, 10, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l3.setTokenLimits(5, 5, 5)
+	if err := l3.commit(h, 11, 1); err != ErrBudgetExceeded || !l3.tripped {
+		t.Fatalf("token overage alone must trip: err=%v tripped=%v", err, l3.tripped)
+	}
+
+	l4 := newLedger(wide)
+	h, err = l4.tryReserve(now, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l4.commit(h, 1, math.NaN()); err != nil {
+		t.Fatal(err)
+	}
+	if got := l4.usage().DailyUSD; got != 0 {
+		t.Fatalf("nan commit usd stored as %v", got)
+	}
+	h, err = l4.tryReserve(now, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l4.commit(h, 1, math.Inf(1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := l4.usage().DailyUSD; got != 0 {
+		t.Fatalf("inf commit usd stored as %v", got)
+	}
+
+	l5 := newLedger(wide)
+	h, err = l5.tryReserve(now, 10, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l5.beginRun("other")
+	l5.setTokenLimits(1, 1000, 1000)
+	if err := l5.commit(h, 11, 1); err != nil || l5.tripped {
+		t.Fatalf("old run ceiling must not trip a later epoch: err=%v tripped=%v", err, l5.tripped)
+	}
+	if got := l5.usage(); got.RunTokens != 0 || got.DailyTokens != 11 {
+		t.Fatalf("later epoch usage: %+v", got)
+	}
+
+	l6 := newLedger(wide)
+	h, err = l6.tryReserve(now, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l6.setUSDLimits(0.5, 100)
+	if err := l6.commit(h, 2, 2); err != ErrBudgetExceeded || !l6.tripped {
+		t.Fatalf("daily usd overage must trip even when the month still fits: err=%v tripped=%v", err, l6.tripped)
+	}
+
+	oneFail := []struct {
+		name string
+		set  func(*ledger)
+	}{
+		{"run", func(l *ledger) { l.setTokenLimits(0, 1000, 1000) }},
+		{"daily", func(l *ledger) { l.setTokenLimits(1000, 0, 1000) }},
+		{"month", func(l *ledger) { l.setTokenLimits(1000, 1000, 0) }},
+		{"dayusd", func(l *ledger) { l.setUSDLimits(0, 100) }},
+		{"monthusd", func(l *ledger) { l.setUSDLimits(100, 0) }},
+	}
+	for _, tc := range oneFail {
+		l := newLedger(wide)
+		tc.set(l)
+		if _, err := l.tryReserve(now, 1, 1); !errors.Is(err, ErrBudgetExceeded) {
+			t.Fatalf("%s ceiling alone: %v", tc.name, err)
+		}
+		h, err := l.tryReserve(now, 1, 1)
+		_ = h
+		l2 := newLedger(wide)
+		h, err = l2.tryReserve(now, 1, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc.set(l2)
+		if err := l2.commit(h, 2, 2); err != ErrBudgetExceeded || !l2.tripped {
+			t.Fatalf("%s commit overage: err=%v tripped=%v", tc.name, err, l2.tripped)
+		}
+	}
+	if tokenFits(0, 0, 0, 1) == false || usdFits(0, 0, 0, 1) == false || tokenFits(0, 0, 5, 5) == false || usdFits(0, 0, 1, 1) == false {
+		t.Fatal("a zero add under a positive ceiling, and an add equal to the room, must fit")
+	}
+}
+
 func TestProbeReserve0048Billed1600FailsClosed(t *testing.T) {
 	// Exact probe: the reservation is $0.048 and the provider bills $16.00.
 	// The route must not come back as a completed decision.
@@ -719,6 +864,46 @@ func TestProbeReserve0048Billed1600FailsClosed(t *testing.T) {
 	}
 	if calls.Load() != before {
 		t.Fatalf("later call reached the provider")
+	}
+}
+
+func TestCeiling80Billed20000FailsClosed(t *testing.T) {
+	var calls atomic.Int64
+	small := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+		calls.Add(1)
+		return Completion{Text: "billed", Confidence: 0.99, InputTokens: 0, OutputTokens: 1000}, nil
+	})
+	cfg := DefaultConfig()
+	cfg.CacheEnabled = false
+	cfg.SmallInputUSDPer1K = 0
+	cfg.SmallOutputUSDPer1K = 20000
+	cfg.BigInputUSDPer1K = 0
+	cfg.BigOutputUSDPer1K = 0
+	cfg.RunTokenBudget = math.MaxInt64 / 4
+	cfg.DailyTokenBudget = math.MaxInt64 / 4
+	cfg.MonthlyTokenBudget = math.MaxInt64 / 4
+	cfg.DailyBudgetUSD = 80
+	cfg.MonthlyBudgetUSD = 80
+	r := mustRouter(t, cfg, Deps{Small: small, Big: scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1})})
+	req := Request{ID: "ceil80", Task: TaskClassify, Input: "please classify this note", MaxTokens: 1}
+	_, estUSD := r.Estimate(req, TierSmall)
+	if estUSD <= 0 || estUSD > 80 {
+		t.Fatalf("reservation usd %v, want a positive value within 80", estUSD)
+	}
+	res, err := r.Route(context.Background(), req)
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("err %v", err)
+	}
+	if res.Text != "" || res.Terminal == StateDone {
+		t.Fatalf("terminal %s text %q", res.Terminal, res.Text)
+	}
+	if math.Abs(r.Usage().DailyUSD-20000) > 1e-6 || math.Abs(r.Usage().MonthlyUSD-20000) > 1e-6 {
+		t.Fatalf("usage %+v", r.Usage())
+	}
+	before := calls.Load()
+	_, err = r.Route(context.Background(), Request{ID: "ceil80b", Task: TaskClassify, Input: "another note to classify", MaxTokens: 1})
+	if !errors.Is(err, ErrBudgetExceeded) || calls.Load() != before {
+		t.Fatalf("later call err=%v calls %d -> %d", err, before, calls.Load())
 	}
 }
 
@@ -776,17 +961,17 @@ func TestBudgetBoundariesAndPeriodResets(t *testing.T) {
 		clk := &manualClock{t: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
 		small := exactSmall()
 		r := budgetRouterAt(t, small, clk)
-		req := Request{ID: "d", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		req := Request{ID: "d", Task: TaskClassify, Input: "classify 000", MaxTokens: 64}
 		est, _ := r.Estimate(req, TierSmall)
 		r.SetTokenBudgets(math.MaxInt64/4, est, math.MaxInt64/4)
 		if _, err := r.Route(context.Background(), req); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.Route(context.Background(), Request{ID: "d2", Task: TaskClassify, Input: "please classify two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+		if _, err := r.Route(context.Background(), Request{ID: "d2", Task: TaskClassify, Input: "classify 001", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
 			t.Fatalf("same day %v", err)
 		}
 		clk.Advance(24 * time.Hour)
-		if _, err := r.Route(context.Background(), Request{ID: "d3", Task: TaskClassify, Input: "please classify three", MaxTokens: 64}); err != nil {
+		if _, err := r.Route(context.Background(), Request{ID: "d3", Task: TaskClassify, Input: "classify 002", MaxTokens: 64}); err != nil {
 			t.Fatal(err)
 		}
 		if got := r.Usage().DailyTokens; got != est {
@@ -808,18 +993,18 @@ func TestBudgetBoundariesAndPeriodResets(t *testing.T) {
 			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
 			Now:   clk.Now,
 		})
-		req := Request{ID: "u", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		req := Request{ID: "u", Task: TaskClassify, Input: "classify 000", MaxTokens: 64}
 		_, estUSD := r.Estimate(req, TierSmall)
 		r.SetTokenBudgets(math.MaxInt64/4, math.MaxInt64/4, math.MaxInt64/4)
 		r.SetUSDBudgets(estUSD, 1e9)
 		if _, err := r.Route(context.Background(), req); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.Route(context.Background(), Request{ID: "u2", Task: TaskExtract, Input: "please extract two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+		if _, err := r.Route(context.Background(), Request{ID: "u2", Task: TaskClassify, Input: "classify 001", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
 			t.Fatalf("same day usd %v", err)
 		}
 		clk.Advance(24 * time.Hour)
-		if _, err := r.Route(context.Background(), Request{ID: "u3", Task: TaskExtract, Input: "please extract three", MaxTokens: 64}); err != nil {
+		if _, err := r.Route(context.Background(), Request{ID: "u3", Task: TaskClassify, Input: "classify 002", MaxTokens: 64}); err != nil {
 			t.Fatal(err)
 		}
 		if math.Abs(r.Usage().DailyUSD-estUSD) > 1e-9 {
@@ -838,7 +1023,7 @@ func TestBudgetBoundariesAndPeriodResets(t *testing.T) {
 			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
 			Now:   clk.Now,
 		})
-		req := Request{ID: "m", Task: TaskClassify, Input: "please classify", MaxTokens: 64}
+		req := Request{ID: "m", Task: TaskClassify, Input: "classify 000", MaxTokens: 64}
 		_, estUSD := r.Estimate(req, TierSmall)
 		r.SetTokenBudgets(math.MaxInt64/4, math.MaxInt64/4, math.MaxInt64/4)
 		r.SetUSDBudgets(1e9, estUSD)
@@ -846,11 +1031,11 @@ func TestBudgetBoundariesAndPeriodResets(t *testing.T) {
 			t.Fatal(err)
 		}
 		clk.Advance(24 * time.Hour)
-		if _, err := r.Route(context.Background(), Request{ID: "m2", Task: TaskIntake, Input: "please intake two", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
+		if _, err := r.Route(context.Background(), Request{ID: "m2", Task: TaskClassify, Input: "classify 001", MaxTokens: 64}); !errors.Is(err, ErrBudgetExceeded) {
 			t.Fatalf("same month usd %v", err)
 		}
 		clk.Advance(24 * time.Hour * 20)
-		if _, err := r.Route(context.Background(), Request{ID: "m3", Task: TaskIntake, Input: "please intake dec", MaxTokens: 64}); err != nil {
+		if _, err := r.Route(context.Background(), Request{ID: "m3", Task: TaskClassify, Input: "classify 002", MaxTokens: 64}); err != nil {
 			t.Fatal(err)
 		}
 		if math.Abs(r.Usage().MonthlyUSD-estUSD) > 1e-9 {
@@ -1011,13 +1196,24 @@ func TestEnvValuesNeverLogged(t *testing.T) {
 	}
 
 	t.Run("provider_error_and_repanic", func(t *testing.T) {
-		const key = "notarealkey"
-		panicProvider := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
-			panic(key)
+		errProvider := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+			return Completion{}, errors.New("provider failed " + envProbeKey)
 		})
 		cfg := DefaultConfig()
 		cfg.CacheEnabled = false
 		r := mustRouter(t, cfg, Deps{
+			Small: errProvider,
+			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
+		})
+		_, err := r.Route(context.Background(), Request{ID: "e", Task: TaskClassify, Input: "plain error", MaxTokens: 16})
+		if err == nil || strings.Contains(err.Error(), envProbeKey) || strings.Contains(strings.Join(r.LogLines(), "\n"), envProbeKey) {
+			t.Fatalf("provider error leaked: %v", err)
+		}
+
+		panicProvider := NewFakeProvider(TierSmall, func(context.Context, CompletionRequest) (Completion, error) {
+			panic(envProbeKey)
+		})
+		r = mustRouter(t, cfg, Deps{
 			Small: panicProvider,
 			Big:   scripted(TierBig, Completion{Text: "no", Confidence: 1, InputTokens: 1, OutputTokens: 1}),
 		})
@@ -1025,16 +1221,24 @@ func TestEnvValuesNeverLogged(t *testing.T) {
 		func() {
 			defer func() { repanic = recover() }()
 			_, err := r.Route(context.Background(), Request{ID: "p", Task: TaskClassify, Input: "panic path", MaxTokens: 16})
-			if err != nil && strings.Contains(err.Error(), key) {
+			if err != nil && strings.Contains(err.Error(), envProbeKey) {
 				t.Fatalf("error carries key")
 			}
 		}()
-		if repanic != nil && strings.Contains(fmt.Sprint(repanic), key) {
-			t.Fatal("re-panic carries the value")
+		if repanic == nil || strings.Contains(fmt.Sprint(repanic), envProbeKey) {
+			t.Fatalf("re-panic carries the value: %v", repanic)
 		}
-		assertPackageLevelOmitsKey(t, key)
+		if !errors.Is(repanic.(error), ErrInfra) {
+			t.Fatalf("re-panic %v", repanic)
+		}
+		if strings.Contains(strings.Join(r.LogLines(), "\n"), envProbeKey) {
+			t.Fatal("log carries key")
+		}
+		assertPackageLevelOmitsKey(t, envProbeKey)
 	})
 }
+
+var envProbeKey = "notarealkey"
 
 func assertPackageLevelOmitsKey(t *testing.T, key string) {
 	t.Helper()
