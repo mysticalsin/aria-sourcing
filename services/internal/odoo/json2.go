@@ -636,6 +636,20 @@ func (c *Client) UpsertApplicant(ctx context.Context, in Applicant) (Applicant, 
 	if err != nil {
 		return Applicant{}, err
 	}
+	if _, found, err := c.findXMLID(ctx, "applicant_"+in.AriaID, "hr.applicant"); err != nil {
+		return Applicant{}, err
+	} else if !found {
+		rows, err := c.searchRead(ctx, "hr.applicant", and(
+			eq("email_normalized", email),
+			eq("job_id", job.ID),
+		), []string{"id"}, 2)
+		if err != nil {
+			return Applicant{}, err
+		}
+		if len(rows) > 0 {
+			return Applicant{}, ErrConflict
+		}
+	}
 	sourceID, err := c.ensureSource(ctx, job.ID, in.Source)
 	if err != nil {
 		return Applicant{}, err

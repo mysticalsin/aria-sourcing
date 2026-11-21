@@ -432,6 +432,10 @@ func (f *Fake) UpsertApplicant(ctx context.Context, in Applicant) (Applicant, er
 	if !ok {
 		return Applicant{}, ErrNotFound
 	}
+	emailKey := email + "\x00" + fmt.Sprint(jobID)
+	if id, ok := f.emailJob[emailKey]; ok && f.applicants[id].AriaID != in.AriaID {
+		return Applicant{}, ErrConflict
+	}
 	sourceID, err := f.ensureSourceLocked(jobID, in.Source)
 	if err != nil {
 		return Applicant{}, err
@@ -448,11 +452,7 @@ func (f *Fake) UpsertApplicant(ctx context.Context, in Applicant) (Applicant, er
 	if id, ok := f.applicantByAria[in.AriaID]; ok {
 		existing, found = id, true
 	}
-	emailKey := email + "\x00" + fmt.Sprint(jobID)
 	if id, ok := f.emailJob[emailKey]; ok {
-		if f.applicants[id].AriaID != in.AriaID {
-			return Applicant{}, ErrConflict
-		}
 		existing, found = id, true
 	}
 	if found {

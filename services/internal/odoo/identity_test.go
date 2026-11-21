@@ -27,6 +27,7 @@ func TestDistinctAriaIDDoesNotOverwriteApplicant(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	partnersBefore := f.Counts().Partners
 	second := firstIn
 	second.AriaID = "cand-b"
 	second.IdempotencyKey = "idem-bea"
@@ -34,6 +35,12 @@ func TestDistinctAriaIDDoesNotOverwriteApplicant(t *testing.T) {
 	second.EmailFrom = first.EmailNormalized
 	if _, err := f.UpsertApplicant(ctx, second); !errors.Is(err, odoo.ErrConflict) {
 		t.Fatalf("err = %v, want conflict", err)
+	}
+	if _, _, ok := f.XMLID("partner_applicant-partner-cand-b"); ok {
+		t.Fatal("conflict bound a second partner external id")
+	}
+	if f.Counts().Partners != partnersBefore {
+		t.Fatalf("partners = %d, before = %d", f.Counts().Partners, partnersBefore)
 	}
 	live, err := f.ReadApplicant(ctx, "cand-1")
 	if err != nil {

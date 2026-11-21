@@ -56,8 +56,35 @@ func TestOptOutAndEraseCloseOutreach(t *testing.T) {
 	if touch.Code != http.StatusConflict {
 		t.Fatalf("touch after opt-out = %d %s", touch.Code, touch.Body)
 	}
-	erase := post(t, srv, "/candidates/cand-9/erase", map[string]any{})
-	if erase.Code != http.StatusNotFound {
-		t.Fatalf("missing erase = %d", erase.Code)
+	approval := post(t, srv, "/approvals", map[string]string{
+		"channel": "email", "recipient_ref": "mina.ortega@people.example.test",
+		"subject": "Hello", "body": "Synthetic exact text", "notice_version": "art14-2026-11",
+		"approver": "ria.nunes", "applicant_aria_id": "cand-1",
+	})
+	if approval.Code != http.StatusConflict {
+		t.Fatalf("approval after opt-out = %d %s", approval.Code, approval.Body)
+	}
+	other := post(t, srv, "/candidates", map[string]any{
+		"aria_id": "cand-2", "idempotency_key": "cand-2", "name": "Bea Costa",
+		"email": "bea.costa@people.example.test", "job_aria_id": "job-1",
+		"source": "Candidate-supplied",
+	})
+	if other.Code != http.StatusCreated {
+		t.Fatalf("second candidate %d %s", other.Code, other.Body)
+	}
+	erase := post(t, srv, "/candidates/cand-2/erase", map[string]any{})
+	if erase.Code != http.StatusOK || !bytes.Contains(erase.Body.Bytes(), []byte(`"erased":true`)) {
+		t.Fatalf("erase %d %s", erase.Code, erase.Body)
+	}
+	after := post(t, srv, "/candidates/cand-2/touches", map[string]string{
+		"idempotency_key": "t2", "channel": "note", "kind": "message",
+		"subject": "Hello", "body": "Synthetic note",
+	})
+	if after.Code != http.StatusConflict {
+		t.Fatalf("touch after erase = %d %s", after.Code, after.Body)
+	}
+	missing := post(t, srv, "/candidates/cand-9/erase", map[string]any{})
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing erase = %d", missing.Code)
 	}
 }
