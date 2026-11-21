@@ -12,7 +12,7 @@ function ok(name: string, condition: boolean) {
 }
 
 const parsed = parseEmailAndJD({
-  email: `From: Priya Nair <priya@brightloop.io>
+  email: `From: Priya Nair <owner@example.com>
 Subject: Senior Backend Engineer
 
 Hi, we're hiring a Senior Backend Engineer to join our platform team in London.
