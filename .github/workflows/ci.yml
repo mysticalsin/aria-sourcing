@@ -4,9 +4,15 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [vercel-demo, main, twa-odoo]
   pull_request:
     branches: ["**"]
+
+# One group per workflow and branch. Pull requests cancel a stale run.
+# Pushes to the default branch and twa-odoo do not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}
 
 permissions:
   contents: read
