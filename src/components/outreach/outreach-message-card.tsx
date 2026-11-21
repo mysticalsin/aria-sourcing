@@ -25,6 +25,10 @@ import {
   toneForOutreachStatus,
   type Tone,
 } from "@/lib/utils";
+import { ChannelPicker } from "@/components/dashboard/channel-picker";
+import { OutreachComposer } from "@/components/dashboard/outreach-composer";
+import type { ChannelId } from "@/lib/channel-catalog";
+import { exactTextDigest } from "@/lib/exact-text";
 import {
   Check,
   X,
@@ -151,19 +155,14 @@ export function OutreachMessageCard({
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
       return;
     }
-    if (message.channel === "LinkedIn") {
-      toast({
-        title: "Approved, not sent",
-        description: "Copy the message and send the InMail yourself in Recruiter. Aria does not contact LinkedIn.",
-        variant: "success",
-      });
-      return;
-    }
     toast({
-      title: "Approved: queued for send",
-      description: res.warnings.length
-        ? res.warnings.join(" ")
-        : "Goes live once the agent seat is connected and its sending domain is verified.",
+      title: "Exact text approved",
+      description:
+        message.channel === "LinkedIn"
+          ? "Nothing was sent. Send it from Recruiter, then Mark sent."
+          : res.warnings.length
+            ? res.warnings.join(" ")
+            : "Approved. The email is still waiting for the send step.",
       variant: "success",
     });
   }
@@ -346,6 +345,18 @@ export function OutreachMessageCard({
           />
         </Field>
 
+        <OutreachComposer
+          toName={name}
+          channelLabel={message.channel === "Email" ? "Email" : "Assisted Recruiter InMail"}
+          subject={message.subject}
+          exactText={message.body}
+          digest={exactTextDigest(message.subject, message.body)}
+          dirty={dirty}
+          onApprove={actionable && !approving && !rejecting ? () => void handleApprove() : undefined}
+          onMarkSent={message.channel === "LinkedIn" ? handleConfirmManualSend : undefined}
+        />
+        <ChannelPicker selectedId={message.channel === "Email" ? "email" : ("assisted-inmail" satisfies ChannelId)} />
+
         {/* LinkedIn: approved, not sent yet */}
         {pendingManual && (
           <div className="space-y-3 rounded-2xl bg-tangerine-soft px-3.5 py-3 text-sm text-tangerine ring-1 ring-inset ring-tangerine/20">
@@ -438,27 +449,15 @@ export function OutreachMessageCard({
             </Button>
           )}
           {actionable && (
-            <>
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={<Check className="h-4 w-4" />}
-                onClick={handleApprove}
-                loading={approving}
-                disabled={approving || rejecting}
-              >
-                {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                leftIcon={<X className="h-4 w-4" />}
-                onClick={handleReject}
-                disabled={approving || rejecting}
-              >
-                {rejecting ? "Revoking…" : "Reject"}
-              </Button>
-            </>
+            <Button
+              size="sm"
+              variant="ghost"
+              leftIcon={<X className="h-4 w-4" />}
+              onClick={handleReject}
+              disabled={approving || rejecting}
+            >
+              {rejecting ? "Revoking…" : "Reject"}
+            </Button>
           )}
           {(actionable || rejected) && (
             <Button
