@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from odoo import api, fields
+from odoo import SUPERUSER_ID, api, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.service.model import call_kw
 from odoo.tests import tagged
@@ -183,6 +183,28 @@ class TestSentinelFindings(AriaRecruitmentCommon):
                 'job_id': self.job.id,
                 'stage_id': self.stage['hired'].id,
             })
+        self.assertEqual(count(), before + 1)
+
+    def test_refusal_audit_survives_uncommitted_user(self):
+        user = new_test_user(
+            self.env,
+            login='uncommitted.audit@example.test',
+            groups='hr_recruitment.group_hr_recruitment_user',
+        )
+        applicant = self.applicant('to_hire', name='Audit Example', email='audit.example@example.test')
+
+        def count():
+            with self.env.registry.cursor() as cr:
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                return env['aria.recruitment.transition.audit'].sudo().search_count([
+                    ('applicant_res_id', '=', applicant.id),
+                    ('result', '=', 'refused'),
+                    ('to_stage_key', '=', 'hired'),
+                ])
+
+        before = count()
+        with self.assertRaises(ValidationError):
+            applicant.with_user(user).write({'stage_id': self.stage['hired'].id})
         self.assertEqual(count(), before + 1)
 
     def test_refusal_audit_failure_is_logged(self):

@@ -36,9 +36,12 @@ function readTests() {
   return walk(report);
 }
 
-const started = Date.now();
-let status = runPlaywright([]);
-let tests = readTests();
+const { classifyRetry } = require('./lib/classify-retry');
+
+function main() {
+  const started = Date.now();
+  let status = runPlaywright([]);
+  let tests = readTests();
 const timedOut = tests.filter((test) => test.status === 'timedOut');
 const failed = tests.filter((test) => test.status === 'failed' || test.status === 'interrupted');
 let infraRetried = false;
@@ -49,12 +52,7 @@ if (timedOut.length && failed.length === 0) {
   status = runPlaywright(['--grep', pattern]);
   const retried = readTests();
   const byName = new Map(retried.map((test) => [test.name, test]));
-  tests = tests.map((test) => {
-    if (test.status !== 'timedOut') return test;
-    const again = byName.get(test.name);
-    if (again && again.status === 'passed') return again;
-    return { ...test, status: 'infra_error', duration_ms: (test.duration_ms || 0) + (again?.duration_ms || 0) };
-  });
+  tests = tests.map((test) => classifyRetry(test, byName.get(test.name)));
 }
 
 const counts = { passed: 0, failed: 0, skipped: 0, infra_error: 0, timedOut: 0, total: tests.length };
@@ -97,6 +95,11 @@ for (const test of tests) {
 }
 console.log(`counts passed=${counts.passed} failed=${counts.failed} skipped=${counts.skipped} infra_error=${counts.infra_error} timedOut=${counts.timedOut} total=${counts.total}`);
 
-if (counts.skipped > 0 || counts.failed > 0 || counts.infra_error > 0 || counts.timedOut > 0 || status !== 0) {
-  process.exit(status === 0 ? 1 : status);
+  if (counts.skipped > 0 || counts.failed > 0 || counts.infra_error > 0 || counts.timedOut > 0 || status !== 0) {
+    process.exit(status === 0 ? 1 : status);
+  }
+}
+
+if (require.main === module) {
+  main();
 }

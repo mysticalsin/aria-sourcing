@@ -29,6 +29,15 @@ class TestHireGate(AriaRecruitmentCommon):
         self.env.invalidate_all()
         self.assertEqual(applicant.stage_id.aria_stage_key, 'to_hire')
 
+    def test_hired_status_on_hired_applicant_is_idempotent(self):
+        applicant = self.applicant('to_hire', name='Again Example', email='again.example@example.test')
+        applicant.aria_dna_integration_status = 'integrated'
+        self.contract(applicant)
+        self.assertFalse(self.move(applicant, 'hired'))
+        applicant.write({'application_status': 'hired'})
+        applicant.write({'stage_id': self.stage['hired'].id})
+        self.assertEqual(applicant.stage_id.aria_stage_key, 'hired')
+
     def test_hire_without_contract_rejected(self):
         applicant = self.applicant('to_hire')
         applicant.aria_dna_integration_status = 'complete'

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { authenticate, state } = require('./odoo');
+const { sessionCookie } = require('./session-cookie');
 
 const shots = path.join(process.env.ARTIFACT_DIR, 'screenshots');
 fs.mkdirSync(shots, { recursive: true });
@@ -12,7 +13,7 @@ async function shot(page, name) {
 async function login(context, page, userKey) {
   const session = await authenticate(state.users[userKey].login);
   await context.clearCookies();
-  await context.addCookies([{ name: 'session_id', value: session, url: process.env.BASE_URL }]);
+  await context.addCookies([sessionCookie(session, process.env.BASE_URL)]);
   await page.goto('/odoo', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.o_main_navbar, .o_home_menu, .o_web_client', { timeout: 120000 });
 }
@@ -73,4 +74,5 @@ async function moveTo(page, label) {
 
 module.exports = {
   shot, login, openApplicant, clickStage, currentStage, expectDialog, moveTo, chooseSelection, openAriaTab,
+  sessionCookie,
 };
