@@ -5,6 +5,7 @@ import type {
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
+import { auditLiveScore } from "./fairness/live-rank";
 import {
   candidateIsFarFromEurope,
   candidateMatchesEurope,
@@ -345,7 +346,7 @@ export interface ScoreResult {
   breakdown: MatchBreakdownItem[];
 }
 
-export function scoreCandidate(
+function scoreCandidateCore(
   candidate: Candidate,
   jd: JobAnalysis,
   weights: ScoringWeights = DEFAULT_SCORING_WEIGHTS,
@@ -373,6 +374,38 @@ export function scoreCandidate(
   const composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
 
   return { score: round(clamp(composite, 0, 100)), breakdown };
+}
+
+export function scoreCandidate(
+  candidate: Candidate,
+  jd: JobAnalysis,
+  weights: ScoringWeights = DEFAULT_SCORING_WEIGHTS,
+): ScoreResult {
+  const scrubbed: Candidate = { ...candidate, avatarUrl: undefined };
+  const result = scoreCandidateCore(scrubbed, jd, weights);
+  auditLiveScore(
+    {
+      location: candidate.location,
+      yearsExperience: candidate.yearsExperience,
+      avatarUrl: candidate.avatarUrl ?? "",
+    },
+    (row) =>
+      scoreCandidateCore(
+        {
+          ...candidate,
+          location: typeof row.location === "string" ? row.location : candidate.location,
+          yearsExperience:
+            row.yearsExperience == null || row.yearsExperience === ""
+              ? null
+              : Number(row.yearsExperience),
+          avatarUrl:
+            typeof row.avatarUrl === "string" && row.avatarUrl !== "" ? row.avatarUrl : undefined,
+        },
+        jd,
+        weights,
+      ).score,
+  );
+  return result;
 }
 
 /** Distribution buckets for a match-score histogram. */
