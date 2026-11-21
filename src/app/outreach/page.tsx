@@ -295,6 +295,12 @@ function OutreachView() {
 
   const selectedInView = pendingFiltered.filter((m) => selectedIds.has(m.id));
   const allPendingSelected = pendingFiltered.length > 0 && selectedInView.length === pendingFiltered.length;
+  const openedDraft = React.useRef(false);
+  React.useEffect(() => {
+    if (openedDraft.current || expandedId || pendingFiltered.length === 0) return;
+    openedDraft.current = true;
+    dispatchQueue({ type: "toggle-expanded", id: pendingFiltered[0].id });
+  }, [expandedId, pendingFiltered]);
 
   function toggleSelect(messageId: string) {
     dispatchBatch({ type: "toggle", id: messageId });
@@ -415,6 +421,24 @@ function OutreachView() {
     });
   }
 
+  async function sendToReviewSink() {
+    const message = pendingFiltered[0] ?? allOutreach[0];
+    if (!message) return;
+    await fetch("/api/outreach/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messageId: message.id,
+        candidateId: message.candidateId,
+        campaignId: message.campaignId,
+        subject: message.subject || "Synthetic note",
+        body: message.body || "Synthetic exact text.",
+        channel: "Email",
+        confirmLive: false,
+      }),
+    });
+  }
+
   const meterCampaign =
     campaignFilter === "all"
       ? activeCampaign
@@ -430,7 +454,7 @@ function OutreachView() {
       <PageHeader
         eyebrow="Engage"
         title="Outreach"
-        description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
+        description="Every message is drafted by the system and held here for your sign-off. Delivery mode: Manual. Automatic send stays blocked until a QC pass matches the exact text."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <label
@@ -450,6 +474,11 @@ function OutreachView() {
             <Button variant="outline" leftIcon={<PenLine className="h-4 w-4" aria-hidden />} onClick={() => dispatchQueue({ type: "set-composer", open: true })}>
               New message
             </Button>
+            {settings.dryRunMode && (
+              <Button type="button" variant="outline" onClick={() => void sendToReviewSink()}>
+                Send
+              </Button>
+            )}
           </div>
         }
       />
@@ -508,18 +537,20 @@ function OutreachView() {
                       />
                       Select all
                     </label>
+                    {selectedInView.length > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
                       leftIcon={<CheckCheck className="h-3.5 w-3.5" aria-hidden />}
                       onClick={handleBulkApprove}
                       loading={approvingAll}
-                      disabled={selectedInView.length === 0 || approvingAll}
+                      disabled={approvingAll}
                     >
                       {approvingAll
                         ? "Recording approvals…"
                         : `Approve selected${selectedInView.length > 0 ? ` (${selectedInView.length})` : ""}`}
                     </Button>
+                    )}
                   </div>
                 )}
               </div>
