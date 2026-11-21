@@ -77,7 +77,7 @@ func TestHealthCampaignCandidateApprovalAndHire(t *testing.T) {
 	}
 	cand := post(t, srv, "/candidates", map[string]any{
 		"aria_id": "cand-1", "idempotency_key": "cand-1", "name": "Mina Ortega",
-		"email": "mina.ortega@gmail.com", "job_aria_id": "job-1", "source": "Candidate-supplied",
+		"email": "owner@example.com", "job_aria_id": "job-1", "source": "Candidate-supplied",
 	})
 	if cand.Code != http.StatusBadRequest {
 		t.Fatalf("real email accepted: %d %s", cand.Code, cand.Body)
