@@ -1,6 +1,15 @@
 "use client";
 
 import * as React from "react";
+
+function heyReachLabel(): "Off" | "On" {
+  const enabled = process.env.ARIA_HEYREACH_ENABLED === "true";
+  const approvalId = "";
+  const bodyHash = "";
+  if (enabled && approvalId.length > 0 && bodyHash.length > 0) return "On";
+  return "Off";
+}
+
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -144,7 +153,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <HeroPanel mode={ccMode} nextStep={nextStep} />
       <p data-testid="channel-flags" className="text-sm text-ink">
-        HeyReach Off. LinkedIn token Off.
+        HeyReach {heyReachLabel()}. LinkedIn token Off.
       </p>
 
       <HydrationGate hydrated={hydrated} fallback={<DashboardFallback />}>
