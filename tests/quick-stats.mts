@@ -13,6 +13,7 @@ import {
   selectInAssessment,
   selectInterviewsThisWeek,
   selectQuickStats,
+  startOfUtcWeek,
   selectReplies,
   type QuickStatSource,
 } from "../src/lib/quick-stats.ts";
@@ -70,6 +71,22 @@ test("in assessment counts Contacted and To Assess only", () => {
     ]),
     2,
   );
+});
+
+test("the UTC week starts Monday, including the year boundary", () => {
+  const monday = new Date("2026-11-16T00:00:00.000Z");
+  const countAt = (startTime: string, now: Date) =>
+    selectInterviewsThisWeek([{ startTime, status: "Confirmed" }], now);
+  assert.equal(countAt("2026-11-15T23:59:59.000Z", monday), 0);
+  assert.equal(countAt("2026-11-16T00:00:00.000Z", monday), 1);
+  assert.equal(countAt("2026-11-16T00:00:01.000Z", monday), 1);
+
+  const newYear = new Date("2026-01-01T12:00:00.000Z");
+  assert.equal(startOfUtcWeek(newYear), Date.parse("2025-12-29T00:00:00.000Z"));
+  assert.equal(countAt("2025-12-28T23:59:59.000Z", newYear), 0);
+  assert.equal(countAt("2025-12-29T00:00:00.000Z", newYear), 1);
+  assert.equal(countAt("2026-01-04T23:59:59.000Z", newYear), 1);
+  assert.equal(countAt("2026-01-05T00:00:00.000Z", newYear), 0);
 });
 
 test("interviews this week honour the UTC week and drop cancelled or undated rows", () => {
