@@ -110,7 +110,7 @@ export interface ApifyProfile {
  *  - "Short": cheap discovery mode. No headline/about/skills/emails/
  *    publicIdentifier. currentPositions (plural) uses a different item shape
  *    (title/tenureAtPosition/startedOn); linkedinUrl is the obfuscated urn
- *    form (e.g. https://www.linkedin.com/in/ACwAAB...).
+ *    form (e.g. https://www.linkedin.com/in/example-a...).
  * mapProfile() below is defensive across both and never throws on a missing
  * field, mirroring sourcing/sillage.ts's mapping style.
  */
