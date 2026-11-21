@@ -1,0 +1,45 @@
+{
+  "name": "fail-language",
+  "threshold": 0.9,
+  "wantStatus": "FAIL",
+  "wantScore": 0.85,
+  "wantFailed": [
+    "language"
+  ],
+  "input": {
+    "draft": {
+      "channel": "email",
+      "subject": "Poste",
+      "body": "Bonjour Ada Example. Votre travail sur analytical engine compiler est connu. Cette équipe recrute pour le poste compiler engineer role. Merci. Nous répondons. Vous pouvez unsubscribe at https://example.com/unsubscribe.",
+      "claims": [
+        {
+          "text": "analytical engine compiler",
+          "scope": "candidate"
+        },
+        {
+          "text": "compiler engineer role",
+          "scope": "need"
+        }
+      ]
+    },
+    "candidate": {
+      "language": "en",
+      "facts": [
+        {
+          "id": "c1",
+          "scope": "candidate",
+          "text": "Ada Example maintains the analytical engine compiler"
+        }
+      ]
+    },
+    "need": {
+      "facts": [
+        {
+          "id": "n1",
+          "scope": "need",
+          "text": "The role is a compiler engineer role"
+        }
+      ]
+    }
+  }
+}
