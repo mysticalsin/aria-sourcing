@@ -120,20 +120,57 @@ export type OnboardingTourStep = {
 };
 
 /**
- * First-run modal tour copy — plain language, no fleet/soul/ops-floor jargon.
- * Kept here so unit tests lock the consumer tone.
+ * Plain statement of how candidates and LinkedIn are handled. Settings,
+ * the channel catalog, and the token panel keep their own copy.
  */
-export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
-  {
-    title: "Welcome to Aria",
-    body: "Paste a job brief. Aria finds matching people on LinkedIn, scores them and writes the first message. You approve every send.",
-  },
-  {
-    title: "You stay in control",
-    body: "Every message starts as a draft. A LinkedIn message leaves from your own account only when you approve it; email stays a dry-run.",
-  },
-  {
-    title: "Start with one job",
-    body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step. For a guided walkthrough of every page, open Tutorial in the menu.",
-  },
-] as const;
+export const LINKEDIN_BOUNDARY =
+  "Aria does not automate or scrape LinkedIn. Candidates come from sanctioned sources. An off-by-default token channel exists that only admins can enable. HeyReach is off by default.";
+
+/**
+ * First-run modal tour copy — plain language, no fleet/soul/ops-floor jargon.
+ * An empty workspace starts from a job brief. A populated demo talks about
+ * the work already waiting, so the tour does not contradict the page.
+ */
+export function onboardingTourFor(snapshot: CommandCenterSnapshot): readonly OnboardingTourStep[] {
+  if (isFirstRunWorkspace(snapshot)) {
+    return [
+      {
+        title: "Welcome to Aria",
+        body: `Paste a job brief. ${LINKEDIN_BOUNDARY} You approve every send.`,
+      },
+      {
+        title: "You stay in control",
+        body: "Every message starts as a draft. Nothing sends until you approve it. Email stays a dry-run.",
+      },
+      {
+        title: "Start with one job",
+        body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step. For a guided walkthrough of every page, open Tutorial in the menu.",
+      },
+    ];
+  }
+
+  const pending = snapshot.pendingApprovalCount ?? 0;
+  const waiting =
+    pending === 1
+      ? "1 message is waiting for your approval."
+      : pending > 0
+        ? `${pending} messages are waiting for your approval.`
+        : "Campaigns are already in motion.";
+  return [
+    {
+      title: "Welcome to Aria",
+      body: `This demo already has campaigns in motion. ${waiting} ${LINKEDIN_BOUNDARY}`,
+    },
+    {
+      title: "You stay in control",
+      body: "Every message starts as a draft. Nothing sends until you approve it. Email stays a dry-run.",
+    },
+    {
+      title: "Review the queue",
+      body: "Open Outreach to work through the waiting messages. For a guided walkthrough of every page, open Tutorial in the menu.",
+    },
+  ];
+}
+
+/** Empty-workspace tour. Populated workspaces use onboardingTourFor. */
+export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = onboardingTourFor({ campaignCount: 0 });

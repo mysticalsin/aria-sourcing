@@ -206,7 +206,6 @@ function CampaignRow({ row, open, onToggle }: { row: PipelineRow; open: boolean;
       className={cn(
         "group cursor-pointer border-b border-line transition-colors",
         open ? "bg-canvas" : "bg-surface hover:bg-canvas",
-        closed && "opacity-70",
       )}
       onClick={onToggle}
     >

@@ -4,7 +4,8 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Modal, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { ONBOARDING_TOUR_STEPS } from "@/lib/command-center-firstrun";
+import { isFirstRunWorkspace, onboardingTourFor } from "@/lib/command-center-firstrun";
+import { useCampaigns, useHydrated, usePendingApprovals } from "@/lib/store";
 import { useTutorial } from "@/components/tutorial/tutorial";
 import { Sparkles, ShieldCheck, FilePlus2, ArrowLeft } from "lucide-react";
 
@@ -31,19 +32,29 @@ const STEP_ICONS = [
 export function Onboarding() {
   const router = useRouter();
   const pathname = usePathname();
+  const hydrated = useHydrated();
+  const campaigns = useCampaigns();
+  const pendingApprovals = usePendingApprovals();
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState(0);
   const tutorial = useTutorial();
+  const snapshot = React.useMemo(
+    () => ({ campaignCount: campaigns.length, pendingApprovalCount: pendingApprovals.length }),
+    [campaigns.length, pendingApprovals.length],
+  );
+  const steps = React.useMemo(() => onboardingTourFor(snapshot), [snapshot]);
+  const populated = !isFirstRunWorkspace(snapshot);
 
   React.useEffect(() => {
-    // Never stack on top of the tutorial someone just opened.
-    if (pathname !== "/" || tutorial.open) return;
+    // The empty store before hydration looks like a first run. Wait, or the
+    // tour tells a populated demo to paste its first job.
+    if (!hydrated || pathname !== "/" || tutorial.open) return;
     try {
       if (!localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_KEY)) setOpen(true);
     } catch {
       /* private mode — skip the tour silently */
     }
-  }, [pathname, tutorial.open]);
+  }, [hydrated, pathname, tutorial.open]);
 
   const finish = React.useCallback(
     (opts?: { goToIntake?: boolean }) => {
@@ -54,21 +65,21 @@ export function Onboarding() {
       }
       setOpen(false);
       if (opts?.goToIntake) {
-        router.push("/campaigns/new");
+        router.push(populated ? "/outreach" : "/campaigns/new");
       }
     },
-    [router],
+    [populated, router],
   );
 
-  const s = ONBOARDING_TOUR_STEPS[step] ?? ONBOARDING_TOUR_STEPS[0];
-  const isLast = step === ONBOARDING_TOUR_STEPS.length - 1;
+  const s = steps[step] ?? steps[0];
+  const isLast = step === steps.length - 1;
 
   return (
     <Modal
       open={open}
       onClose={() => finish()}
       title={s.title}
-      description={`Step ${step + 1} of ${ONBOARDING_TOUR_STEPS.length}`}
+      description={`Step ${step + 1} of ${steps.length}`}
       footer={
         <div className="flex w-full items-center justify-between gap-2">
           <Button variant="subtle" size="sm" onClick={() => finish()}>
@@ -87,7 +98,7 @@ export function Onboarding() {
             )}
             {isLast ? (
               <Button variant="primary" size="sm" onClick={() => finish({ goToIntake: true })}>
-                Paste a job brief
+                {populated ? "Review messages" : "Paste a job brief"}
               </Button>
             ) : (
               <Button variant="primary" size="sm" onClick={() => setStep((v) => v + 1)}>
@@ -104,7 +115,7 @@ export function Onboarding() {
         </div>
         <p className="text-sm leading-relaxed text-ink-soft">{s.body}</p>
         <div className="flex gap-1.5" aria-hidden>
-          {ONBOARDING_TOUR_STEPS.map((_, i) => (
+          {steps.map((_, i) => (
             <span
               key={i}
               className={cn(

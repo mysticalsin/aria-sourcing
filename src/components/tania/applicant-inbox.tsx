@@ -115,7 +115,7 @@ export function ApplicantInbox() {
             )}
           >
             {f.label}
-            <span className="tabular-nums opacity-70">{counts[f.key] ?? 0}</span>
+            <span className="tabular-nums">{counts[f.key] ?? 0}</span>
           </button>
         ))}
       </div>
@@ -201,7 +201,11 @@ export function ApplicantInbox() {
                       <span className="text-ink-soft">{d.label}</span>
                       <span className="tabular-nums text-muted">{val}/{max}</span>
                     </div>
-                    <Progress value={(val / max) * 100} tone={val / max >= 0.7 ? "success" : val / max >= 0.4 ? "tangerine" : "danger"} />
+                    <Progress
+                      value={(val / max) * 100}
+                      tone={val / max >= 0.7 ? "success" : val / max >= 0.4 ? "tangerine" : "danger"}
+                      aria-label={`${d.label}: ${val} of ${max}`}
+                    />
                   </div>
                 );
               })}

@@ -218,6 +218,7 @@ export function CandidateTable({
                       </button>
                       {masked && (
                         <span
+                          role="img"
                           title="PII minimized (confidential)"
                           aria-label="PII minimized (confidential)"
                           className="shrink-0 text-violet"
@@ -230,6 +231,7 @@ export function CandidateTable({
                       {flags.map((f) => (
                         <span
                           key={f.key}
+                          role="img"
                           title={f.label}
                           aria-label={f.label}
                           className={cn(

@@ -19,6 +19,7 @@ import { campaignAllowsManualCandidateIntake } from "@/lib/sourcing/campaign-lif
 import { publicIdFromProfileUrl } from "@/lib/linkedin-profile-url";
 import type { CandidateLawfulBasis } from "@/lib/types";
 import { LinkedInProfileLookup, forgetProspect, keepProspectAs, type LookedUpProfile } from "@/components/linkedin/profile-lookup";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { Linkedin, UserPlus } from "lucide-react";
 
 type Mode = "linkedin" | "github" | "manual";
@@ -58,6 +59,7 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
   const [location, setLocation] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [lawfulBasis, setLawfulBasis] = React.useState<CandidateLawfulBasis | "">("");
+  const [formError, setFormError] = React.useState<string | null>(null);
 
   const eligible = React.useMemo(() => campaigns.filter((c) => campaignAllowsManualCandidateIntake(c.status)), [campaigns]);
   const chosenCampaign = campaignId ?? targetCampaign;
@@ -104,9 +106,11 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
 
   function intakeFailed(res: { ok: true; added: number; skipReason?: string } | { ok: false; error: string }): boolean {
     if (!res.ok) {
+      setFormError(res.error);
       toast({ title: "Couldn't add that candidate", description: res.error, variant: "error" });
       return true;
     }
+    setFormError(null);
     if (res.added === 0) {
       toast({
         title: "Candidate not added",
@@ -276,11 +280,24 @@ export function AddCandidateButton({ campaignId }: { campaignId?: string }) {
             items={[
               { value: "linkedin", label: "LinkedIn profile", icon: <Linkedin className="h-4 w-4" /> },
               { value: "github", label: "GitHub username" },
-              { value: "manual", label: "Manual" },
+              { value: "manual", label: "Manual", disabled: !supabaseEnabled },
             ]}
             value={mode}
-            onValueChange={(v) => setMode(v as Mode)}
+            onValueChange={(v) => {
+              setFormError(null);
+              setMode(v as Mode);
+            }}
           />
+          {!supabaseEnabled && (
+            <p className="text-sm leading-relaxed text-ink-soft">
+              Manual entry needs a live workspace. This synthetic demo only keeps synthetic candidates. Sign in to a live workspace to add someone by hand.
+            </p>
+          )}
+          {formError && (
+            <p role="alert" className="text-sm font-medium text-danger">
+              {formError}
+            </p>
+          )}
 
           <TabPanel value="linkedin" active={mode === "linkedin"} idBase={idBase}>
             <div className="space-y-4">

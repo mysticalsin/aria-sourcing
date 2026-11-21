@@ -223,11 +223,10 @@ export function CommandSearch() {
       <button
         onClick={() => setOpen(true)}
         className="group flex h-10 w-full max-w-md items-center gap-2.5 rounded-full border border-ink/12 bg-surface px-4 text-sm text-muted transition hover:border-ink/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
-        aria-label="Open command search"
       >
-        <Search className="h-4 w-4" />
+        <Search className="h-4 w-4" aria-hidden />
         <span className="flex-1 text-left">Search candidates, campaigns, pages…</span>
-        <kbd className="hidden sm:inline-flex items-center rounded-md border border-ink/15 bg-paper px-1.5 py-0.5 text-[0.625rem] font-bold text-muted">
+        <kbd className="hidden sm:inline-flex items-center rounded-md border border-ink/15 bg-paper px-1.5 py-0.5 text-[0.625rem] font-bold text-muted" aria-hidden>
           ⌘K
         </kbd>
       </button>

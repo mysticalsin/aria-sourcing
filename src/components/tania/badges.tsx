@@ -45,7 +45,7 @@ export function ScoreBadge({
       title={`Match score ${value} of 100`}
     >
       {value}
-      <span className="opacity-60">/100</span>
+      <span>/100</span>
     </span>
   );
 }
@@ -120,7 +120,7 @@ export function StageBadge({
       )}
       title={meta.description}
     >
-      <span className="tabular-nums font-bold opacity-70">{meta.roman}</span>
+      <span className="tabular-nums font-bold">{meta.roman}</span>
       {meta.label}
     </span>
   );

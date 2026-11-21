@@ -26,7 +26,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
-  const { workspaceStatus, retryWorkspace, retrySave } = useWorkspaceStatus();
+  const { hydrated, workspaceStatus, retryWorkspace, retrySave } = useWorkspaceStatus();
+  const demoLoading = !hydrated && workspaceStatus.phase === "loading" && workspaceStatus.mode === "demo";
 
   if (workspaceBlocksProduct(workspaceStatus)) {
     return (
@@ -43,16 +44,33 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
     {/* Tutorial mode: opened from the menu only, never on its own. */}
     <TutorialProvider>
     <div className="flex min-h-screen">
-      <a href="#main-content" className="skip-link">
+      <a
+        href="#main-content"
+        className="skip-link"
+        onClick={(event) => {
+          const main = document.getElementById("main-content");
+          if (!(main instanceof HTMLElement)) return;
+          event.preventDefault();
+          main.focus();
+        }}
+      >
         Skip to content
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 print:p-0">
+        <main id="main-content" tabIndex={-1} className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 print:p-0">
           <div className="mx-auto w-full max-w-[1400px]">
-            <SectionTabs pathname={pathname} />
-            {children}
+            {demoLoading ? (
+              <p role="status" aria-live="polite" className="text-sm font-semibold text-ink">
+                Loading the synthetic demo
+              </p>
+            ) : (
+              <>
+                <SectionTabs pathname={pathname} />
+                {children}
+              </>
+            )}
           </div>
         </main>
       </div>

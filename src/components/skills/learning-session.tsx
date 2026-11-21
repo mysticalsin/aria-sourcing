@@ -360,8 +360,7 @@ export function LearningSession({
 
         <div
           className={cn(
-            "flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 transition-opacity",
-            !streamDone && "opacity-60",
+            "flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4",
           )}
         >
           <Badge tone="electric">

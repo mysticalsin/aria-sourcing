@@ -8,7 +8,7 @@ const TONE_CLASSES: Record<Tone, string> = {
   aqua: "bg-aqua-soft text-aqua ring-aqua/20",
   violet: "bg-violet-soft text-violet ring-violet/20",
   success: "bg-success-soft text-success ring-success/20",
-  warning: "bg-warning-soft text-[hsl(32_90%_34%)] ring-warning/30",
+  warning: "bg-warning-soft text-warning ring-warning/30",
   danger: "bg-danger-soft text-danger ring-danger/20",
 };
 

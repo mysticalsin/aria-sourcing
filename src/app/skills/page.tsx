@@ -10,6 +10,7 @@ import {
   Button,
   EmptyState,
   SkeletonCard,
+  TabPanel,
   Tabs,
   useToast,
 } from "@/components/ui";
@@ -330,12 +331,20 @@ export default function SkillsPage() {
                   items={orderedSkills.map((s) => ({ value: s.key, label: s.title }))}
                 />
               </div>
-              <LearningSession
-                key={reviewSkill.key}
-                skill={reviewSkill}
-                campaignId={activeCampaign?.id ?? null}
-                canEdit={canEditSkills}
-              />
+              {orderedSkills.map((skill) => (
+                <TabPanel
+                  key={skill.key}
+                  value={skill.key}
+                  active={skill.key === reviewSkill.key}
+                  idBase="watch-it-learn"
+                >
+                  <LearningSession
+                    skill={skill}
+                    campaignId={activeCampaign?.id ?? null}
+                    canEdit={canEditSkills}
+                  />
+                </TabPanel>
+              ))}
             </section>
           )}
 

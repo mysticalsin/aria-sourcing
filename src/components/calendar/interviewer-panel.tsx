@@ -81,7 +81,7 @@ export function InterviewerPanel() {
                   className={cn(
                     "rounded-2xl border p-3.5 transition-colors",
                     !iv.active
-                      ? "border-line bg-ink/[0.02] opacity-60"
+                      ? "border-line bg-ink/[0.02]"
                       : isNext
                         ? "border-tangerine/30 bg-tangerine-soft/60 ring-1 ring-inset ring-tangerine/20"
                         : "border-line bg-surface",
@@ -136,7 +136,11 @@ export function InterviewerPanel() {
                     )}
                   </div>
                   <div className="mt-2.5">
-                    <Progress value={iv.pct} tone={isNext ? "tangerine" : "aqua"} />
+                    <Progress
+                      value={iv.pct}
+                      tone={isNext ? "tangerine" : "aqua"}
+                      aria-label={`${iv.name} interview load, ${iv.load}`}
+                    />
                   </div>
                 </li>
               );

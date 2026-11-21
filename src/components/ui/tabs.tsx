@@ -8,6 +8,7 @@ export interface TabItem {
   label: string;
   icon?: React.ReactNode;
   count?: number;
+  disabled?: boolean;
 }
 
 /**
@@ -34,13 +35,19 @@ export function Tabs({
   const onKeyDown = (e: React.KeyboardEvent, index: number) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
-    let next = index;
-    if (e.key === "ArrowRight") next = (index + 1) % items.length;
-    else if (e.key === "ArrowLeft") next = (index - 1 + items.length) % items.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = items.length - 1;
-    refs.current[next]?.focus();
-    onValueChange(items[next].value);
+    const enabled = items
+      .map((item, itemIndex) => ({ item, itemIndex }))
+      .filter(({ item }) => !item.disabled);
+    if (enabled.length === 0) return;
+    const current = enabled.findIndex(({ itemIndex }) => itemIndex === index);
+    let pick = current >= 0 ? current : 0;
+    if (e.key === "ArrowRight") pick = (Math.max(current, 0) + 1) % enabled.length;
+    else if (e.key === "ArrowLeft") pick = (Math.max(current, 0) - 1 + enabled.length) % enabled.length;
+    else if (e.key === "Home") pick = 0;
+    else pick = enabled.length - 1;
+    const next = enabled[pick];
+    refs.current[next.itemIndex]?.focus();
+    onValueChange(next.item.value);
   };
 
   return (
@@ -64,11 +71,16 @@ export function Tabs({
             id={`${idBase}-${item.value}`}
             aria-selected={active}
             aria-controls={`${idBase}-panel-${item.value}`}
+            aria-disabled={item.disabled || undefined}
+            disabled={item.disabled}
             tabIndex={active ? 0 : -1}
-            onClick={() => onValueChange(item.value)}
+            onClick={() => {
+              if (!item.disabled) onValueChange(item.value);
+            }}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-[background-color,color,box-shadow] duration-150 ease-motion-out",
+              item.disabled && "cursor-not-allowed",
               active
                 ? "bg-surface/90 text-ink shadow-soft ring-1 ring-inset ring-violet/10"
                 : "text-muted hover:text-ink hover:bg-violet/[0.05]",

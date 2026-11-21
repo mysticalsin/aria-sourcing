@@ -78,18 +78,18 @@
   /* aqua token = a blue-leaning purple to keep the family in-palette */
   --aqua: 265 70% 48%;
   --aqua-soft: 265 70% 95%;
-  --violet: 282 72% 55%;
+  --violet: 282 72% 51%;
   --violet-soft: 282 80% 95%;
 
   /* Mantu Accent Yellow #F8F060 — highlights, key numerals, logo */
   --mantu-yellow: 57 92% 67%;
   --mantu-yellow-ink: 271 100% 12%;
 
-  --success: 152 54% 38%;
+  --success: 152 54% 31.4%;
   --success-soft: 150 56% 91%;
-  --warning: 38 92% 48%;
+  --warning: 38 92% 31.3%;
   --warning-soft: 42 100% 91%;
-  --danger: 2 76% 54%;
+  --danger: 2 76% 46.6%;
   --danger-soft: 4 88% 95%;
 
   /* System stacks keep the visual hierarchy available to the build and offline
@@ -443,6 +443,7 @@ body::before {
   .animate-spin,
   .animate-pulse,
   .animate-bounce,
+  .animate-spin-slow,
   .spin-slow,
   .status-live,
   .sourcing-scan-beacon,
