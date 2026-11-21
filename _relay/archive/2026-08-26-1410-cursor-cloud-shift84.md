@@ -13,7 +13,7 @@ status: ten-candidate-batches-live
 - **Production:** https://aria-mantu-app.fly.dev · build **ba88302** · migration **0060**
 - **Branch/PR:** `cursor/enterprise-autopilot-b91d` · #28
 - Live proof: System Designer sourced **10/10** candidates, scores **82–94**. Artifact: `/opt/cursor/artifacts/sourcing-10-final.json`
-- Operator password for `twalteur@amaris.com` was reset per request (value not stored in relay)
+- Operator password for `owner@example.com` was reset per request (value not stored in relay)
 
 ## Done this shift
 
