@@ -579,6 +579,9 @@ func (f *Fake) LogTouch(ctx context.Context, in Touch) (Touch, error) {
 		return Touch{}, ErrNotFound
 	}
 	app := f.applicants[appID]
+	if in.Kind == "message" && app.Stage == stage.Hired {
+		return Touch{}, ErrOutreachClosed
+	}
 	switch in.Kind {
 	case "message":
 		msg := Message{
