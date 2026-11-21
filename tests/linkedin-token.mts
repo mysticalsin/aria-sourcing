@@ -315,12 +315,18 @@ test("approval token lifetime edges", async () => {
   const expired = await channel.send({ ...approval(edgeNonce, "Edge."), actorId: "ada-user" });
   assert.equal(expired.ok, false);
   assert.equal(expired.reason, "approval-expired");
+  clock.set(issuedAt);
+  const atSkew = await channel.approve({
+    ...approval("life-skew", "Skew."),
+    issuedAt: issuedAt + 120_000,
+    expiresAt: issuedAt + 120_000 + 1_000,
+  });
+  assert.equal(atSkew.ok, true);
   const future = await channel.approve({
     ...approval("life-future", "Future."),
     issuedAt: issuedAt + 120_000 + 1,
     expiresAt: issuedAt + 120_000 + 1 + 1_000,
   });
-  clock.set(issuedAt);
   assert.equal(future.ok, false);
   assert.equal(future.reason, "approval-lifetime");
 });
@@ -674,6 +680,8 @@ test("skip gate: this suite does not skip or xfail without a reason", () => {
     }
     assert.doesNotMatch(source, /\b(?:test|it)\.(?:todo|xfail)\s*\(/);
   }
+  const config = readFileSync(join(ROOT, "playwright.config.ts"), "utf8");
+  assert.match(config, /retries:\s*0/);
 });
 
 test("one changed character in the approved text is refused", async () => {
@@ -735,7 +743,13 @@ test("OFF deletes the token ciphertext and cancels queued rows in the database",
   };
   const env = keyEnv();
   const auditor = recordingAuditor();
-  const channel = new LinkedInTokenChannel({ env, auditor, transport, dbPath });
+  const channel = new LinkedInTokenChannel({
+    env,
+    auditor,
+    transport,
+    dbPath,
+    clock: { now: () => Date.UTC(2026, 10, 20, 12, 0, 0) },
+  });
   await arm(channel);
   const spec = approval("db-inflight");
   assert.equal((await channel.approve(spec)).ok, true);

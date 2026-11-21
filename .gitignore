@@ -37,6 +37,8 @@ backups/
 
 # test artifacts
 .playwright-mcp/
+.playwright-browsers/
+e2e-artifacts/
 *.jpeg
 __pycache__/
 *.py[cod]
