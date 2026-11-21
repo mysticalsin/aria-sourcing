@@ -313,7 +313,7 @@ function LoginInner() {
         <p className="mt-6 text-xs font-light tracking-[0.18em] text-white/50">
           Designed &amp; built by{" "}
           <a
-            href="https://www.linkedin.com/in/tonywalteur/"
+            href="https://www.linkedin.com/in/example-a/"
             target="_blank"
             rel="noreferrer"
             className="font-normal text-white/80 underline-offset-4 transition-colors hover:text-white hover:underline"
