@@ -1,7 +1,7 @@
 # Aria Executive Recruiting E2E Walkthrough - Artifacts
 
 **Date:** September 11, 2026  
-**Demo Account:** twalteur@amaris.com  
+**Demo Account:** owner@example.com  
 **Environment:** https://aria-mantu-app.fly.dev (Live Production)
 
 ## Artifacts Summary

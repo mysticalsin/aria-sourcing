@@ -51,7 +51,7 @@ const CAMPAIGN_ID = process.env.CAMPAIGN_ID || "camp_seed_backend";
 const SEAT_ID = process.env.SEAT_ID || "seat_java_vm_01";
 const COMPUTER_ID = process.env.COMPUTER_ID || "comp_java_01";
 const PROFILE =
-  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/satyanadella/";
+  process.env.LINKEDIN_PROFILE_URL || "https://www.linkedin.com/in/example-a/";
 
 async function main() {
   const { getLinkedInAdapter } = await import("../src/lib/linkedin-channel.ts");
@@ -79,7 +79,7 @@ async function main() {
     {
       id: SEAT_ID,
       name: "Java VM 01",
-      operatorEmail: "java@amaris.com",
+      operatorEmail: "owner@example.com",
       provider: "LinkedIn Browser Computer",
       status: "active",
       mode: "live",

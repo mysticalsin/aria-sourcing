@@ -56,7 +56,7 @@ async function prepLinkedInTony() {
       "x-openbot-computer-token": computer,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ url: "https://www.linkedin.com/in/tonywalteur" }),
+    body: JSON.stringify({ url: "https://www.linkedin.com/in/example-a" }),
   });
   const body = await nav.json().catch(() => ({}));
   await new Promise((r) => setTimeout(r, 2500));
@@ -117,7 +117,7 @@ async function injectTony(page) {
       title: "Senior Manager — AI, Innovation & Enterprise IT",
       company: "Mantu / Amaris Consulting",
       location: "Montreal, Canada",
-      linkedinUrl: "https://www.linkedin.com/in/tonywalteur",
+      linkedinUrl: "https://www.linkedin.com/in/example-a",
       stage: "Sourced",
       matchScore: 92,
       score: 92,
@@ -313,7 +313,7 @@ async function main() {
     injected,
     mp4: ff.status === 0 ? mp4 : null,
     webm,
-    linkedin: "https://www.linkedin.com/in/tonywalteur",
+    linkedin: "https://www.linkedin.com/in/example-a",
     frames: fs.readdirSync(OUT).filter((f) => f.startsWith("tony-final-")),
     note: "OpenBot LinkedIn may show authwall without operator login; showcase montage keeps the Tony profile still.",
   };

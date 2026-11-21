@@ -11,8 +11,8 @@ import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL || "https://aria-mantu-app.fly.dev";
 const OUT = process.env.VIDEO_OUT || "/opt/cursor/artifacts";
-const PROFILE = "https://www.linkedin.com/in/tonywalteur/";
-const DEMO_USER = process.env.DEMO_ADMIN_USERNAME || "Twalteur@amaris.com";
+const PROFILE = "https://www.linkedin.com/in/example-a/";
+const DEMO_USER = process.env.DEMO_ADMIN_USERNAME || "owner@example.com";
 const DEMO_PASSWORD = (
   process.env.DEMO_ADMIN_PASSWORD ||
   fs.readFileSync("/tmp/aria-e2e/demo_pw.clean", "utf8")

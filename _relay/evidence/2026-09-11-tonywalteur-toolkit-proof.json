@@ -2,20 +2,20 @@
   "at": "2026-09-11T00:30:55.940Z",
   "analyze": {
     "via": "orca-style",
-    "headline": "Tony Walteur - Amaris Consulting | LinkedIn",
+    "headline": "Example headline",
     "focusAreas": [
-      "ai",
-      "platform",
-      "data",
-      "product",
-      "innovation"
+      "Example note.",
+      "Example note.",
+      "Example note.",
+      "Example note.",
+      "Example note."
     ],
     "trajectoryNotes": [
-      "Sign in Sign in with Email or New to LinkedIn",
-      "Join now By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement , Privacy Policy , and Cookie Policy"
+      "Example note.",
+      "Example note."
     ],
     "painPoints": [
-      "Signals around transform in public profile text"
+      "Example note."
     ],
     "evidenceChars": 1201
   },
@@ -23,21 +23,21 @@
     "ok": true,
     "score": 76,
     "reasons": [
-      "Matched ICP tokens: enterprise, agentic, innovation",
-      "LinkedIn profile URL present.",
-      "Sufficient public text for qualification."
+      "Synthetic qualification reason.",
+      "Synthetic qualification reason.",
+      "Synthetic qualification reason."
     ],
     "via": "linki"
   },
   "navigate": {
     "ok": true,
     "via": "browser-use",
-    "title": "Example Domain",
-    "detail": "Fetched Example Domain"
+    "title": "Example title",
+    "detail": "Synthetic detail."
   },
   "connectBlocked": {
     "ok": false,
-    "detail": "LinkedIn Connect/Message must use AriaBot computers (Take control path).",
+    "detail": "Synthetic detail.",
     "via": "ariabot"
   },
   "search": {
@@ -45,37 +45,37 @@
     "hitCount": 5,
     "hits": [
       {
-        "profileUrl": "https://www.linkedin.com/in/tonywalteur/",
-        "name": "Tony Walteur",
-        "title": "Amaris Consulting",
+        "profileUrl": "https://www.linkedin.com/in/example-a",
+        "name": "Candidate A",
+        "title": "Example title",
         "via": "web-search",
         "invented": false
       },
       {
-        "profileUrl": "https://www.linkedin.com/in/nizar-dellal/",
-        "name": "Nizar DELLAL",
-        "title": "Directeur Principal / Senior Manager",
+        "profileUrl": "https://www.linkedin.com/in/example-b",
+        "name": "Candidate B",
+        "title": "Example title",
         "via": "web-search",
         "invented": false
       },
       {
-        "profileUrl": "https://www.linkedin.com/in/felipe-sawada/",
-        "name": "Felipe Sawada",
-        "title": "- Just got back from Brazil 🇧🇷 Caio Santos and I co-hosted this year's Annual Training Program - Mantu Group's flagshi",
+        "profileUrl": "https://www.linkedin.com/in/example-c",
+        "name": "Candidate C",
+        "title": "Example title",
         "via": "web-search",
         "invented": false
       },
       {
-        "profileUrl": "https://www.linkedin.com/in/fares-cherif-larbi-532544222/",
-        "name": "Fares-Cherif Larbi",
-        "title": "B.A.A. Gestion des ressources humaines",
+        "profileUrl": "https://www.linkedin.com/in/example-d",
+        "name": "Candidate D",
+        "title": "Example title",
         "via": "web-search",
         "invented": false
       },
       {
-        "profileUrl": "https://www.linkedin.com/in/jean-marquis-basque-ing-963500205/",
-        "name": "Jean Marquis-Basque, ing.",
-        "title": "CPI, Engineering Integration",
+        "profileUrl": "https://www.linkedin.com/in/example-e",
+        "name": "Candidate E",
+        "title": "Example title",
         "via": "web-search",
         "invented": false
       }
