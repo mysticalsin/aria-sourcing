@@ -2,10 +2,12 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mysticalsin/aria-sourcing/services/internal/hiregate"
@@ -20,12 +22,14 @@ type Server struct {
 	svc     *recruit.Service
 	mode    string
 	version string
+	token   string
 	mux     *http.ServeMux
 }
 
 // New wires the routes. mode and version are non-secret enums.
-func New(svc *recruit.Service, mode, version string) *Server {
-	s := &Server{svc: svc, mode: mode, version: version, mux: http.NewServeMux()}
+// token is required for every mutating route, including localhost.
+func New(svc *recruit.Service, mode, version, token string) *Server {
+	s := &Server{svc: svc, mode: mode, version: version, token: token, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /health", s.health)
 	s.mux.HandleFunc("POST /campaigns", s.createCampaign)
 	s.mux.HandleFunc("GET /campaigns", s.listCampaigns)
@@ -36,6 +40,8 @@ func New(svc *recruit.Service, mode, version string) *Server {
 	s.mux.HandleFunc("POST /candidates/{id}/transition", s.transition)
 	s.mux.HandleFunc("POST /candidates/{id}/contract", s.contract)
 	s.mux.HandleFunc("POST /candidates/{id}/touches", s.touch)
+	s.mux.HandleFunc("POST /candidates/{id}/opt-out", s.optOut)
+	s.mux.HandleFunc("POST /candidates/{id}/erase", s.erase)
 	s.mux.HandleFunc("GET /approvals", s.listApprovals)
 	s.mux.HandleFunc("POST /approvals", s.createApproval)
 	s.mux.HandleFunc("POST /approvals/from-odoo", s.approvalFromOdoo)
@@ -46,7 +52,27 @@ func New(svc *recruit.Service, mode, version string) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && !s.authorized(r) {
+		writeCode(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	if s.token == "" {
+		return false
+	}
+	header := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+	got := header[len(prefix):]
+	if len(got) != len(s.token) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -210,6 +236,34 @@ type touchRequest struct {
 	Kind           string `json:"kind"`
 	Subject        string `json:"subject"`
 	Body           string `json:"body"`
+	RecipientRef   string `json:"recipient_ref"`
+	NoticeVersion  string `json:"notice_version"`
+}
+
+func (s *Server) optOut(w http.ResponseWriter, r *http.Request) {
+	if err := decode(w, r, &struct{}{}); err != nil && !errors.Is(err, io.EOF) {
+		writeCode(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	app, err := s.svc.OptOut(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, candidateView(app))
+}
+
+func (s *Server) erase(w http.ResponseWriter, r *http.Request) {
+	if err := decode(w, r, &struct{}{}); err != nil && !errors.Is(err, io.EOF) {
+		writeCode(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	app, err := s.svc.Erase(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, candidateView(app))
 }
 
 func (s *Server) touch(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +275,7 @@ func (s *Server) touch(w http.ResponseWriter, r *http.Request) {
 	touch, err := s.svc.LogTouch(r.Context(), odoo.Touch{
 		IdempotencyKey: req.IdempotencyKey, ApplicantAriaID: r.PathValue("id"),
 		Channel: req.Channel, Kind: req.Kind, Subject: req.Subject, Body: req.Body,
+		RecipientRef: req.RecipientRef, NoticeVersion: req.NoticeVersion,
 	})
 	if err != nil {
 		writeErr(w, err)
@@ -299,6 +354,7 @@ func candidateView(app odoo.Applicant) map[string]any {
 		"stage": app.Stage, "stage_label": label, "source": app.Source,
 		"job_aria_id": app.JobAriaID, "smart_need_id": app.SmartNeedID,
 		"smart_candidate_id": app.SmartCandidateID, "contract_attached": app.HasContract(),
+		"opted_out": app.OptedOut, "erased": app.Erased,
 		"odoo_id": app.ID,
 	}
 }
@@ -328,6 +384,12 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, odoo.ErrNotFound):
 		writeCode(w, http.StatusNotFound, "not_found")
+	case errors.Is(err, odoo.ErrConflict):
+		writeCode(w, http.StatusConflict, "conflict")
+	case errors.Is(err, recruit.ErrTouchNotApproved):
+		writeCode(w, http.StatusForbidden, "touch_not_approved")
+	case errors.Is(err, recruit.ErrTouchAfterHired), errors.Is(err, recruit.ErrApplicantClosed):
+		writeCode(w, http.StatusConflict, "applicant_closed")
 	case errors.Is(err, ledger.ErrOdooCannotGrantApproval):
 		writeCode(w, http.StatusForbidden, "odoo_cannot_grant_approval")
 	case errors.Is(err, recruit.ErrRecipientNotAllowlisted):

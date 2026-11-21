@@ -23,6 +23,15 @@ import (
 // ErrRecipientNotAllowlisted means the recipient is not on ARIA_RECIPIENT_ALLOWLIST.
 var ErrRecipientNotAllowlisted = errors.New("recipient is not on the allowlist")
 
+// ErrTouchNotApproved means an outbound body has no matching ledger grant.
+var ErrTouchNotApproved = errors.New("outbound touch has no matching approval")
+
+// ErrTouchAfterHired means the applicant is already hired.
+var ErrTouchAfterHired = errors.New("touches are closed after hired")
+
+// ErrApplicantClosed means the applicant opted out, was erased, or is hired.
+var ErrApplicantClosed = errors.New("applicant is closed to outreach")
+
 // CampaignInput creates an hr.job and, when a client name is set, a company
 // partner and a crm.lead opportunity.
 type CampaignInput struct {
@@ -169,7 +178,7 @@ func (s *Service) Hire(ctx context.Context, ariaID string) error {
 		s.noteRefusal(ariaID)
 		return err
 	}
-	_, err = s.Odoo.MarkHired(ctx, ariaID, clearance)
+	_, err = s.Odoo.MarkHired(ctx, ariaID, clearance, s.DNA)
 	return err
 }
 
@@ -192,8 +201,43 @@ func (s *Service) AttachContract(ctx context.Context, ariaID string, contract od
 }
 
 // LogTouch records an outreach touch and one audit row.
+// An email body is stored only when the ledger granted that exact text for
+// this applicant. Opted-out, erased, and hired applicants are refused.
 func (s *Service) LogTouch(ctx context.Context, in odoo.Touch) (odoo.Touch, error) {
+	app, err := s.Odoo.ReadApplicant(ctx, in.ApplicantAriaID)
+	if err != nil {
+		return odoo.Touch{}, err
+	}
+	if err := closedApplicant(app); err != nil {
+		return odoo.Touch{}, err
+	}
+	if in.Channel == "email" {
+		sum := ledger.Hash(in.Channel, in.RecipientRef, in.Subject, in.Body, in.NoticeVersion, in.ApplicantAriaID)
+		if s.Ledger == nil || !s.Ledger.Has(sum) {
+			return odoo.Touch{}, ErrTouchNotApproved
+		}
+	}
 	return s.Odoo.LogTouch(ctx, in)
+}
+
+func closedApplicant(app odoo.Applicant) error {
+	if app.Stage == stage.Hired {
+		return ErrTouchAfterHired
+	}
+	if app.OptedOut || app.Erased {
+		return ErrApplicantClosed
+	}
+	return nil
+}
+
+// OptOut records an outreach refusal.
+func (s *Service) OptOut(ctx context.Context, ariaID string) (odoo.Applicant, error) {
+	return s.Odoo.OptOut(ctx, ariaID)
+}
+
+// Erase clears direct identifiers.
+func (s *Service) Erase(ctx context.Context, ariaID string) (odoo.Applicant, error) {
+	return s.Odoo.Erase(ctx, ariaID)
 }
 
 // Approve grants the exact text in the Aria ledger, then copies the fact to
@@ -208,6 +252,13 @@ func (s *Service) Approve(ctx context.Context, in ApprovalInput) (ledger.Approva
 	}
 	if in.Channel != "email" {
 		return ledger.Approval{}, odoo.ErrValidation
+	}
+	app, err := s.Odoo.ReadApplicant(ctx, in.ApplicantAriaID)
+	if err != nil {
+		return ledger.Approval{}, err
+	}
+	if err := closedApplicant(app); err != nil {
+		return ledger.Approval{}, err
 	}
 	row, err := s.Ledger.Approve(ledger.Request{
 		Channel: in.Channel, RecipientRef: email, Subject: in.Subject, Body: in.Body,

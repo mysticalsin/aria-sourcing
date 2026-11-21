@@ -22,6 +22,8 @@ func init() { testenv.DisableNetwork() }
 
 func fixedNow() time.Time { return time.Date(2026, 11, 20, 15, 4, 5, 0, time.UTC) }
 
+const testToken = "local-ok"
+
 func newServer(t *testing.T) (*api.Server, *dna.Fake) {
 	t.Helper()
 	log := audit.New(fixedNow)
@@ -31,7 +33,7 @@ func newServer(t *testing.T) (*api.Server, *dna.Fake) {
 	}
 	d := dna.NewFake()
 	svc := recruit.New(fake, d, ledger.New(fixedNow), log, []string{"mina.ortega@people.example.test"}, fixedNow)
-	return api.New(svc, "test", "19"), d
+	return api.New(svc, "test", "19", testToken), d
 }
 
 func post(t *testing.T, h http.Handler, path string, body any) *httptest.ResponseRecorder {
@@ -44,6 +46,7 @@ func post(t *testing.T, h http.Handler, path string, body any) *httptest.Respons
 	}
 	req := httptest.NewRequest(http.MethodPost, path, &buf)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -85,6 +88,40 @@ func TestHealthCampaignCandidateApprovalAndHire(t *testing.T) {
 	if cand.Code != http.StatusCreated || !bytes.Contains(cand.Body.Bytes(), []byte(`"stage":"to_rate"`)) {
 		t.Fatalf("candidate %d %s", cand.Code, cand.Body)
 	}
+	touch := post(t, srv, "/candidates/cand-1/touches", map[string]string{
+		"idempotency_key": "touch-1", "channel": "note", "kind": "message",
+		"subject": "Hello", "body": "Synthetic outreach body",
+	})
+	if touch.Code != http.StatusCreated {
+		t.Fatalf("touch %d %s", touch.Code, touch.Body)
+	}
+	replay := post(t, srv, "/candidates/cand-1/touches", map[string]string{
+		"idempotency_key": "touch-1", "channel": "note", "kind": "message",
+		"subject": "Hello", "body": "Synthetic outreach body",
+	})
+	if replay.Code != http.StatusCreated || replay.Body.String() != touch.Body.String() {
+		t.Fatalf("replay %s vs %s", replay.Body, touch.Body)
+	}
+	denied := post(t, srv, "/approvals", map[string]string{
+		"channel": "email", "recipient_ref": "other.person@people.example.test",
+		"subject": "Hello", "body": "Synthetic exact text", "notice_version": "art14-2026-11",
+		"approver": "ria.nunes", "applicant_aria_id": "cand-1",
+	})
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("allowlist %d %s", denied.Code, denied.Body)
+	}
+	ok := post(t, srv, "/approvals", map[string]string{
+		"channel": "email", "recipient_ref": "mina.ortega@people.example.test",
+		"subject": "Hello", "body": "Synthetic exact text", "notice_version": "art14-2026-11",
+		"approver": "ria.nunes", "applicant_aria_id": "cand-1",
+	})
+	if ok.Code != http.StatusCreated || !bytes.Contains(ok.Body.Bytes(), []byte(`"granted_by":"aria-ledger"`)) {
+		t.Fatalf("approval %d %s", ok.Code, ok.Body)
+	}
+	fromOdoo := post(t, srv, "/approvals/from-odoo", map[string]string{"note": ok.Body.String()})
+	if fromOdoo.Code != http.StatusForbidden || !bytes.Contains(fromOdoo.Body.Bytes(), []byte("odoo_cannot_grant_approval")) {
+		t.Fatalf("from odoo %d %s", fromOdoo.Code, fromOdoo.Body)
+	}
 	for _, to := range []string{stage.ToAssess, stage.ToInterview, stage.Shoot, stage.QM, stage.ToHire} {
 		moved := post(t, srv, "/candidates/cand-1/transition", map[string]string{"to": to})
 		if moved.Code != http.StatusOK {
@@ -115,38 +152,11 @@ func TestHealthCampaignCandidateApprovalAndHire(t *testing.T) {
 	if hired.Code != http.StatusOK || !bytes.Contains(hired.Body.Bytes(), []byte(`"stage":"hired"`)) {
 		t.Fatalf("hired %d %s", hired.Code, hired.Body)
 	}
-	touch := post(t, srv, "/candidates/cand-1/touches", map[string]string{
-		"idempotency_key": "touch-1", "channel": "email", "kind": "message",
-		"subject": "Hello", "body": "Synthetic outreach body",
+	after := post(t, srv, "/candidates/cand-1/touches", map[string]string{
+		"idempotency_key": "touch-2", "channel": "note", "kind": "message",
+		"subject": "Hello", "body": "Synthetic note after hire",
 	})
-	if touch.Code != http.StatusCreated {
-		t.Fatalf("touch %d %s", touch.Code, touch.Body)
-	}
-	replay := post(t, srv, "/candidates/cand-1/touches", map[string]string{
-		"idempotency_key": "touch-1", "channel": "email", "kind": "message",
-		"subject": "Hello", "body": "Synthetic outreach body",
-	})
-	if replay.Code != http.StatusCreated || replay.Body.String() != touch.Body.String() {
-		t.Fatalf("replay %s vs %s", replay.Body, touch.Body)
-	}
-	denied := post(t, srv, "/approvals", map[string]string{
-		"channel": "email", "recipient_ref": "other.person@people.example.test",
-		"subject": "Hello", "body": "Synthetic exact text", "notice_version": "art14-2026-11",
-		"approver": "ria.nunes", "applicant_aria_id": "cand-1",
-	})
-	if denied.Code != http.StatusForbidden {
-		t.Fatalf("allowlist %d %s", denied.Code, denied.Body)
-	}
-	ok := post(t, srv, "/approvals", map[string]string{
-		"channel": "email", "recipient_ref": "mina.ortega@people.example.test",
-		"subject": "Hello", "body": "Synthetic exact text", "notice_version": "art14-2026-11",
-		"approver": "ria.nunes", "applicant_aria_id": "cand-1",
-	})
-	if ok.Code != http.StatusCreated || !bytes.Contains(ok.Body.Bytes(), []byte(`"granted_by":"aria-ledger"`)) {
-		t.Fatalf("approval %d %s", ok.Code, ok.Body)
-	}
-	fromOdoo := post(t, srv, "/approvals/from-odoo", map[string]string{"note": ok.Body.String()})
-	if fromOdoo.Code != http.StatusForbidden || !bytes.Contains(fromOdoo.Body.Bytes(), []byte("odoo_cannot_grant_approval")) {
-		t.Fatalf("from odoo %d %s", fromOdoo.Code, fromOdoo.Body)
+	if after.Code != http.StatusConflict {
+		t.Fatalf("touch after hire %d %s", after.Code, after.Body)
 	}
 }

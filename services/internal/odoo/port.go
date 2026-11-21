@@ -10,6 +10,7 @@ package odoo
 import (
 	"context"
 
+	"github.com/mysticalsin/aria-sourcing/services/internal/dna"
 	"github.com/mysticalsin/aria-sourcing/services/internal/hiregate"
 )
 
@@ -28,5 +29,9 @@ type Port interface {
 	PostInternalNote(ctx context.Context, in Note) (Note, error)
 	AttachContract(ctx context.Context, ariaID string, c Contract) (Contract, error)
 	TransitionStage(ctx context.Context, ariaID, to string) (Applicant, error)
-	MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance) (Applicant, error)
+	// MarkHired re-checks the contract and DNA in the same critical section
+	// as the stage write. checker must not call back into this port.
+	MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance, checker dna.Adapter) (Applicant, error)
+	OptOut(ctx context.Context, ariaID string) (Applicant, error)
+	Erase(ctx context.Context, ariaID string) (Applicant, error)
 }

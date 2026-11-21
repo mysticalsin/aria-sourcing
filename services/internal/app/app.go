@@ -44,7 +44,7 @@ func Run(ctx context.Context, lookup func(string) (string, bool), logf func(stri
 		return err
 	}
 	svc := recruit.New(fake, dna.NewFake(), led, log, cfg.Allowlist, now)
-	handler := api.New(svc, cfg.AriaMode, cfg.EffectiveVersion())
+	handler := api.New(svc, cfg.AriaMode, cfg.EffectiveVersion(), cfg.SharedToken())
 	return serve(handler)
 }
 

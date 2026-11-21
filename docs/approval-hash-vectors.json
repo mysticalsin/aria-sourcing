@@ -1,0 +1,35 @@
+{
+  "preimage": "aria-approval-v1 NUL, then uint64be length and raw bytes for channel, recipient_ref, subject, body, notice_version, applicant_id",
+  "vectors": [
+    {
+      "name": "sample",
+      "channel": "email",
+      "recipient_ref": "ada@example.test",
+      "subject": "Hello Ada",
+      "body": "Exact body",
+      "notice_version": "art14-lgpd-2026-11",
+      "applicant_id": "cand-1",
+      "digest": "5eea95362d6cfd2a0ac93cef2a996504b39954982132ab2fd6cd29dcacca7eab"
+    },
+    {
+      "name": "other-applicant",
+      "channel": "email",
+      "recipient_ref": "ada@example.test",
+      "subject": "Hello Ada",
+      "body": "Exact body",
+      "notice_version": "art14-lgpd-2026-11",
+      "applicant_id": "cand-2",
+      "digest": "f340b24304da77c96d4b9446143027d9707ffa8d89e8f8479d1063f563799de0"
+    },
+    {
+      "name": "interior-nul",
+      "channel": "email",
+      "recipient_ref": "ada@example.test",
+      "subject": "Hello Ada",
+      "body": "line\u0000break",
+      "notice_version": "art14-lgpd-2026-11",
+      "applicant_id": "cand-1",
+      "digest": "90c95cb54813f09fabdc9a3dbcfd97b80c9838197adbed88d77c4e1250a2a677"
+    }
+  ]
+}

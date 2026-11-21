@@ -327,7 +327,7 @@ func TestTransitionGuardsOnTheAdapter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := f.MarkHired(ctx, app.AriaID, hiregate.Clearance{}); err == nil {
+	if _, err := f.MarkHired(ctx, app.AriaID, hiregate.Clearance{}, nil); err == nil {
 		t.Fatal("hired without a clearance")
 	}
 	live, _ := f.ReadApplicant(ctx, app.AriaID)

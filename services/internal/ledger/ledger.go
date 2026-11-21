@@ -64,11 +64,20 @@ func New(now func() time.Time) *Ledger {
 	return &Ledger{now: now, byHash: map[string]Approval{}}
 }
 
-// Hash is SHA-256 over a version byte and length-prefixed parts, hex encoded.
-func Hash(channel, recipient, subject, body, noticeVersion string) string {
+// Hash is SHA-256 of the canonical approval preimage.
+// Layout, also documented in docs/approval-hash.md:
+//
+//	aria-approval-v1, a NUL byte, then each field as a big-endian uint64
+//	byte length plus the raw field bytes.
+//
+// Field order: channel, recipient ref, subject, body, notice version,
+// applicant id. Bytes are not trimmed or case-folded. The applicant id is
+// part of the preimage so a grant for one applicant cannot authorize another.
+func Hash(channel, recipient, subject, body, noticeVersion, applicantID string) string {
 	h := sha256.New()
-	h.Write([]byte{1})
-	for _, part := range []string{channel, recipient, subject, body, noticeVersion} {
+	h.Write([]byte("aria-approval-v1"))
+	h.Write([]byte{0})
+	for _, part := range []string{channel, recipient, subject, body, noticeVersion, applicantID} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
 		h.Write(n[:])
@@ -83,7 +92,7 @@ func (l *Ledger) Approve(in Request) (Approval, error) {
 	if err := validate(in); err != nil {
 		return Approval{}, err
 	}
-	sum := Hash(in.Channel, in.RecipientRef, in.Subject, in.Body, in.NoticeVersion)
+	sum := Hash(in.Channel, in.RecipientRef, in.Subject, in.Body, in.NoticeVersion, in.ApplicantAriaID)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if prev, ok := l.byHash[sum]; ok {

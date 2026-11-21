@@ -1,4 +1,9 @@
 // Package outbox stores the result of an Aria write so a retry replays it.
+//
+// The box is process-local. It is not durable across restarts. Odoo rows are
+// read back from Odoo (or the fake JSON-2 server), not from this box. The box
+// only remembers the first result of a key, and it keeps at most MaxEntries
+// results. When the cap is reached, the oldest key is dropped.
 package outbox
 
 import (
@@ -7,10 +12,14 @@ import (
 	"sync"
 )
 
+// MaxEntries is the cap on stored results.
+const MaxEntries = 1024
+
 // Box is an in-memory Aria outbox. The first stored result for a key wins.
 type Box struct {
 	mu    sync.Mutex
 	items map[string][]byte
+	order []string
 }
 
 // New returns an empty outbox.
@@ -53,7 +62,13 @@ func (b *Box) Store(key string, v any) error {
 	if _, ok := b.items[key]; ok {
 		return nil
 	}
+	if len(b.items) >= MaxEntries && len(b.order) > 0 {
+		oldest := b.order[0]
+		b.order = b.order[1:]
+		delete(b.items, oldest)
+	}
 	b.items[key] = raw
+	b.order = append(b.order, key)
 	return nil
 }
 

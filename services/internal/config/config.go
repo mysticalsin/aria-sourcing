@@ -19,6 +19,7 @@ const (
 	EnvOdooVersion        = "ODOO_VERSION"
 	EnvAriaMode           = "ARIA_MODE"
 	EnvRecipientAllowlist = "ARIA_RECIPIENT_ALLOWLIST"
+	EnvAriaAPIToken       = "ARIA_API_TOKEN"
 )
 
 // EnvNames is the only set of environment names this process reads.
@@ -29,6 +30,7 @@ var EnvNames = []string{
 	EnvOdooVersion,
 	EnvAriaMode,
 	EnvRecipientAllowlist,
+	EnvAriaAPIToken,
 }
 
 var (
@@ -60,6 +62,10 @@ func (s Secret) LogValue() slog.Value { return slog.StringValue("[redacted]") }
 // Value returns the raw secret for the JSON-2 header. Do not log the result.
 func (s Secret) Value() string { return s.v }
 
+// SharedToken returns the API bearer token for the HTTP server.
+// The value is not included in logs.
+func (c Config) SharedToken() string { return c.APIToken.Value() }
+
 // IsSet reports whether a value was present.
 func (s Secret) IsSet() bool { return s.v != "" }
 
@@ -68,6 +74,7 @@ type Config struct {
 	OdooURL     string
 	OdooDB      string
 	OdooAPIKey  Secret
+	APIToken    Secret
 	OdooVersion string
 	VersionSet  bool
 	AriaMode    string
@@ -101,6 +108,7 @@ func (c Config) LogSummary() string {
 		{EnvOdooVersion, c.VersionSet},
 		{EnvAriaMode, c.ModeSet},
 		{EnvRecipientAllowlist, len(c.Allowlist) > 0},
+		{EnvAriaAPIToken, c.APIToken.IsSet()},
 	}
 	var b strings.Builder
 	b.WriteString("config")
@@ -151,6 +159,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		OdooURL:    values[EnvOdooURL],
 		OdooDB:     values[EnvOdooDB],
 		OdooAPIKey: Secret{v: values[EnvOdooAPIKey]},
+		APIToken:   Secret{v: values[EnvAriaAPIToken]},
 	}
 	switch values[EnvOdooVersion] {
 	case "":

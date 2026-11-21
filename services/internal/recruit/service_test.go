@@ -232,7 +232,7 @@ func Test_test_approval_mirrored_as_note_never_grants(t *testing.T) {
 	}
 	edited := in
 	edited.Body = "Synthetic exact text."
-	if s.led.Has(ledger.Hash(edited.Channel, "mina.ortega@people.example.test", edited.Subject, edited.Body, edited.NoticeVersion)) {
+	if s.led.Has(ledger.Hash(edited.Channel, "mina.ortega@people.example.test", edited.Subject, edited.Body, edited.NoticeVersion, edited.ApplicantAriaID)) {
 		t.Fatal("edited body stayed approved")
 	}
 	if !s.led.Has(first.Hash) {

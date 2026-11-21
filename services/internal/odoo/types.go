@@ -81,6 +81,8 @@ type Applicant struct {
 	SmartNeedID      string
 	SmartCandidateID string
 	Contract         *Contract
+	OptedOut         bool
+	Erased           bool
 }
 
 // HasContract reports whether a filename and digest are stored.
@@ -96,6 +98,8 @@ type Touch struct {
 	Kind            string
 	Subject         string
 	Body            string
+	RecipientRef    string
+	NoticeVersion   string
 	OdooID          int64
 	Model           string
 }

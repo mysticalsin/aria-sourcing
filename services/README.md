@@ -26,8 +26,8 @@ Rust, Go, and Odoo use these keys. A later change will put them in one shared sp
 
 - `internal/odoo` — `Port` for `hr.job`, `hr.applicant`, `hr.recruitment.stage`, `hr.recruitment.source`, `crm.lead`, `res.partner`, `mail.message`, `mail.activity`, and `utm.*`. `Fake` is the in-memory database. `Client` speaks External JSON-2 (`POST /json/2/<model>/<method>`, `Authorization: bearer`, optional `X-Odoo-Database`, named arguments only) and refuses the default HTTP client.
 - `UpsertPerson` hides the version difference. Odoo 18 stores `hr.candidate`. Odoo 19 stores a jobless `hr.applicant`. Callers receive a `Person` either way.
-- Writes are idempotent. An Aria outbox replays the first result. A repeated applicant also searches `ir.model.data` (`aria.applicant_<id>`) and `(email_normalized, job_id)` before creating. Each new outreach touch appends one audit row and writes `mail.message` or `mail.activity`. Replays do not.
-- Approvals live only in `internal/ledger` (SHA-256 over channel, recipient, subject, body, and notice version). Odoo receives an internal note (`mail.mt_note`) that says it does not grant approval. `GrantFromOdoo` always fails.
+- Writes are idempotent. An Aria outbox replays the first result. The outbox is process-local, capped at 1024 entries, and is not the source of reads. A new client reads jobs and applicants through `ir.model.data` and the model. A repeated applicant searches `aria.applicant_<id>` and `(email_normalized, job_id)` before creating. A second applicant id for that email and job is a conflict. A failed external-id bind deletes the new row. Each new outreach touch appends one audit row and writes `mail.message` or `mail.activity`. Replays do not. The same touch key with a different applicant or body is a conflict.
+- Approvals live only in `internal/ledger`. The digest is SHA-256 of the canonical preimage in `docs/approval-hash.md`: channel, recipient, subject, body, notice version, and applicant id. Odoo receives an internal note (`mail.mt_note`) that says it does not grant approval. `GrantFromOdoo` always fails. An email touch is stored only when that digest is already granted. Hired, opted-out, and erased applicants refuse further touches and approvals.
 - `internal/dna` is Mantu's ERP contract-integration seam. The fake has no URL and no credentials.
 - `internal/smart` is an optional future import/export copy. Nothing in the core flow imports it. It rejects display labels, non-synthetic mail, and anything that looks like an ARP or browser automation payload. There is no SMARTX client.
 - Cross-keys: `aria.smart_need_<id>` points at `hr.job`, `aria.smart_candidate_<id>` points at `res.partner`, and the applicant record carries both ids for the hire gate.
@@ -35,7 +35,7 @@ Rust, Go, and Odoo use these keys. A later change will put them in one shared sp
 
 ## HTTP skeleton
 
-`GET /health`, `GET|POST /campaigns`, `GET|POST /candidates`, `POST /candidates/{id}/transition`, `POST /candidates/{id}/contract`, `POST /candidates/{id}/touches`, `GET|POST /approvals`, `POST /approvals/from-odoo`.
+`GET /health`, `GET|POST /campaigns`, `GET|POST /candidates`, `POST /candidates/{id}/transition`, `POST /candidates/{id}/contract`, `POST /candidates/{id}/touches`, `POST /candidates/{id}/opt-out`, `POST /candidates/{id}/erase`, `GET|POST /approvals`, `POST /approvals/from-odoo`. Mutating routes require `Authorization: Bearer` with `ARIA_API_TOKEN`. Health stays open. An empty token fails closed.
 
 `from-odoo` is always forbidden. `to=hired` uses the hire gate. A body field such as `dna_integrated` is rejected. Emails must be `*.example.test`. Recipients must also be on `ARIA_RECIPIENT_ALLOWLIST`.
 

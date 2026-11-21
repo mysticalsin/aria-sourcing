@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mysticalsin/aria-sourcing/services/internal/audit"
+	"github.com/mysticalsin/aria-sourcing/services/internal/dna"
 	"github.com/mysticalsin/aria-sourcing/services/internal/hiregate"
 	"github.com/mysticalsin/aria-sourcing/services/internal/outbox"
 	"github.com/mysticalsin/aria-sourcing/services/internal/stage"
@@ -108,6 +110,8 @@ func (c *Client) scrub(err error) error {
 	return errors.New(strings.ReplaceAll(err.Error(), c.apiKey, "[redacted]"))
 }
 
+// call performs one JSON-2 request. The caller must hold c.mu. The lock is
+// released for the HTTP round trip so a 30s call does not block other readers.
 func (c *Client) call(ctx context.Context, model, method string, args map[string]any, out any) error {
 	if args == nil {
 		args = map[string]any{}
@@ -119,38 +123,78 @@ func (c *Client) call(ctx context.Context, model, method string, args map[string
 	if len(payload) == 0 || payload[0] != '{' {
 		return errors.New("json-2 body must be a named-argument object")
 	}
+	c.mu.Unlock()
+	defer c.mu.Lock()
 	endpoint := c.baseURL + "/json/2/" + model + "/" + method
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return c.scrub(err)
-	}
-	req.Header.Set("Authorization", "bearer "+c.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if c.db != "" {
-		req.Header.Set("X-Odoo-Database", c.db)
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return c.scrub(fmt.Errorf("odoo json-2 %s/%s request failed: %v", model, method, err))
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return c.scrub(fmt.Errorf("odoo json-2 %s/%s read failed", model, method))
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return c.scrub(fmt.Errorf("odoo json-2 %s/%s status %d", model, method, res.StatusCode))
-	}
-	if out == nil {
+	var lastStatus int
+	var lastBody []byte
+	for attempt := 0; attempt < 3; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return c.scrub(err)
+		}
+		req.Header.Set("Authorization", "bearer "+c.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		if c.db != "" {
+			req.Header.Set("X-Odoo-Database", c.db)
+		}
+		res, err := c.http.Do(req)
+		if err != nil {
+			return c.scrub(fmt.Errorf("odoo json-2 %s/%s request failed: %v", model, method, err))
+		}
+		body, readErr := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		res.Body.Close()
+		if readErr != nil {
+			return c.scrub(fmt.Errorf("odoo json-2 %s/%s read failed", model, method))
+		}
+		if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusServiceUnavailable {
+			lastStatus, lastBody = res.StatusCode, body
+			if attempt == 2 {
+				break
+			}
+			time.Sleep(retryDelay(attempt, res.Header.Get("Retry-After")))
+			continue
+		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return c.scrub(fmt.Errorf("odoo json-2 %s/%s status %d: %s", model, method, res.StatusCode, c.clip(body)))
+		}
+		if out == nil {
+			return nil
+		}
+		dec := json.NewDecoder(bytes.NewReader(body))
+		dec.UseNumber()
+		if err := dec.Decode(out); err != nil {
+			return fmt.Errorf("odoo json-2 %s/%s: bad response", model, method)
+		}
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	if err := dec.Decode(out); err != nil {
-		return fmt.Errorf("odoo json-2 %s/%s: bad response", model, method)
+	return c.scrub(fmt.Errorf("odoo json-2 %s/%s status %d: %s", model, method, lastStatus, c.clip(lastBody)))
+}
+
+func (c *Client) clip(body []byte) string {
+	s := string(body)
+	if len(s) > 256 {
+		s = s[:256]
 	}
-	return nil
+	if c.apiKey != "" {
+		s = strings.ReplaceAll(s, c.apiKey, "[redacted]")
+	}
+	return s
+}
+
+func retryDelay(attempt int, retryAfter string) time.Duration {
+	delay := time.Duration(50*(1<<attempt)) * time.Millisecond
+	if sec, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && sec > 0 {
+		proposed := time.Duration(sec) * time.Second
+		if proposed < 2*time.Second && proposed > delay {
+			delay = proposed
+		}
+	}
+	if delay > 2*time.Second {
+		delay = 2 * time.Second
+	}
+	return delay
 }
 
 func (c *Client) searchRead(ctx context.Context, model string, domain []any, fields []string, limit int) ([]map[string]any, error) {
@@ -180,6 +224,28 @@ func (c *Client) createOne(ctx context.Context, model string, vals map[string]an
 		return 0, fmt.Errorf("odoo json-2 %s/create: expected one id", model)
 	}
 	return ids[0], nil
+}
+
+func (c *Client) unlink(ctx context.Context, model string, id int64) error {
+	var ok bool
+	return c.call(ctx, model, "unlink", map[string]any{"ids": []int64{id}}, &ok)
+}
+
+// createBound looks up the external id first. A failed bind deletes the new
+// row so a retry cannot leave a duplicate.
+func (c *Client) createBound(ctx context.Context, model, xmlName string, vals map[string]any) (int64, error) {
+	if id, ok, err := c.findXMLID(ctx, xmlName, model); err != nil || ok {
+		return id, err
+	}
+	id, err := c.createOne(ctx, model, vals)
+	if err != nil {
+		return 0, err
+	}
+	if err := c.bindXMLID(ctx, xmlName, model, id); err != nil {
+		_ = c.unlink(ctx, model, id)
+		return 0, err
+	}
+	return id, nil
 }
 
 func (c *Client) write(ctx context.Context, model string, ids []int64, vals map[string]any) error {
@@ -345,14 +411,11 @@ func (c *Client) UpsertPartner(ctx context.Context, in Partner) (Partner, error)
 	if email != "" {
 		vals["email"] = email
 	}
-	id, err := c.createOne(ctx, "res.partner", vals)
+	id, err := c.createBound(ctx, "res.partner", "partner_"+in.AriaID, vals)
 	if err != nil {
 		return Partner{}, err
 	}
 	in.ID = id
-	if err := c.bindXMLID(ctx, "partner_"+in.AriaID, "res.partner", id); err != nil {
-		return Partner{}, err
-	}
 	c.partners[in.AriaID] = in
 	_ = c.box.Store(in.IdempotencyKey, in)
 	return in, nil
@@ -376,13 +439,13 @@ func (c *Client) UpsertLead(ctx context.Context, in Lead) (Lead, error) {
 		return cached, err
 	}
 	if in.PartnerAriaID != "" {
-		p, ok := c.partners[in.PartnerAriaID]
-		if !ok {
-			return Lead{}, ErrNotFound
+		p, err := c.resolvePartner(ctx, in.PartnerAriaID)
+		if err != nil {
+			return Lead{}, err
 		}
 		in.PartnerID = p.ID
 	}
-	id, err := c.createOne(ctx, "crm.lead", map[string]any{
+	id, err := c.createBound(ctx, "crm.lead", "lead_"+in.AriaID, map[string]any{
 		"name": in.Name, "partner_id": in.PartnerID, "type": "opportunity",
 	})
 	if err != nil {
@@ -416,16 +479,13 @@ func (c *Client) UpsertJob(ctx context.Context, in Job) (Job, error) {
 	if row, ok := c.jobs[in.AriaID]; ok {
 		return row, nil
 	}
-	id, err := c.createOne(ctx, "hr.job", map[string]any{
+	id, err := c.createBound(ctx, "hr.job", "job_"+in.AriaID, map[string]any{
 		"name": in.Name, "description": in.Description, "no_of_recruitment": in.Openings,
 	})
 	if err != nil {
 		return Job{}, err
 	}
 	in.ID = id
-	if err := c.bindXMLID(ctx, "job_"+in.AriaID, "hr.job", id); err != nil {
-		return Job{}, err
-	}
 	if in.SmartNeedID != "" {
 		if err := c.bindXMLID(ctx, "smart_need_"+in.SmartNeedID, "hr.job", id); err != nil {
 			return Job{}, err
@@ -484,6 +544,22 @@ func (c *Client) UpsertPerson(ctx context.Context, in Person) (Person, error) {
 	c.people[in.AriaID] = in
 	_ = c.box.Store(in.IdempotencyKey, in)
 	return in, nil
+}
+
+func (c *Client) resolvePartner(ctx context.Context, ariaID string) (Partner, error) {
+	if row, ok := c.partners[ariaID]; ok && row.ID != 0 {
+		return row, nil
+	}
+	resID, found, err := c.findXMLID(ctx, "partner_"+ariaID, "res.partner")
+	if err != nil {
+		return Partner{}, err
+	}
+	if !found {
+		return Partner{}, ErrNotFound
+	}
+	row := Partner{ID: resID, AriaID: ariaID}
+	c.partners[ariaID] = row
+	return row, nil
 }
 
 func (c *Client) resolveJob(ctx context.Context, ariaID string) (Job, error) {
@@ -597,6 +673,13 @@ func (c *Client) UpsertApplicant(ctx context.Context, in Applicant) (Applicant, 
 		if err != nil {
 			return Applicant{}, err
 		}
+		ownID, found, err := c.findXMLID(ctx, "applicant_"+in.AriaID, "hr.applicant")
+		if err != nil {
+			return Applicant{}, err
+		}
+		if !found || ownID != resID {
+			return Applicant{}, ErrConflict
+		}
 		return c.cacheApplicant(ctx, in, resID, job, sourceID, mediumID, true)
 	}
 	id, err := c.createOne(ctx, "hr.applicant", map[string]any{
@@ -661,10 +744,55 @@ func (c *Client) ReadApplicant(ctx context.Context, ariaID string) (Applicant, e
 	if err := ctx.Err(); err != nil {
 		return Applicant{}, err
 	}
-	row, ok := c.applicants[ariaID]
-	if !ok {
+	return c.readApplicantLocked(ctx, ariaID)
+}
+
+func (c *Client) readApplicantLocked(ctx context.Context, ariaID string) (Applicant, error) {
+	if row, ok := c.applicants[ariaID]; ok && row.ID != 0 && row.PartnerName != "" {
+		return row, nil
+	}
+	id, found, err := c.findXMLID(ctx, "applicant_"+ariaID, "hr.applicant")
+	if err != nil {
+		return Applicant{}, err
+	}
+	if !found {
 		return Applicant{}, ErrNotFound
 	}
+	rows, err := c.searchRead(ctx, "hr.applicant", and(eq("id", id)), []string{"id", "partner_name", "email_from", "job_id", "stage_id"}, 1)
+	if err != nil || len(rows) == 0 {
+		if err == nil {
+			err = ErrNotFound
+		}
+		return Applicant{}, err
+	}
+	jobID, _ := asInt64(rows[0]["job_id"])
+	stageName := stage.ToRate
+	if sid, err := asInt64(rows[0]["stage_id"]); err == nil {
+		stageRows, err := c.searchRead(ctx, "hr.recruitment.stage", and(eq("id", sid)), []string{"name"}, 1)
+		if err == nil && len(stageRows) == 1 {
+			stageName = fmt.Sprint(stageRows[0]["name"])
+		}
+	}
+	row := Applicant{
+		ID: id, AriaID: ariaID, PartnerName: fmt.Sprint(rows[0]["partner_name"]),
+		EmailFrom: fmt.Sprint(rows[0]["email_from"]), EmailNormalized: fmt.Sprint(rows[0]["email_from"]),
+		JobID: jobID, Stage: stageName,
+	}
+	if _, found, err := c.findXMLID(ctx, "optout_"+ariaID, "hr.applicant"); err != nil {
+		return Applicant{}, err
+	} else if found {
+		row.OptedOut = true
+	}
+	if _, found, err := c.findXMLID(ctx, "erased_"+ariaID, "hr.applicant"); err != nil {
+		return Applicant{}, err
+	} else if found {
+		row.Erased = true
+		row.PartnerName = ""
+		row.EmailFrom = ""
+		row.EmailNormalized = ""
+		row.LinkedInProfile = ""
+	}
+	c.applicants[ariaID] = row
 	return row, nil
 }
 
@@ -675,23 +803,31 @@ func (c *Client) ReadJob(ctx context.Context, ariaID string) (Job, error) {
 	if err := ctx.Err(); err != nil {
 		return Job{}, err
 	}
-	row, ok := c.jobs[ariaID]
-	if !ok {
-		return Job{}, ErrNotFound
-	}
-	return row, nil
+	return c.readJobLocked(ctx, ariaID)
 }
 
-// ListApplicants returns applicants cached by this client.
+// ListApplicants returns applicants stored in Odoo.
 func (c *Client) ListApplicants(ctx context.Context) ([]Applicant, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out := make([]Applicant, 0, len(c.appOrder))
-	for _, id := range c.appOrder {
-		out = append(out, c.applicants[id])
+	rows, err := c.searchRead(ctx, "ir.model.data", and(eq("module", "aria"), eq("model", "hr.applicant")), []string{"name"}, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []Applicant
+	for _, row := range rows {
+		name := fmt.Sprint(row["name"])
+		if !strings.HasPrefix(name, "applicant_") {
+			continue
+		}
+		app, err := c.readApplicantLocked(ctx, strings.TrimPrefix(name, "applicant_"))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, app)
 	}
 	return out, nil
 }
@@ -703,11 +839,47 @@ func (c *Client) ListJobs(ctx context.Context) ([]Job, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out := make([]Job, 0, len(c.jobOrder))
-	for _, id := range c.jobOrder {
-		out = append(out, c.jobs[id])
+	rows, err := c.searchRead(ctx, "ir.model.data", and(eq("module", "aria"), eq("model", "hr.job")), []string{"name", "res_id"}, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []Job
+	for _, row := range rows {
+		name := fmt.Sprint(row["name"])
+		if !strings.HasPrefix(name, "job_") {
+			continue
+		}
+		job, err := c.readJobLocked(ctx, strings.TrimPrefix(name, "job_"))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, job)
 	}
 	return out, nil
+}
+
+func (c *Client) readJobLocked(ctx context.Context, ariaID string) (Job, error) {
+	if row, ok := c.jobs[ariaID]; ok && row.Name != "" {
+		return row, nil
+	}
+	id, found, err := c.findXMLID(ctx, "job_"+ariaID, "hr.job")
+	if err != nil || !found {
+		if err == nil {
+			err = ErrNotFound
+		}
+		return Job{}, err
+	}
+	rows, err := c.searchRead(ctx, "hr.job", and(eq("id", id)), []string{"id", "name", "description", "no_of_recruitment"}, 1)
+	if err != nil || len(rows) == 0 {
+		if err == nil {
+			err = ErrNotFound
+		}
+		return Job{}, err
+	}
+	openings, _ := asInt64(rows[0]["no_of_recruitment"])
+	row := Job{ID: id, AriaID: ariaID, Name: fmt.Sprint(rows[0]["name"]), Description: fmt.Sprint(rows[0]["description"]), Openings: int(openings)}
+	c.jobs[ariaID] = row
+	return row, nil
 }
 
 // LogTouch posts mail.message or creates mail.activity, plus one audit row.
@@ -721,8 +893,13 @@ func (c *Client) LogTouch(ctx context.Context, in Touch) (Touch, error) {
 		return Touch{}, err
 	}
 	var cached Touch
-	if ok, err := c.box.Load(in.IdempotencyKey, &cached); err != nil || ok {
-		return cached, err
+	if ok, err := c.box.Load(in.IdempotencyKey, &cached); err != nil {
+		return Touch{}, err
+	} else if ok {
+		if cached.ApplicantAriaID != in.ApplicantAriaID || cached.Body != in.Body {
+			return Touch{}, ErrConflict
+		}
+		return cached, nil
 	}
 	app, ok := c.applicants[in.ApplicantAriaID]
 	if !ok {
@@ -854,7 +1031,7 @@ func (c *Client) TransitionStage(ctx context.Context, ariaID, to string) (Applic
 }
 
 // MarkHired writes the hired stage only when the clearance matches and a contract is attached.
-func (c *Client) MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance) (Applicant, error) {
+func (c *Client) MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance, checker dna.Adapter) (Applicant, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -874,7 +1051,7 @@ func (c *Client) MarkHired(ctx context.Context, ariaID string, clearance hiregat
 	if !app.HasContract() {
 		parts = append(parts, hiregate.ErrContractNotAttached)
 	}
-	if clearance.CandidateID() != app.SmartCandidateID || clearance.NeedID() != app.SmartNeedID || app.SmartCandidateID == "" {
+	if !dnaIntegrated(ctx, checker, app.SmartCandidateID, app.SmartNeedID) {
 		parts = append(parts, hiregate.ErrDNANotIntegrated)
 	}
 	if len(parts) > 0 {
@@ -894,6 +1071,50 @@ func (c *Client) MarkHired(ctx context.Context, ariaID string, clearance hiregat
 		Action: audit.ActionHired, IdempotencyKey: "stage.hired." + ariaID,
 		AriaID: ariaID, Model: "hr.applicant", Detail: "hired",
 	})
+	return app, nil
+}
+
+// OptOut records a refusal of further outreach.
+func (c *Client) OptOut(ctx context.Context, ariaID string) (Applicant, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	app, err := c.readApplicantLocked(ctx, ariaID)
+	if err != nil {
+		return Applicant{}, err
+	}
+	if _, err := c.postMessage(ctx, app.ID, "Outreach opt-out recorded.", "mail.mt_note"); err != nil {
+		return Applicant{}, err
+	}
+	if err := c.bindXMLID(ctx, "optout_"+ariaID, "hr.applicant", app.ID); err != nil {
+		return Applicant{}, err
+	}
+	app.OptedOut = true
+	c.applicants[ariaID] = app
+	return app, nil
+}
+
+// Erase clears direct identifiers on the applicant.
+func (c *Client) Erase(ctx context.Context, ariaID string) (Applicant, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	app, err := c.readApplicantLocked(ctx, ariaID)
+	if err != nil {
+		return Applicant{}, err
+	}
+	if err := c.write(ctx, "hr.applicant", []int64{app.ID}, map[string]any{
+		"partner_name": "", "email_from": "", "linkedin_profile": "",
+	}); err != nil {
+		return Applicant{}, err
+	}
+	if err := c.bindXMLID(ctx, "erased_"+ariaID, "hr.applicant", app.ID); err != nil {
+		return Applicant{}, err
+	}
+	app.Erased = true
+	app.PartnerName = ""
+	app.EmailFrom = ""
+	app.EmailNormalized = ""
+	app.LinkedInProfile = ""
+	c.applicants[ariaID] = app
 	return app, nil
 }
 

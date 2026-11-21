@@ -64,6 +64,8 @@ func TestLogNeverPrintsValues(t *testing.T) {
 			return "test", true
 		case config.EnvRecipientAllowlist:
 			return canary + "@people.example.test", true
+		case config.EnvAriaAPIToken:
+			return "", false
 		default:
 			t.Fatalf("unexpected name %s", name)
 			return "", false
@@ -73,7 +75,7 @@ func TestLogNeverPrintsValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary := cfg.LogSummary()
-	const want = "config ODOO_URL=set ODOO_DB=set ODOO_API_KEY=set ODOO_VERSION=set ARIA_MODE=set ARIA_RECIPIENT_ALLOWLIST=set"
+	const want = "config ODOO_URL=set ODOO_DB=set ODOO_API_KEY=set ODOO_VERSION=set ARIA_MODE=set ARIA_RECIPIENT_ALLOWLIST=set ARIA_API_TOKEN=unset"
 	if summary != want {
 		t.Fatalf("summary = %q", summary)
 	}
@@ -141,7 +143,7 @@ func TestDefaultsAreTestAndOdoo19(t *testing.T) {
 	if cfg.EffectiveVersion() != "19" || cfg.VersionSet {
 		t.Fatalf("version = %s set=%v", cfg.OdooVersion, cfg.VersionSet)
 	}
-	if cfg.LogSummary() != "config ODOO_URL=unset ODOO_DB=unset ODOO_API_KEY=unset ODOO_VERSION=unset ARIA_MODE=unset ARIA_RECIPIENT_ALLOWLIST=unset" {
+	if cfg.LogSummary() != "config ODOO_URL=unset ODOO_DB=unset ODOO_API_KEY=unset ODOO_VERSION=unset ARIA_MODE=unset ARIA_RECIPIENT_ALLOWLIST=unset ARIA_API_TOKEN=unset" {
 		t.Fatal(cfg.LogSummary())
 	}
 }

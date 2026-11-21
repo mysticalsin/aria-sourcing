@@ -76,6 +76,9 @@ func (m *memRPC) RoundTrip(req *http.Request) (*http.Response, error) {
 		return jsonResponse(200, true), nil
 	case "message_post":
 		return jsonResponse(200, m.message(args)), nil
+	case "unlink":
+		m.unlink(model, args)
+		return jsonResponse(200, true), nil
 	default:
 		return jsonResponse(404, map[string]string{"message": "method"}), nil
 	}
@@ -133,6 +136,20 @@ func (m *memRPC) write(model string, args map[string]any) {
 			}
 		}
 	}
+}
+
+func (m *memRPC) unlink(model string, args map[string]any) {
+	drop := map[string]bool{}
+	for _, id := range intList(args["ids"]) {
+		drop[strconv.FormatInt(id, 10)] = true
+	}
+	var keep []map[string]string
+	for _, rec := range m.rows[model] {
+		if !drop[rec["id"]] {
+			keep = append(keep, rec)
+		}
+	}
+	m.rows[model] = keep
 }
 
 func (m *memRPC) message(args map[string]any) int64 {
@@ -323,8 +340,8 @@ func TestJSON2UpsertApplicantReplayDoesNotCreate(t *testing.T) {
 	other := in
 	other.AriaID = "cand-2"
 	other.IdempotencyKey = "idem-c"
-	if _, err := restarted.UpsertApplicant(ctx, other); err != nil {
-		t.Fatal(err)
+	if _, err := restarted.UpsertApplicant(ctx, other); !errors.Is(err, odoo.ErrConflict) {
+		t.Fatalf("distinct applicant err = %v", err)
 	}
 	if rpc.CreateCount("hr.applicant") != 1 {
 		t.Fatalf("replay created another applicant: %d", rpc.CreateCount("hr.applicant"))

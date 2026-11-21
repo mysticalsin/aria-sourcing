@@ -33,6 +33,8 @@ func TestRunLogsNamesOnlyAndServesTheFake(t *testing.T) {
 			return "19", true
 		case config.EnvRecipientAllowlist:
 			return canary + "@people.example.test", true
+		case config.EnvAriaAPIToken:
+			return "", false
 		default:
 			t.Fatalf("unexpected env %s", name)
 			return "", false

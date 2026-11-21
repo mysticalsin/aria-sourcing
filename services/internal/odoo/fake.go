@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mysticalsin/aria-sourcing/services/internal/audit"
+	"github.com/mysticalsin/aria-sourcing/services/internal/dna"
 	"github.com/mysticalsin/aria-sourcing/services/internal/hiregate"
 	"github.com/mysticalsin/aria-sourcing/services/internal/outbox"
 	"github.com/mysticalsin/aria-sourcing/services/internal/stage"
@@ -449,7 +450,7 @@ func (f *Fake) UpsertApplicant(ctx context.Context, in Applicant) (Applicant, er
 	}
 	emailKey := email + "\x00" + fmt.Sprint(jobID)
 	if id, ok := f.emailJob[emailKey]; ok {
-		if found && id != existing {
+		if f.applicants[id].AriaID != in.AriaID {
 			return Applicant{}, ErrConflict
 		}
 		existing, found = id, true
@@ -571,8 +572,13 @@ func (f *Fake) LogTouch(ctx context.Context, in Touch) (Touch, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var cached Touch
-	if ok, err := f.box.Load(in.IdempotencyKey, &cached); err != nil || ok {
-		return cached, err
+	if ok, err := f.box.Load(in.IdempotencyKey, &cached); err != nil {
+		return Touch{}, err
+	} else if ok {
+		if cached.ApplicantAriaID != in.ApplicantAriaID || cached.Body != in.Body {
+			return Touch{}, ErrConflict
+		}
+		return cached, nil
 	}
 	appID, ok := f.applicantByAria[in.ApplicantAriaID]
 	if !ok {
@@ -698,7 +704,7 @@ func (f *Fake) TransitionStage(ctx context.Context, ariaID, to string) (Applican
 
 // MarkHired writes hired only for a clearance the hire gate issued, and only
 // when the contract is still attached and the stage edge allows it.
-func (f *Fake) MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance) (Applicant, error) {
+func (f *Fake) MarkHired(ctx context.Context, ariaID string, clearance hiregate.Clearance, checker dna.Adapter) (Applicant, error) {
 	if err := ctx.Err(); err != nil {
 		return Applicant{}, err
 	}
@@ -718,7 +724,7 @@ func (f *Fake) MarkHired(ctx context.Context, ariaID string, clearance hiregate.
 	if !row.HasContract() {
 		parts = append(parts, hiregate.ErrContractNotAttached)
 	}
-	if clearance.CandidateID() != row.SmartCandidateID || clearance.NeedID() != row.SmartNeedID || row.SmartCandidateID == "" {
+	if !dnaIntegrated(ctx, checker, row.SmartCandidateID, row.SmartNeedID) {
 		parts = append(parts, hiregate.ErrDNANotIntegrated)
 	}
 	if len(parts) > 0 {
@@ -731,6 +737,54 @@ func (f *Fake) MarkHired(ctx context.Context, ariaID string, clearance hiregate.
 		Action: audit.ActionHired, IdempotencyKey: "stage.hired." + ariaID,
 		AriaID: ariaID, Model: "hr.applicant", Detail: "hired",
 	})
+	return row.clone(), nil
+}
+
+func dnaIntegrated(ctx context.Context, checker dna.Adapter, candidateID, needID string) bool {
+	if checker == nil || candidateID == "" || needID == "" {
+		return false
+	}
+	status, err := checker.ContractIntegration(ctx, candidateID, needID)
+	if err != nil {
+		return false
+	}
+	return status.Integrated && status.CandidateID == candidateID && status.NeedID == needID
+}
+
+// OptOut records that the applicant refused further outreach.
+func (f *Fake) OptOut(ctx context.Context, ariaID string) (Applicant, error) {
+	if err := ctx.Err(); err != nil {
+		return Applicant{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	row, err := f.mustApplicant(ariaID)
+	if err != nil {
+		return Applicant{}, err
+	}
+	row.OptedOut = true
+	f.applicants[row.ID] = row
+	return row.clone(), nil
+}
+
+// Erase removes direct identifiers and closes the applicant.
+func (f *Fake) Erase(ctx context.Context, ariaID string) (Applicant, error) {
+	if err := ctx.Err(); err != nil {
+		return Applicant{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	row, err := f.mustApplicant(ariaID)
+	if err != nil {
+		return Applicant{}, err
+	}
+	delete(f.emailJob, row.EmailNormalized+"\x00"+fmt.Sprint(row.JobID))
+	row.Erased = true
+	row.PartnerName = ""
+	row.EmailFrom = ""
+	row.EmailNormalized = ""
+	row.LinkedInProfile = ""
+	f.applicants[row.ID] = row
 	return row.clone(), nil
 }
 
