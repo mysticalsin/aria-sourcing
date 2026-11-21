@@ -265,6 +265,31 @@ func Test_test_approval_mirrored_as_note_never_grants(t *testing.T) {
 	}
 }
 
+func TestLogTouchRefusedAfterHire(t *testing.T) {
+	ctx := context.Background()
+	s := newStack(t)
+	s.campaign(t)
+	app := s.candidate(t, "closed", true)
+	reach(t, s.svc, app.AriaID, stage.ToHire)
+	if _, err := s.svc.AttachContract(ctx, app.AriaID, odoo.Contract{Filename: "contract-synthetic.pdf", SHA256: digest}); err != nil {
+		t.Fatal(err)
+	}
+	s.dna.Seed("cand-closed", "need-1001", true)
+	if _, err := s.svc.Transition(ctx, app.AriaID, stage.Hired); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.svc.LogTouch(ctx, odoo.Touch{
+		IdempotencyKey:  "touch-hired",
+		ApplicantAriaID: app.AriaID,
+		Channel:         "email",
+		Kind:            "message",
+		Subject:         "Synthetic",
+		Body:            "Synthetic outreach after the gate.",
+	}); err == nil {
+		t.Fatal("hired applicant accepted an outreach touch")
+	}
+}
+
 func TestCampaignWritesPartnerLeadAndJob(t *testing.T) {
 	s := newStack(t)
 	job := s.campaign(t)
