@@ -56,3 +56,14 @@ test("configured HTTPS backend and custom loopback ports drive CSP and cookie po
   assert.equal(isLoopbackHttpOrigin("http://127.0.0.1:3000"), true);
   for (const origin of [undefined, "http://example.test", "https://example.test", "http://localhost.evil.test", "http://user:secret@localhost", "http://localhost/path"]) assert.equal(isLoopbackHttpOrigin(origin), false);
 });
+
+test("the recruitment addon names opt-out, erasure, and a pipeline page", () => {
+  const applicant = readFileSync("odoo_addons/aria_recruitment/models/applicant.py", "utf8");
+  const views = readFileSync("odoo_addons/aria_recruitment/views/applicant_views.xml", "utf8");
+  const controller = readFileSync("odoo_addons/aria_recruitment/controllers/pipeline.py", "utf8");
+  assert.match(applicant, /string='Opt-out'/);
+  assert.match(views, /Erasure/);
+  assert.match(controller, /opt-out/);
+  assert.match(controller, /[Ee]rasure/);
+  assert.match(controller, /\/aria\/pipeline/);
+});
