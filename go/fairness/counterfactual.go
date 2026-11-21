@@ -260,6 +260,11 @@ func scoreView(c Candidate, text string) ScoreView {
 	return ScoreView{ID: c.ID, Text: text, Features: features}
 }
 
+// SetDenylistForTest replaces the strip set. The red seam does not apply it yet.
+func SetDenylistForTest(classes []string) func() {
+	return func() {}
+}
+
 func protectedFeatureKey(key string) bool {
 	class := featureClass(key)
 	return class != ""

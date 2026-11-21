@@ -35,11 +35,19 @@ ok("scrub drops postcode", !("postcode" in scrubbed));
 ok("scrub drops photo", !("photoPresent" in scrubbed));
 ok("scrub keeps a job skill", scrubbed.skills === "synthetic");
 
+const calls: Array<Record<string, unknown>> = [];
 const spy = auditLiveScore(
-  { skills: "synthetic", gender: "group-a" },
-  (row) => (row.gender === "group-a" ? 1 : 90),
+  { skills: "synthetic", gender: "group-a", postcode: "SYN-000", photoPresent: true, graduationYear: 2014 },
+  (row) => {
+    calls.push({ ...row });
+    return row.gender === "group-a" ? 1 : 90;
+  },
 );
-ok("gender spy fails the live audit", spy.verdict === "Fail");
+const forbidden = ["gender", "postcode", "photoPresent", "photo", "graduationYear", "ethnicity", "race", "age", "sex", "religion", "disability"];
+ok(
+  "no score call receives a protected attribute or proxy",
+  calls.length > 0 && calls.every((row) => forbidden.every((key) => !(key in row))),
+);
 ok("live audit does not auto-reject", spy.autoReject === false && spy.humanDecisionRequired === true);
 ok("scrubbed score ignores gender", spy.scrubbedScore === 90);
 
