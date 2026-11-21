@@ -43,10 +43,12 @@ export function WorkspaceStatusPanel({
         >
           <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-4 border-violet/15 border-t-violet" />
           <h1 className="text-2xl font-bold text-ink">
-            {status.mode === "demo" ? "Loading demo workspace" : "Connecting to your workspace"}
+            {status.mode === "demo" ? "Loading the synthetic demo" : "Connecting to your workspace"}
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted">
-            Product data and actions remain unavailable until the workspace is verified.
+            {status.mode === "demo"
+              ? "Sample people and campaigns are loading. Nothing is sent."
+              : "Product data and actions remain unavailable until the workspace is verified."}
           </p>
         </div>
       </main>

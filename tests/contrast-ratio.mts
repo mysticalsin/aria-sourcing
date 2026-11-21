@@ -77,6 +77,8 @@ const danger = token("--danger");
 const dangerSoft = token("--danger-soft");
 const violet = token("--violet");
 const violetSoft = token("--violet-soft");
+const warning = token("--warning");
+const warningSoft = token("--warning-soft");
 const chip = composite(successSoft, paper, 0.8);
 const AA = 4.5;
 
@@ -86,6 +88,8 @@ const pairs: { id: string; ratio: number }[] = [
   { id: "C2A-01 danger badge (--danger on --danger-soft)", ratio: contrastRatio(danger, dangerSoft) },
   { id: "C2A-01 violet badge (--violet on --violet-soft)", ratio: contrastRatio(violet, violetSoft) },
   { id: "C2A-01 violet text on page (--violet on --paper)", ratio: contrastRatio(violet, paper) },
+  { id: "C2A-01 warning text (--warning on --warning-soft)", ratio: contrastRatio(warning, warningSoft) },
+  { id: "C2A-01 warning text on page (--warning on --paper)", ratio: contrastRatio(warning, paper) },
 ];
 
 for (const pair of pairs) {

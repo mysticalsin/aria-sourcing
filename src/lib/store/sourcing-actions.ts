@@ -1012,7 +1012,11 @@ export function createSourcingActions({
     input,
   ) => {
     if (!candidatePersistenceAllowed("manual")) {
-      return { ok: false, error: "Manual candidate intake requires a live workspace." };
+      return {
+        ok: false,
+        error:
+          "Manual candidate intake requires a live workspace. Sign in to a live workspace, then add the person from this dialog.",
+      };
     }
     if (!workspaceEffectAllowed()) {
       return { ok: false, error: "Workspace unavailable. Retry before adding a candidate." };

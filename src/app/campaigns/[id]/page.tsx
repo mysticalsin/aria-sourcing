@@ -177,14 +177,14 @@ const WEIGHT_TONES: Tone[] = ["tangerine", "electric", "violet", "aqua", "succes
 
 function MetaItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-ink/45" aria-hidden>
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <dt className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted">{label}</dt>
-        <dd className="text-sm font-semibold text-ink">{value}</dd>
-      </div>
+    <div className="min-w-0">
+      <dt className="flex items-center gap-2 text-[0.625rem] font-semibold uppercase tracking-wide text-muted">
+        <span className="text-ink/45" aria-hidden>
+          {icon}
+        </span>
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-sm font-semibold text-ink">{value}</dd>
     </div>
   );
 }

@@ -315,7 +315,7 @@ export function TopBar() {
               setUserOpen((o) => !o);
               setNotifOpen(false);
             }}
-            aria-label="User menu"
+            aria-label={`User menu, ${displayInitials}`}
             aria-expanded={userOpen}
             aria-haspopup="menu"
             className="flex items-center gap-2 rounded-full p-1 pr-2 hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"

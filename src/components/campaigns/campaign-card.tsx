@@ -37,7 +37,6 @@ export function CampaignCard({ campaign }: { campaign: Campaign }) {
       <Link
         href={`/campaigns/${campaign.id}`}
         onClick={() => setActiveCampaign(campaign.id)}
-        aria-label={`Open campaign ${campaign.title}`}
         className="block rounded-2xl p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
       >
         <div className="flex items-start justify-between gap-3">

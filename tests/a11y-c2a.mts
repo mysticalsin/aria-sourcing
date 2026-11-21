@@ -65,6 +65,10 @@ const shell = read("src/components/app/app-shell.tsx");
 check("C2A-05 main content is programmatically focusable", /id="main-content"[\s\S]{0,180}tabIndex=\{-1\}/.test(shell));
 check("C2A-05 skip link focuses #main-content", /getElementById\("main-content"\)[\s\S]{0,240}\.focus\(/.test(shell));
 check("C2A-13 first paint says the synthetic demo is loading", shell.includes("Loading the synthetic demo"));
+check(
+  "C2A-13 the blocking loader names the synthetic demo",
+  read("src/components/app/workspace-status-panel.tsx").includes("Loading the synthetic demo"),
+);
 
 const search = read("src/components/app/command-search.tsx");
 const searchLabel = search.match(/aria-label="([^"]*command search[^"]*)"/)?.[1] ?? "";

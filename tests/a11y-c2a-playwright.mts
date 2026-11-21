@@ -59,10 +59,23 @@ function check(id: string, cond: boolean, detail = "") {
 
 async function settle(page: Page) {
   await page.waitForSelector("#main-content", { timeout: 20000 });
-  await page
-    .waitForFunction(() => !document.body.innerText.includes("Loading the synthetic demo"), null, { timeout: 20000 })
-    .catch(() => undefined);
+  await page.waitForFunction(
+    () => !document.body.innerText.includes("Loading the synthetic demo"),
+    null,
+    { timeout: 20000 },
+  );
   await page.locator("[data-tour='mode-chip']").waitFor({ timeout: 20000 });
+  await page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    for (const animation of document.getAnimations()) {
+      if (animation.effect?.getTiming().iterations === Infinity) continue;
+      try {
+        animation.finish();
+      } catch {
+        /* A finite effect can still refuse finish. The resting frame is enough. */
+      }
+    }
+  });
 }
 
 async function axe(page: Page): Promise<AxeViolation[]> {
@@ -93,7 +106,7 @@ async function assertFindings(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${base}/`, { waitUntil: "load" });
   await settle(page);
-  await page.getByText(/\d+ messages are waiting for your approval/).waitFor({ timeout: 20000 });
+  await page.getByText(/\d+ messages are waiting for your approval/).first().waitFor({ timeout: 20000 });
 
   const tour = page.getByRole("dialog");
   const tourText = (await tour.count()) > 0 ? await tour.innerText() : "";
@@ -127,7 +140,11 @@ async function assertFindings(page: Page) {
     if (!(link instanceof HTMLElement)) return "";
     return link.getAttribute("aria-label") || link.innerText;
   });
-  check("C2A-06", /Sourced/.test(campaignName) && /Interviewing|Outreach|Sourcing/.test(campaignName), campaignName.slice(0, 120));
+  check(
+    "C2A-06",
+    /sourced/i.test(campaignName) && /interviewing|outreach|sourcing/i.test(campaignName),
+    campaignName.replace(/\s+/g, " ").slice(0, 160),
+  );
 
   await page.goto(`${base}/candidates`, { waitUntil: "load" });
   await settle(page);
@@ -180,18 +197,24 @@ async function sweep(browser: Browser) {
     const context = await browser.newContext({ viewport: { width, height: width === 375 ? 812 : 900 } });
     const page = await context.newPage();
     for (const route of routes) {
-      await page.goto(`${base}${route}`, { waitUntil: "load" });
-      await settle(page);
-      const violations = serious(await axe(page));
-      const critical = violations.filter((violation) => violation.impact === "critical").length;
       tally[route] ??= {};
-      tally[route][String(width)] = {
-        serious: violations.length - critical,
-        critical,
-        rules: [...new Set(violations.map((violation) => `${violation.impact}:${violation.id}`))],
-      };
-      if (violations.length > 0) {
-        console.error(`AXE ${route} @ ${width}: ${violations.map((violation) => `${violation.impact}:${violation.id}(${violation.nodes.length})`).join(", ")}`);
+      try {
+        await page.goto(`${base}${route}`, { waitUntil: "load" });
+        await settle(page);
+        const violations = serious(await axe(page));
+        const critical = violations.filter((violation) => violation.impact === "critical").length;
+        tally[route][String(width)] = {
+          serious: violations.length - critical,
+          critical,
+          rules: [...new Set(violations.map((violation) => `${violation.impact}:${violation.id}`))],
+        };
+        if (violations.length > 0) {
+          console.error(`AXE ${route} @ ${width}: ${violations.map((violation) => `${violation.impact}:${violation.id}(${violation.nodes.length})`).join(", ")}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        tally[route][String(width)] = { serious: -1, critical: -1, rules: [`error:${message.slice(0, 180)}`] };
+        console.error(`AXE ${route} @ ${width} ERROR ${message}`);
       }
     }
     await context.close();
@@ -239,11 +262,21 @@ try {
   await loadingWithoutJs(browser);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await assertFindings(page);
+  try {
+    await assertFindings(page);
+  } catch (error) {
+    failures.push(`C2A findings threw: ${error instanceof Error ? error.message : String(error)}`);
+  }
   await context.close();
   const tally = await sweep(browser);
-  await shots(browser);
   const report = { base, routes: routes.length, widths, failures, tally };
+  const encodedEarly = JSON.stringify(report, null, 2);
+  if (process.env.ARIA_A11Y_REPORT) writeFileSync(process.env.ARIA_A11Y_REPORT, encodedEarly);
+  try {
+    await shots(browser);
+  } catch (error) {
+    failures.push(`screenshots: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const encoded = JSON.stringify(report, null, 2);
   if (process.env.ARIA_A11Y_REPORT) writeFileSync(process.env.ARIA_A11Y_REPORT, encoded);
   console.log(encoded);

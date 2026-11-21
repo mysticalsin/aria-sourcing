@@ -116,7 +116,7 @@ export function ReplyCard({ reply }: { reply: ClassifiedReply }) {
   }
 
   return (
-    <Card className={cn("p-5 animate-fade-in", reply.handled && "opacity-70")}>
+    <Card className={cn("p-5 animate-fade-in", reply.handled && "bg-canvas/70")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneForIntent(reply.intent)} dot>

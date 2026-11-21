@@ -98,7 +98,7 @@ const VALID_TABS = new Set([
 const TABS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "integrations", label: "Integrations", icon: <Plug2 className="h-4 w-4" /> },
   { id: "ai", label: "AI & Models", icon: <Cpu className="h-4 w-4" /> },
-  { id: "fleet", label: "Fleet & Automation", icon: <Clock className="h-4 w-4" /> },
+  { id: "fleet", label: "Mailboxes", icon: <Clock className="h-4 w-4" /> },
   { id: "compliance", label: "Approval & Compliance", icon: <ShieldCheck className="h-4 w-4" /> },
   { id: "voice", label: "Brand Voice", icon: <Sparkles className="h-4 w-4" /> },
   { id: "access", label: "Access & Keys", icon: <Lock className="h-4 w-4" /> },
@@ -581,7 +581,7 @@ export default function SettingsPage() {
               role="tablist"
               aria-label="Settings sections"
               aria-orientation="vertical"
-              className="flex gap-1.5 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0 lg:snap-none"
+              className="flex flex-wrap gap-1.5 pb-2 lg:flex-col lg:flex-nowrap lg:gap-1 lg:pb-0"
             >
               {TABS.map((t) => (
                 <button

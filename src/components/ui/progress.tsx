@@ -12,19 +12,26 @@ const FILL: Record<Tone, string> = {
   danger: "bg-danger",
 };
 
+type ProgressName =
+  | { "aria-label": string; "aria-labelledby"?: never }
+  | { "aria-labelledby": string; "aria-label"?: never };
+
 export function Progress({
   value,
   tone = "electric",
   className,
   trackClassName,
   "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
 }: {
   value: number; // 0-100
   tone?: Tone;
   className?: string;
   trackClassName?: string;
-  "aria-label"?: string;
-}) {
+} & ProgressName) {
+  if (!ariaLabel && !ariaLabelledBy) {
+    throw new Error("Progress requires an accessible name");
+  }
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div
@@ -33,6 +40,7 @@ export function Progress({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       className={cn("h-2 w-full overflow-hidden rounded-full bg-ink/10", trackClassName, className)}
     >
       <div
