@@ -171,6 +171,7 @@ export const testManifest = {
     {"id":"quick-stats","executable":"node","argv":["--import","tsx","--test","tests/quick-stats.mts"]},
     {"id":"channel-picker","executable":"node","argv":["--import","tsx","--test","tests/channel-picker.mts"]},
     {"id":"processing-visual","executable":"node","argv":["--import","tsx","--test","tests/processing-visual.mts"]},
+    {"id":"inspector-qa","executable":"node","argv":["--import","tsx","--test","tests/inspector-qa.mts"]},
   ],
   groups: {
     "pretest": [
@@ -304,6 +305,7 @@ export const testManifest = {
       "quick-stats",
       "channel-picker",
       "processing-visual",
+      "inspector-qa",
       "mcp-secret-leak-adversarial",
       "claim-serialization",
       "cross-channel-cap-contract",
