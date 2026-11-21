@@ -1,43 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 472
+shift: 473
 agent: cursor
 updated: 2026-11-21
-status: integration-merge-in-progress
+status: integration-sweep-0-draft
 ---
 
-# Handoff - Shift 472
+# Handoff - Shift 473
 
 ## Current state
 
-- Branch `integration/aria-all` is being built from `twa-odoo` at `e3fa3f594a6d86aec31d42a65414a96be4c8400e`.
-- PR #168 (`91c287c9817b459f351d0fabc9faa5604c4250f6`) is merged. The LinkedIn bridge, extension, autopilot, and Compose agents service stay deleted.
-- PR #167 (`9e231dfcffc623df0fffce21b6d143df98c9fa5f`) is being merged on top. The approval ledger, `exact_body_hash`, and the Postgres daily cap stay. Its temporary 410 bridge routes do not.
-- Michael's branches, `main`, `vercel-demo`, and `twa-odoo` are not rewritten.
+- Branch `integration/aria-all` is the no-ff merge of `twa-odoo` (`e3fa3f594a6d86aec31d42a65414a96be4c8400e`) plus PRs #168, #167, #170, #169, #171, #176, #175, #178, #174, #172, #177 in that order. #173 was not merged.
+- Conflict notes: `docs/integration/CONFLICTS.md`. Sweep notes: `docs/integration/SWEEP-00.md`.
+- Michael's branches, `main`, `vercel-demo`, and `twa-odoo` were not rewritten. No force-push.
 
 ## Done this shift
 
-- Started the integration merge. Conflict notes go to `docs/integration/CONFLICTS.md`.
+- Merged the eleven heads. The LinkedIn bridge and the Compose agents service stay deleted. Approval migrations are `0012` and `0013`.
+- Added `scripts/integration-e2e.sh`, `scripts/integration-e2e-mac.sh`, `e2e/integration/**`, and `stress/**`.
+- Ran the click sweep under xvfb and stress cases A1-A7. A5 fails: touches are stored after Hired. A8 is the 30 minute soak.
 
 ## Blockers
 
-- Remaining PR heads are not merged yet.
+- `services/ingest/Dockerfile` does not build (`poppler-utils` pin). The overlay skips that image.
+- The Next demo session is a member, so the LinkedIn token switch returns 403.
 
 ## Next steps
 
-1. Finish merges in the requested order.
-2. Package the stack with a 6 GiB ceiling and run the sweep harness.
+1. Read `docs/integration/SWEEP-00.md` and fix each finding on its owning PR, not on this branch.
+2. Re-run `bash scripts/integration-e2e.sh` after those fixes.
 
 ## Decisions made (don't relitigate)
 
-- Tony, 2026-11-20: `twa-odoo` is cut from `mbe-branch`. PRs target `twa-odoo`.
-- Tony, 2026-11-20: Aria never calls the professional-network host. The extension, cookies, Voyager, and web-search sourcing stay out. The token option is a later off-by-default port under `src/channels/linkedin-token/`.
-- Tony, 2026-11-20: MANUAL is the default. FULL AUTOMATIC is opt-in and requires a QC pass bound to the exact body hash.
-- `body_hash` stays the wire hash. `exact_body_hash` is the exact approval binding.
-- ADR 0002 is withdrawn. Do not reimplement the agents runner.
-- Synthetic data only. No live sends, deploys, or paid calls.
+- Tony, 2026-11-20: Aria does not call the professional-network host. The extension and the bridge stay deleted. The token option is only `src/channels/linkedin-token/`, off by default.
+- Tony, 2026-11-20: MANUAL is the default. FULL AUTOMATIC needs a QC pass bound to the exact body hash.
+- `body_hash` is the wire hash. `exact_body_hash` is the exact binding. The daily cap is the Postgres counter from #167.
+- ADR 0002 stays withdrawn. Do not put the agents service back.
+- This branch is a test vehicle. Do not merge it.
 
 ## Watch out
 
-- `0010` and `0011` remain the forward-only drops. #167's approval SQL is `0012` and `0013` so the version numbers do not collide.
+- One Compose healthcheck: the app ready probe. Do not re-add `process.kill(1,0)` on an agents service.
+- One accept-script locator: the visible Manual tabpanel Name field in `scripts/accept-local-demo.mjs`.
 - Do not force-push or delete `mbe-branch`, `mbe-ngrok`, `mbe-test`, or `twa-odoo`.
