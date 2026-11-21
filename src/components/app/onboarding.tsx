@@ -36,8 +36,12 @@ export function Onboarding() {
   const tutorial = useTutorial();
 
   React.useEffect(() => {
-    // Never stack on top of the tutorial someone just opened.
-    if (pathname !== "/" || tutorial.open) return;
+    // Never stack on top of the tutorial someone just opened, and never keep
+    // the dialog mounted on another page. A return to Home after Skip stays closed.
+    if (pathname !== "/" || tutorial.open) {
+      setOpen(false);
+      return;
+    }
     try {
       if (!localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_KEY)) setOpen(true);
     } catch {
