@@ -8,7 +8,7 @@ import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
 import { approvalPolicyFromEnv } from "@/lib/approval/allowlist";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
-import { approvalScopeHash } from "@/lib/outreach-content";
+import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -92,7 +92,8 @@ export async function POST(req: NextRequest) {
   // Hash the EXACT content the operator approved; the send route recomputes this
   // and refuses if it differs (the body was changed after approval).
   const approvedAt = new Date().toISOString();
-  const bodyHash = exactBodyHash({
+  const bodyHash = approvalHash(subject, body);
+  const exactHash = exactBodyHash({
     channel,
     recipient,
     subject,
@@ -125,6 +126,7 @@ export async function POST(req: NextRequest) {
     p_body_hash: bodyHash,
     p_approval_scope_hash: scopeHash,
     p_approved_at: approvedAt,
+    p_exact_body_hash: exactHash,
   });
   const result = recorded as { ok?: boolean; reason?: string } | null;
   if (error || result?.ok !== true) {

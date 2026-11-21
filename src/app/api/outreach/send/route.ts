@@ -13,11 +13,11 @@ import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit"
 import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
-import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
+import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
 import { sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { consultApprovalLedger } from "@/lib/approval/ledger";
-import { approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
+import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -151,13 +151,14 @@ export async function POST(req: NextRequest) {
   }
   const { data: approval } = await supabase
     .from("outreach_approvals")
-    .select("body_hash, approval_scope_hash, approval_source, approved_at, approved_by")
+    .select("body_hash, exact_body_hash, approval_scope_hash, approval_source, approved_at, approved_by")
     .eq("workspace_id", approvalWid)
     .eq("message_id", payload.messageId)
     .is("revoked_at", null)
     .maybeSingle();
   const approvedAt = typeof approval?.approved_at === "string" ? approval.approved_at : "";
   const approverId = typeof approval?.approved_by === "string" ? approval.approved_by : "";
+  const wireHash = approvalHash(subject, body);
   const approvedContentHash = exactBodyHash({
     channel,
     recipient: candidateEmail,
@@ -167,9 +168,11 @@ export async function POST(req: NextRequest) {
     approverId,
     approvedAt,
   });
+  const storedExact = typeof approval?.exact_body_hash === "string" ? approval.exact_body_hash : "";
   if (
     !approval ||
-    approval.body_hash !== approvedContentHash ||
+    approval.body_hash !== wireHash ||
+    storedExact !== approvedContentHash ||
     approval.approval_scope_hash !== approvedScopeHash ||
     approval.approval_source !== "human" ||
     !approvalIsCurrent(approval.approved_at, Date.now(), approvalTtlMs(process.env))
@@ -187,7 +190,8 @@ export async function POST(req: NextRequest) {
     noticeVersion: OUTREACH_NOTICE_VERSION,
     approverId,
     approvedAt,
-    storedBodyHash: approval.body_hash,
+    storedBodyHash: storedExact,
+    storedWireHash: approval.body_hash,
     env: process.env,
   });
   if (!ledgerDecision.allowed) {
@@ -238,6 +242,40 @@ export async function POST(req: NextRequest) {
 
   if (publicDemoSideEffectsDisabled()) {
     return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
+  }
+
+  const dailyCap = channelDailyCapFromEnv(process.env);
+  const { data: sentTodayRow } = await supabase.rpc("outreach_channel_sent_today", {
+    p_workspace_id: approvalWid,
+    p_channel: channel,
+  });
+  const sentTodayRecord = sentTodayRow as { sent_count?: number } | null;
+  const sentToday = typeof sentTodayRecord?.sent_count === "number" ? sentTodayRecord.sent_count : 0;
+  const capPreview = consultApprovalLedger({
+    channel,
+    recipient: candidateEmail,
+    subject,
+    body,
+    noticeVersion: OUTREACH_NOTICE_VERSION,
+    approverId,
+    approvedAt,
+    storedBodyHash: storedExact,
+    storedWireHash: approval.body_hash,
+    env: process.env,
+    dailyCap: dailyCap,
+    sentToday,
+  });
+  if (!capPreview.allowed) {
+    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
+  }
+  const { data: consumed } = await supabase.rpc("consume_outreach_channel_daily_cap", {
+    p_workspace_id: approvalWid,
+    p_channel: channel,
+    p_cap: dailyCap,
+  });
+  const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
+  if (capDecision?.allowed !== true) {
+    return NextResponse.json({ status: "error", detail: "Channel daily cap reached." }, { status: 403 });
   }
 
   // Domain verification happens before the irreversible claim. A dry-run

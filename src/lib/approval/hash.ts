@@ -21,6 +21,15 @@ function canonical(value: string | null | undefined): string {
   return (value ?? "").normalize("NFC");
 }
 
+/** UTC timestamp with millisecond precision, the form Postgres stores and returns. */
+export function canonicalApprovalTimestamp(value: string | null | undefined): string {
+  const text = canonical(value).trim();
+  if (!text) return "";
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return text;
+  return new Date(parsed).toISOString();
+}
+
 /**
  * Hash of the exact text a send would deliver.
  *
@@ -37,7 +46,7 @@ export function exactBodyHash(message: HashableMessage): string {
   const body = canonical(message.body);
   const noticeVersion = canonical(message.noticeVersion).trim();
   const approverId = canonical(message.approverId).trim();
-  const approvedAt = canonical(message.approvedAt).trim();
+  const approvedAt = canonicalApprovalTimestamp(message.approvedAt);
   return createHash("sha256")
     .update(
       lengthPrefixed(channel) +

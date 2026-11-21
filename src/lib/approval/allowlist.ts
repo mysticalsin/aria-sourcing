@@ -2,6 +2,9 @@ import type { PolicyEnv, PolicyResult } from "./types";
 
 export const DEFAULT_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Safety cap used when ARIA_CHANNEL_DAILY_CAP is unset. The count lives in Postgres. */
+export const DEFAULT_CHANNEL_DAILY_CAP = 50;
+
 const KILL_SWITCH_OFF = new Set(["0", "false", "off"]);
 const KILL_SWITCH_ON = new Set(["1", "true", "on"]);
 
@@ -12,29 +15,14 @@ export interface RecipientAllowlist {
 
 export type RunMode = "demo" | "test";
 
-const HOMOGLYPHS: Readonly<Record<string, string>> = {
-  "\u0430": "a",
-  "\u0435": "e",
-  "\u043e": "o",
-  "\u0440": "p",
-  "\u0441": "c",
-  "\u0445": "x",
-  "\u0443": "y",
-  "\u0456": "i",
-  "\u0410": "a",
-  "\u0415": "e",
-  "\u041e": "o",
-  "\u0420": "p",
-  "\u0421": "c",
-  "\u0425": "x",
-  "\u0423": "y",
-  "\u0406": "i",
-};
+/** A recipient with any non-ASCII character, including an IDN homoglyph, is refused. */
+export function recipientHasNonAscii(value: string): boolean {
+  return /[^\u0000-\u007f]/.test(value.normalize("NFC"));
+}
 
-/** NFC, then fold Cyrillic lookalikes, then trim and lowercase. */
+/** NFC, then trim and lowercase. Non-ASCII characters are not folded into ASCII. */
 export function normalizeRecipient(value: string): string {
-  const folded = value.normalize("NFC").replace(/[\u0400-\u04FF]/g, (ch) => HOMOGLYPHS[ch] ?? ch);
-  return folded.trim().toLocaleLowerCase();
+  return value.normalize("NFC").trim().toLocaleLowerCase();
 }
 
 /** Split a configured list on commas, semicolons, or whitespace. Empty tokens drop out. */
@@ -81,8 +69,12 @@ function hostOf(value: string): string {
  */
 export function recipientAllowed(allowlist: RecipientAllowlist, recipient: string): boolean {
   if (!allowlist.enforced) return true;
+  if (recipientHasNonAscii(recipient)) return false;
   const key = normalizeRecipient(recipient);
   if (!key) return false;
+  if (/[^\u0000-\u007f]/.test(key) || key.split("@").pop()?.split(".").some((label) => label.startsWith("xn--"))) {
+    return false;
+  }
   if (allowlist.entries.has(key)) return true;
   const host = hostOf(key);
   for (const entry of allowlist.entries) {
@@ -140,6 +132,18 @@ export function approvalTtlMs(env: PolicyEnv): number {
     return 0;
   }
   return days * 24 * 60 * 60 * 1000;
+}
+
+/** Positive integer cap. Unset uses the default. An unparseable value is zero, so nothing sends. */
+export function channelDailyCapFromEnv(env: PolicyEnv): number {
+  const raw = env.ARIA_CHANNEL_DAILY_CAP;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_CHANNEL_DAILY_CAP;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    console.warn("ARIA_CHANNEL_DAILY_CAP is set to an unrecognized value; the daily cap is zero.");
+    return 0;
+  }
+  return Math.floor(value);
 }
 
 export function approvalIsCurrent(approvedAt: string | null | undefined, nowMs: number, ttlMs: number): boolean {

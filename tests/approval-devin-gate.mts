@@ -60,9 +60,9 @@ test("test_send_path_uses_exact_body_hash_and_refuses_a_later_edit", async () =>
   const send = read("src/app/api/outreach/send/route.ts");
   const dispatch = read("src/lib/dispatch-outbound.ts");
   assert.match(send, /exactBodyHash\(/);
-  assert.doesNotMatch(send, /approvalHash\(/);
+  assert.match(send, /approvalHash\(/);
   assert.match(dispatch, /exactBodyHash\(/);
-  assert.doesNotMatch(dispatch, /approvalHash\(/);
+  assert.match(dispatch, /approvalHash\(/);
   assert.match(send, /consultApprovalLedger\(/);
   assert.match(dispatch, /consultApprovalLedger\(/);
 
@@ -230,10 +230,10 @@ test("test_allowlist_matches_exact_host_or_dot_boundary_only", () => {
   assert.equal(recipientAllowed(list, "ada@example.com.evil.test"), false);
 });
 
-test("test_allowlist_keeps_homoglyph_fold_and_recipient_trim", () => {
+test("test_allowlist_trims_ascii_and_refuses_homoglyphs", () => {
   const list = recipientAllowlist("demo", "ada@example.test");
   assert.equal(recipientAllowed(list, "  ada@example.test  "), true);
-  assert.equal(recipientAllowed(list, "\u0430da@example.test"), true);
+  assert.equal(recipientAllowed(list, "\u0430da@example.test"), false);
 });
 
 test("test_dispatcher_passes_profile_url_to_the_allowlist_target", () => {

@@ -100,6 +100,17 @@ jobs:
         run: |
           set -euo pipefail
           gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
+          git rev-list --all > "$RUNNER_TEMP/all-commits"
+          while IFS= read -r line; do
+            case "$line" in
+              ''|\#*) continue ;;
+            esac
+            sha="${line%%:*}"
+            grep -qx "$sha" "$RUNNER_TEMP/all-commits" || {
+              echo "gitleaks ignore commit is not reachable with --all: $sha" >&2
+              exit 1
+            }
+          done < .gitleaksignore
 
   database-security:
     name: Database security

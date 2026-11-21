@@ -3,7 +3,7 @@ import { mock } from "node:test";
 import { NextRequest } from "next/server";
 import { isPublicDemoSideEffectBlocked } from "../src/lib/demo-side-effect-policy";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "../src/lib/approval/hash.ts";
-import { approvalScopeHash } from "../src/lib/outreach-content";
+import { approvalHash, approvalScopeHash } from "../src/lib/outreach-content";
 
 let pass = 0;
 let fail = 0;
@@ -170,6 +170,7 @@ const sendPayload = {
 const approvedAt = new Date().toISOString();
 const approverId = "user-1";
 process.env.ARIA_RECIPIENT_ALLOWLIST = sendPayload.candidateEmail;
+const approvedWireHash = approvalHash(sendPayload.subject, sendPayload.body);
 const approvedBodyHash = exactBodyHash({
   channel: sendPayload.channel,
   recipient: sendPayload.candidateEmail,
@@ -212,7 +213,8 @@ currentSupabase = {
   from: (table: string) => {
     if (table === "outreach_approvals") {
       return queryResult({
-        body_hash: approvedBodyHash,
+        body_hash: approvedWireHash,
+        exact_body_hash: approvedBodyHash,
         approval_scope_hash: approvedScopeHash,
         approval_source: "human",
         approved_at: approvedAt,

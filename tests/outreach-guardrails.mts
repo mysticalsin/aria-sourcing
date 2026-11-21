@@ -128,7 +128,7 @@ const baselineSchema = loadBaselineSchema();
 const approvalLifecycleMigration = readFileSync(new URL("../supabase/migrations/0001_baseline.sql", import.meta.url), "utf8");
 const approvalRaceMigrationPath = new URL("../supabase/migrations/0001_baseline.sql", import.meta.url);
 const approvalRaceMigration = existsSync(approvalRaceMigrationPath) ? readFileSync(approvalRaceMigrationPath, "utf8") : "";
-ok("send route reads approval provenance", /select\("body_hash, approval_scope_hash, approval_source, approved_at, approved_by"\)/.test(sendRoute));
+ok("send route reads approval provenance", /select\("body_hash, exact_body_hash, approval_scope_hash, approval_source, approved_at, approved_by"\)/.test(sendRoute));
 ok("send route rejects approval provenance other than human", /approval\.approval_source\s*!==\s*"human"/.test(sendRoute));
 ok("send route verifies the approval scope", /approval\.approval_scope_hash\s*!==\s*approvedScopeHash/.test(sendRoute));
 ok("send route never calls the WhatsApp adapter directly", !/await sendWhatsApp\(/.test(sendRoute));

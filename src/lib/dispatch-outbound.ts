@@ -17,11 +17,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gateOutbound } from "@/lib/gate";
 import { safeLog } from "@/lib/log-redact";
-import { approvalIsCurrent, approvalTtlMs } from "@/lib/approval/allowlist";
+import { approvalIsCurrent, approvalTtlMs, channelDailyCapFromEnv } from "@/lib/approval/allowlist";
 import { deliveryTargetForChannel, sendPolicyFromEnv } from "@/lib/approval/dispatch-guard";
 import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { consultApprovalLedger } from "@/lib/approval/ledger";
-import { approvalScopeHash } from "@/lib/outreach-content";
+import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 import { performEmailSend } from "@/lib/email-send";
@@ -130,12 +130,13 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       const approvalMessageId = msg.approval_message_id ?? msg.id;
       const { data: approval } = await supabase
         .from("outreach_approvals")
-        .select("body_hash, approval_scope_hash, approval_source, revoked_at, approved_at, approved_by")
+        .select("body_hash, exact_body_hash, approval_scope_hash, approval_source, revoked_at, approved_at, approved_by")
         .eq("workspace_id", msg.workspace_id)
         .eq("message_id", approvalMessageId)
         .maybeSingle();
       const approvedAt = typeof approval?.approved_at === "string" ? approval.approved_at : "";
       const approverId = typeof approval?.approved_by === "string" ? approval.approved_by : "";
+      const wireHash = approvalHash(msg.subject ?? "", msg.body);
       const bodyHash = exactBodyHash({
         channel: msg.channel,
         recipient: deliveryTarget,
@@ -145,6 +146,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         approverId,
         approvedAt,
       });
+      const storedExact = typeof approval?.exact_body_hash === "string" ? approval.exact_body_hash : "";
       const scopeHash = approvalScopeHash({
         candidateId: msg.candidate_id,
         channel: msg.channel,
@@ -153,7 +155,8 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
       if (
         !approval ||
         approval.revoked_at ||
-        approval.body_hash !== bodyHash ||
+        approval.body_hash !== wireHash ||
+        storedExact !== bodyHash ||
         approval.approval_source !== "human" ||
         !scopeHash ||
         approval.approval_scope_hash !== scopeHash ||
@@ -163,7 +166,7 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
           ? "no-approval"
           : approval.revoked_at
             ? "approval-revoked"
-            : approval.body_hash !== bodyHash
+            : approval.body_hash !== wireHash || storedExact !== bodyHash
             ? "approval-hash-mismatch"
             : approval.approval_source !== "human"
             ? "approval-not-human"
@@ -173,6 +176,16 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         await finish("blocked", { pass: false, reasons: [reason] });
         continue;
       }
+      const dailyCap = channelDailyCapFromEnv(process.env);
+      const utcDay = new Date().toISOString().slice(0, 10);
+      const { data: capRow } = await supabase
+        .from("outreach_channel_daily_sends")
+        .select("sent_count")
+        .eq("workspace_id", msg.workspace_id)
+        .eq("channel", msg.channel)
+        .eq("send_day", utcDay)
+        .maybeSingle();
+      const sentToday = typeof capRow?.sent_count === "number" ? capRow.sent_count : Number(capRow?.sent_count ?? 0);
       const ledgerDecision = consultApprovalLedger({
         channel: msg.channel,
         recipient: deliveryTarget,
@@ -181,12 +194,25 @@ export async function dispatchDue(supabase: SupabaseClient, limit = 10, messageI
         noticeVersion: OUTREACH_NOTICE_VERSION,
         approverId,
         approvedAt,
-        storedBodyHash: approval.body_hash,
+        storedBodyHash: storedExact,
+        storedWireHash: approval.body_hash,
         env: process.env,
         profileUrl,
+        dailyCap: dailyCap,
+        sentToday: Number.isFinite(sentToday) ? sentToday : 0,
       });
       if (!ledgerDecision.allowed) {
         await finish("blocked", { pass: false, reasons: [ledgerDecision.reason] });
+        continue;
+      }
+      const { data: consumed, error: capError } = await supabase.rpc("consume_outreach_channel_daily_cap", {
+        p_workspace_id: msg.workspace_id,
+        p_channel: msg.channel,
+        p_cap: dailyCap,
+      });
+      const capDecision = consumed as { allowed?: boolean; reason?: string } | null;
+      if (capError || capDecision?.allowed !== true) {
+        await finish("blocked", { pass: false, reasons: [capDecision?.reason ?? "channel-cap"] });
         continue;
       }
 

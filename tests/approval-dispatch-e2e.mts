@@ -58,9 +58,10 @@ function serviceJson(call: string): Record<string, unknown> {
     select set_config('request.jwt.claims', '{"sub":"${USER}","role":"service_role"}', false);
     select set_config('request.jwt.claim.sub', '${USER}', false);
     select set_config('request.jwt.claim.role', 'service_role', false);
+    set role service_role;
     select (${call})::text;
   `);
-  const line = raw.split(/\n/).filter((item) => item.startsWith("{")).at(-1) ?? "";
+  const line = raw.split(/\n/).map((item) => item.trim()).filter(Boolean).at(-1) ?? "";
   return JSON.parse(line) as Record<string, unknown>;
 }
 
@@ -166,10 +167,6 @@ function client() {
       return api;
     },
     async rpc(fn: string, args: Record<string, unknown> = {}) {
-      const rendered = Object.entries(args).map(([key, value]) => {
-        if (typeof value === "number") return `${key} := ${value}`;
-        return `${key} := ${sqlLiteral(String(value))}${key.endsWith("_id") && key !== "p_message_id" ? "" : ""}`;
-      }).join(", ");
       const typed = Object.entries(args).map(([key, value]) => {
         if (typeof value === "number") return `${key} := ${value}`;
         if (key === "p_message_id" && fn !== "claim_email_outbound") return `${key} := ${sqlLiteral(String(value))}::uuid`;
@@ -177,7 +174,6 @@ function client() {
         if (key === "p_workspace_id") return `${key} := ${sqlLiteral(String(value))}::uuid`;
         return `${key} := ${sqlLiteral(String(value))}`;
       }).join(", ");
-      void rendered;
       try {
         return { data: serviceJson(`public.${fn}(${typed})`), error: null };
       } catch (error) {

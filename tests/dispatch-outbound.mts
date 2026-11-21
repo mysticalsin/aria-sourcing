@@ -106,6 +106,9 @@ function makeFakeDb(seed: {
     from: (name: string) => query(name),
     rpc: (fn: string, args: Row) => {
       rpcCalls.push({ fn, args });
+      if (fn === "consume_outreach_channel_daily_cap" || fn === "outreach_channel_sent_today") {
+        return Promise.resolve({ data: { allowed: true, reason: "authorized", sent_count: 0 }, error: null });
+      }
       if (fn === "record_whatsapp_provider_acceptance") {
         const acceptance = seed.acceptance ?? { allowed: true, reason: "recorded" };
         if (acceptance.allowed === true && !seed.acceptanceError) {
@@ -305,7 +308,13 @@ for (const channel of ["WhatsApp", "SMS"]) {
 {
   const db = makeFakeDb({
     outbound: [baseMsg()],
-    approvals: [{ workspace_id: "ws-1", message_id: "m-1", body_hash: exactApproval(GOOD_BODY), approval_source: "legacy_unverified" }],
+    approvals: [{
+      workspace_id: "ws-1",
+      message_id: "m-1",
+      body_hash: bodyHash(GOOD_BODY),
+      exact_body_hash: exactApproval(GOOD_BODY),
+      approval_source: "legacy_unverified",
+    }],
     seats: [LIVE_SEAT],
     claim: { allowed: true },
   });

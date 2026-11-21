@@ -8,6 +8,7 @@ import {
   sendPolicyFromEnv,
 } from "./dispatch-guard";
 import { exactBodyHash } from "./hash";
+import { approvalHash } from "../outreach-content";
 import type { QcEvaluation, QualityCheckAgent } from "./qc";
 import type { ExactMessage, LedgerDecision, PolicyEnv, SendMode } from "./types";
 
@@ -251,17 +252,20 @@ export interface LedgerConsultInput {
   approverId: string;
   approvedAt: string | null | undefined;
   storedBodyHash: string | null | undefined;
+  /** Wire hash sha256(subject + newline + body). Checked when the caller has one. */
+  storedWireHash?: string | null;
   env: PolicyEnv;
   nowMs?: number;
   profileUrl?: string | null;
+  /** Cap for this channel. The count is sentToday from Postgres, not this process. */
   dailyCap?: number;
+  sentToday?: number;
 }
-
-const consultCounts = new Map<string, number>();
 
 /**
  * The send route and the dispatcher both call this. It re-checks the exact
- * approved text, the approval TTL, the allowlist target, and the per-day cap.
+ * approved text, the wire hash when supplied, the approval TTL, the allowlist
+ * target, and the persisted per-day count. It does not keep a process-local cap.
  */
 export function consultApprovalLedger(input: LedgerConsultInput): { allowed: boolean; reason: string } {
   const nowMs = input.nowMs ?? Date.now();
@@ -277,6 +281,9 @@ export function consultApprovalLedger(input: LedgerConsultInput): { allowed: boo
   if (!input.storedBodyHash || input.storedBodyHash !== exact) {
     return { allowed: false, reason: "body-hash-mismatch" };
   }
+  if (input.storedWireHash && input.storedWireHash !== approvalHash(input.subject, input.body)) {
+    return { allowed: false, reason: "body-hash-mismatch" };
+  }
   if (!approvalIsCurrent(input.approvedAt, nowMs, approvalTtlMs(input.env))) {
     return { allowed: false, reason: "approval-expired" };
   }
@@ -286,12 +293,8 @@ export function consultApprovalLedger(input: LedgerConsultInput): { allowed: boo
   });
   const policy = sendPolicyFromEnv(input.env, target);
   if (!policy.ok) return { allowed: false, reason: policy.reason };
-  if (typeof input.dailyCap === "number") {
-    const day = new Date(nowMs).toISOString().slice(0, 10);
-    const key = `${input.channel}\n${day}`;
-    const used = consultCounts.get(key) ?? 0;
-    if (used >= input.dailyCap) return { allowed: false, reason: "channel-cap" };
-    consultCounts.set(key, used + 1);
+  if (typeof input.dailyCap === "number" && (input.sentToday ?? 0) >= input.dailyCap) {
+    return { allowed: false, reason: "channel-cap" };
   }
   return { allowed: true, reason: "authorized" };
 }
