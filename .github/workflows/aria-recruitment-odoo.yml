@@ -6,16 +6,8 @@ name: Aria recruitment (Odoo 19)
 on:
   push:
     branches: [vercel-demo, main, twa-odoo]
-    paths:
-      - 'odoo_addons/aria_recruitment/**'
-      - '.github/workflows/aria-recruitment-odoo.yml'
-      - 'scripts/e2e-odoo-mac.sh'
   pull_request:
     branches: ["**"]
-    paths:
-      - 'odoo_addons/aria_recruitment/**'
-      - '.github/workflows/aria-recruitment-odoo.yml'
-      - 'scripts/e2e-odoo-mac.sh'
 
 # One group per workflow and branch. Pull requests cancel a stale run.
 # Pushes to the default branch and twa-odoo do not.
