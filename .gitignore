@@ -83,3 +83,6 @@ production-readiness/e2e-*/
 # Local API secrets (Anthropic key for the AI layer). Never commit.
 .secret
 .secret.*
+
+# Local Odoo dev API key (docker/odoo/setup.sh). Never commit.
+docker/odoo/.odoo-api-key

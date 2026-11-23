@@ -7,6 +7,7 @@ Start with the root [`README.md`](../README.md), then this map.
 | File | Purpose |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Code layout, data authority, sourcing agent, outreach and delivery boundaries, local runtime |
+| [`odoo.md`](odoo.md) | How ARIA works with Odoo Recruitment (system of record), connecting it, what is written and read |
 | [`SOURCING.md`](SOURCING.md) | Sourcing providers, the sourcing agent, scoring, enrichment, candidate corpus, compliance |
 | [`API_DESIGN.md`](API_DESIGN.md) | Contract policy for the internal `/api` routes |
 | [`api/openapi.yaml`](api/openapi.yaml) | Machine-readable contract (currently the candidate-erasure route) |

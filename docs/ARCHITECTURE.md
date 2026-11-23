@@ -142,6 +142,11 @@ available. Do not add login automation, scraping, or rate-limit bypass.
   deterministic synthetic behavior and compatibility re-exports only.
 - Provider keys and OAuth tokens are encrypted at rest and never returned to
   the browser.
+- Odoo Recruitment is the system of record for applications (ADR 0003,
+  [`odoo.md`](odoo.md)). `src/lib/integrations/odoo/` talks to Odoo's JSON-2
+  API with the admin-configured connection (`odoo_connections`); ARIA reads
+  job positions and applicant stages and writes only the recruiter-clicked
+  hand-off (one applicant and one note), recorded in `odoo_applicant_links`.
 - Dust uses normalized admin-owned connection authority; shared
   `workspace_state` cannot select an external tenant, origin, or secret.
 - MCP execution is disabled in production unless the explicit server-side
