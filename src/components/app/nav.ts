@@ -21,6 +21,7 @@ import {
   Inbox,
   Bookmark,
   Network,
+  Map,
   Rocket,
   Rewind,
   ShieldCheck,
@@ -63,6 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
   // System — agent architecture, config & platform internals
   { href: "/studio", label: "Agent Studio", icon: Wand2, section: "System", description: "Build & tune sourcing agents" },
   { href: "/architecture", label: "Architecture", icon: Network, section: "System", description: "TAnIA agent org & guardrails" },
+  { href: "/floor-map", label: "Floor map", icon: Map, section: "System", description: "Checked-in architecture rooms" },
   { href: "/skills", label: "Skills", icon: Brain, section: "System", description: "Learned playbooks" },
   { href: "/memory", label: "Memory", icon: Database, section: "System", description: "Agent long-term memory" },
   { href: "/curator", label: "Files", icon: FolderSearch, section: "System", description: "Aria files & curator" },
