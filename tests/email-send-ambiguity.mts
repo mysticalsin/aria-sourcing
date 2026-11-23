@@ -324,14 +324,25 @@ try {
     recipient: sendPayload.candidateEmail,
   });
 
+  const claimCalls: Array<Record<string, unknown>> = [];
+  let capConsumes = 0;
   const userSupabase = {
     auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
-    rpc: async (name: string) => {
+    rpc: async (name: string, args?: Record<string, unknown>) => {
       if (name === "current_profile_role") return { data: "admin", error: null };
       if (name === "current_workspace_id") return { data: workspaceId, error: null };
-      if (name === "claim_email_outbound") return { data: { allowed: true, reason: "ok", ledger_id: ledgerId }, error: null };
+      if (name === "claim_email_outbound") {
+        claimCalls.push(args ?? {});
+        // Same comparison as claim_email_outbound: p_body_hash must be the stored wire digest.
+        const matches = args?.p_body_hash === approvedWireHash && args?.p_approval_scope_hash === approvedScopeHash;
+        if (!matches) return { data: { allowed: false, reason: "approval-mismatch" }, error: null };
+        return { data: { allowed: true, reason: "ok", ledger_id: ledgerId }, error: null };
+      }
       if (name === "outreach_channel_sent_today") return { data: { sent_count: 0 }, error: null };
-      if (name === "consume_outreach_channel_daily_cap") return { data: { allowed: true, reason: "authorized" }, error: null };
+      if (name === "consume_outreach_channel_daily_cap") {
+        capConsumes += 1;
+        return { data: { allowed: true, reason: "authorized" }, error: null };
+      }
       return { data: null, error: null };
     },
     from: (table: string) => {
@@ -446,6 +457,16 @@ try {
   );
   ok("the stamp rides the same update as the unsubscribe token bind", typeof serviceLedgerPatches[0]?.email_unsubscribe_token_hash === "string");
   ok("the provider was called exactly once", providerFetches === 1);
+  const firstClaim = claimCalls[0] ?? {};
+  ok("wire and exact approval digests differ", approvedWireHash !== approvedBodyHash);
+  ok(
+    "current approval passes the wire hash the claim compares",
+    firstClaim.p_body_hash === approvedWireHash && firstClaim.p_body_hash !== approvedBodyHash,
+  );
+  ok(
+    "a current approval is claimed and a mismatch does not burn the daily cap",
+    firstClaim.p_body_hash === approvedWireHash || capConsumes === 0,
+  );
 
   // (b) Provider 422: definitive rejection -> retryable 'skipped', as before.
   resetCase();

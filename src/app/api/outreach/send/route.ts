@@ -331,7 +331,7 @@ export async function POST(req: NextRequest) {
   // client-visible approval validation and the provider dispatch.
   const { data: claim, error: claimErr } = await supabase.rpc("claim_email_outbound", {
     p_message_id: payload.messageId,
-    p_body_hash: approvedContentHash,
+    p_body_hash: wireHash,
     p_approval_scope_hash: approvedScopeHash,
     p_candidate_id: candidateId,
     p_candidate_email: candidateEmail,
