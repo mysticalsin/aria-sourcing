@@ -1,9 +1,11 @@
 import { redactEmail, redactSecrets } from "@/lib/log-redact";
 
-/** Visible copy for a hire that reached the ERP. */
+/** Visible copy for a hire that reached a connector. */
 export const ODOO_SYNCED_LABEL = "Odoo synced";
 export const SMART_SYNCED_LABEL = "SMART synced";
-/** Visible copy when neither Odoo nor SMART is configured. */
+export const API_SYNCED_LABEL = "API synced";
+export const MCP_SYNCED_LABEL = "MCP synced";
+/** Visible copy when no hire connector is configured. */
 export const ERP_SKIPPED_LABEL = "ERP skipped (no connector configured)";
 /** LinkedIn sourcing still finishes on the skipped-ERP path. */
 export const LINKEDIN_COMPLETED_LABEL = "LinkedIn sourcing completed.";
@@ -20,7 +22,7 @@ export type HireRequest = {
 };
 
 export type HireUiOutcome =
-  | { ok: true; outcome: "synced"; erp: "odoo" | "smart"; label: string; linkedIn: true }
+  | { ok: true; outcome: "synced"; erp: "odoo" | "smart" | "api" | "mcp"; label: string; linkedIn: true }
   | { ok: true; outcome: "skipped"; erp: "skipped"; label: string; linkedIn: true }
   | { ok: false; outcome: "error"; label: string };
 
@@ -76,6 +78,12 @@ export function interpretHireBody(body: unknown): HireUiOutcome {
   if (record.erp === "smart") {
     return { ok: true, outcome: "synced", erp: "smart", label: SMART_SYNCED_LABEL, linkedIn: true };
   }
+  if (record.erp === "api") {
+    return { ok: true, outcome: "synced", erp: "api", label: API_SYNCED_LABEL, linkedIn: true };
+  }
+  if (record.erp === "mcp") {
+    return { ok: true, outcome: "synced", erp: "mcp", label: MCP_SYNCED_LABEL, linkedIn: true };
+  }
   if (record.erp === "skipped") {
     return { ok: true, outcome: "skipped", erp: "skipped", label: ERP_SKIPPED_LABEL, linkedIn: true };
   }
@@ -96,7 +104,7 @@ export function hireStatusText(outcome: HireUiOutcome): string {
 
 /**
  * Ask the server to record the hire. The browser never talks to Odoo, SMART,
- * or LinkedIn; it only reads the route's synced, skipped, or error result.
+ * a generic API, MCP, or LinkedIn; it only reads the route's synced, skipped, or error result.
  */
 export async function postCandidateHire(
   request: HireRequest,

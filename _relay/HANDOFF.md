@@ -1,47 +1,46 @@
 ---
 project: MSourcing / ARIA
-shift: 438
+shift: 439
 agent: cursor-grok
-updated: 2026-11-23T13:35Z
-status: local-main-motion
+updated: 2026-11-23T19:59Z
+status: draft-pr
 ---
 
-# Handoff — Shift 438
+# Handoff — Shift 439
 
 ## Current state
 
-- Audit `0fd61f6c78424cc9eca867d10d8b60e321364f46`. Hire route `66cbfac6432c3023a85a8f2d2fff374251b41840`. Next 16 agent-rules block `91386259`. This handoff sits on top of those.
-- `origin/main` is still `b5480986`. Do not push. Do not open a PR. GitHub rejected `main` (`GH006`, protected branch).
-- `npx tsc --noEmit && npm test` green with `flyctl` on `PATH` and `FLY_API_TOKEN=local-validate-only`.
-- Manifest freeze: pretest 51, application 156, posttest 2, all 209, parity 211.
-- `npm audit`: 1 high remains (`zod` 3.25.76). Fix is `zod@4.6.7`, a major. Left on 3.x. Critical, the other highs, and the previous 10 moderates are cleared.
-- Installed: `next` 16.4.6, `eslint-config-next` 16.4.6, `postcss` 8.5.33 (including the `next.postcss` override), `sharp` 0.35.5, `nanoid` 3.3.20, `browserslist` 4.29.6, `brace-expansion` 1.1.22, `source-map-js` 1.2.4.
+- Branch `cursor/hire-api-mcp-connectors-ec87`, started at `b27c06822882a43ddf748f148717ac9b89cd8394` (`cursor/hire-action-ui-defa`).
+- `POST /api/hire` order when `HIRE_CONNECTOR` is unset: Odoo, then SMART, then generic HTTPS API (`HIRE_API_URL` and `HIRE_API_TOKEN`), then MCP (`HIRE_MCP_URL` and `HIRE_MCP_TOKEN`, tool `HIRE_MCP_TOOL` or `hire`), otherwise `{ ok: true, erp: "skipped", linkedIn: true }` and no upstream request.
+- `HIRE_CONNECTOR=odoo|smart|api|mcp` selects that path. Demo requests drop those connector variables.
+- Generic API posts to `/v1/hire/{hr.job|hr.applicant}`. MCP does initialize, notifications/initialized, then tools/call. Both use `fetchPublicUrl` and `redirect: "error"`. A false or empty upstream payload is an error. Tokens are scrubbed from error text.
+- `npx tsc --noEmit`, `tsc -p tsconfig.tests.json --noEmit`, and `npm test` were green on this branch with flyctl 0.5.15 on `PATH` and `FLY_API_TOKEN=local-validate-only`. Hire results: connector 52, pipeline 31, ui 10.
+- `workers/graphify-lessons/Dockerfile` was not edited. `workers/graphify-lessons/test_worker.py` still rejects `apt-get` in that file. The upgrade line is on the base tip and is expected to be reverted on `cursor/hire-action-ui-defa`.
 
 ## Done this shift
 
-1. Dependency audit commit `0fd61f6c`.
-2. Stress, no code change. In process: score 2,000 candidates 19.4 ms; brief-skill scan 2,000 texts 20 ms; map 500 LinkedIn leads 15.9 ms (454 kept, 46 below the quality bar); 100 metric recomputes of 2,000 candidates 34.7 ms. Warmed pages: `/candidates` 343–361 ms, design campaign 275–332 ms, `/outreach` 70–101 ms, `/campaigns` 200 ms, floor heading 189–194 ms, 3D canvas 402 ms after the toggle. Source next batch 472–540 ms (6 accepted, 2 skipped). Hired click to toast 487–501 ms.
-3. `runSourcingThroughHired` in `src/lib/mcp-client.ts`. HTTP `POST /api/hire`. Odoo runs hr.job create, hr.applicant create, stage write, hire write (authenticate then execute_kw each step). SMART posts the same four steps with a bearer token. Neither configured: `{ ok: true, erp: "skipped", linkedIn: true }` and no fetch. `tests/hire-pipeline.mts` 15 passed.
-4. Motion on the sourcing-to-hired path. Stage clicks were replaying a 1.5s chart tween and logging 0×0 chart measures from the hidden campaign chart. Drawer slide, fit radar, gauge, distribution bars, and the outreach checklist now use 180ms. The offer/hired panel sits below the stage buttons. Re-checked in the browser: LinkedIn panel still shows, chart warnings 0, offer/hired button position unchanged, guardrail detail opens.
+1. Generic HTTPS API and MCP hire connectors beside the existing Odoo and SMART connectors. Odoo and SMART function bodies were left as they were on `b27c0682`.
+2. Hire drawer labels for `erp: "api"` and `erp: "mcp"`.
+3. Blank `HIRE_API_*`, `HIRE_MCP_*`, and `HIRE_CONNECTOR` entries in the env examples.
 
 ## Blockers
 
-- Push of `main` is still blocked. Tony has not allowed a PR.
-- Live Odoo needs `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY`. Live SMART needs `SMART_URL` and `SMART_TOKEN`. Live Recruiter needs `LINKEDIN_RSC_URL` (HTTPS API, not a linkedin.com page) and `LINKEDIN_RSC_TOKEN`.
-- Zod high stays until a Zod 4 migration is explicitly accepted.
+- None for this slice. The graphify image no-apt failure belongs to the base tip, not this diff.
 
 ## Next steps
 
-1. Stay on local `main`. Do not create a branch and do not push until a PR is allowed.
-2. Do not run `npm audit fix --force`. That installs Zod 4.
+1. Open the draft PR onto `cursor/hire-action-ui-defa`. Do not push that branch and do not move PR #308.
+2. Leave the graphify Dockerfile apt line for the revert on `cursor/hire-action-ui-defa`.
 
 ## Decisions made (don't relitigate)
 
-- Zod stays on 3.x
+- Zod stays on 3.x on older local main notes; this branch already carries the Zod 4.6.7 change from `b27c0682`. Do not downgrade it here.
 - LinkedIn policy stays assisted-manual or official Recruiter System Connect
 - Do not copy cookie scraping, login evasion, Voyager, or the LinkedIn browser bridge
-- `linkedInSourcingRunsWithoutErp` returns true. ERP sync is gated separately
-- Odoo is preferred when both Odoo and SMART are configured
+- `linkedInSourcingRunsWithoutErp` returns true. Connector sync is gated separately
+- Unset `HIRE_CONNECTOR` prefers Odoo, then SMART, then the generic API, then MCP
+- Demo hire requests strip Odoo, SMART, generic API, and MCP credentials
+- Do not edit `workers/graphify-lessons/Dockerfile` on this branch
 - #49 closed permanently; #51 was the Europe successor
 - Slim Fly deploy preserves live 0079 migration identity
 
@@ -49,6 +48,7 @@ status: local-main-motion
 
 - `tests/public-fetch.mts` forbids a `fetch(` call in `src/lib/mcp-client.ts`. The hire runner takes an injected fetch and does not call `fetch(`
 - `POST /api/hire` uses the same demo, origin, rate-limit, and `source` permission gates as `POST /api/source`
-- A partial Odoo env does not call fetch; LinkedIn sourcing still completes
-- Manifest contract hashes must be recomputed when a test is added
+- A partial connector env does not call fetch; LinkedIn sourcing still completes
+- Manifest contract hashes must be recomputed when a test is added. This shift only extended existing hire tests
 - `FLY_API_TOKEN=local-validate-only` is only for local `flyctl config validate`. Do not commit it
+- Do not push `cursor/hire-action-ui-defa`

@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import {
+  API_SYNCED_LABEL,
   ERP_SKIPPED_LABEL,
   LINKEDIN_COMPLETED_LABEL,
+  MCP_SYNCED_LABEL,
   ODOO_SYNCED_LABEL,
   SMART_SYNCED_LABEL,
   buildHireRequest,
@@ -82,6 +84,29 @@ ok(
     hireStatusText(smart.outcome) === SMART_SYNCED_LABEL &&
     localHireCompletes(smart.outcome) &&
     smart.calls[0]?.url === "/api/hire",
+);
+
+const api = await post({ ok: true, erp: "api", linkedIn: true, steps: [] });
+ok(
+  "generic API sync is shown from POST /api/hire",
+  api.outcome.ok === true &&
+    api.outcome.outcome === "synced" &&
+    api.outcome.erp === "api" &&
+    api.outcome.label === API_SYNCED_LABEL &&
+    hireStatusText(api.outcome) === API_SYNCED_LABEL &&
+    localHireCompletes(api.outcome) &&
+    api.calls[0]?.url === "/api/hire",
+);
+
+const mcp = await post({ ok: true, erp: "mcp", linkedIn: true, steps: [] });
+ok(
+  "MCP sync is shown from POST /api/hire",
+  mcp.outcome.ok === true &&
+    mcp.outcome.outcome === "synced" &&
+    mcp.outcome.erp === "mcp" &&
+    hireStatusText(mcp.outcome) === MCP_SYNCED_LABEL &&
+    localHireCompletes(mcp.outcome) &&
+    mcp.calls[0]?.url === "/api/hire",
 );
 
 const skipped = await post({ ok: true, erp: "skipped", linkedIn: true, steps: [] });

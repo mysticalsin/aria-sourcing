@@ -13,9 +13,10 @@ export const runtime = "nodejs";
 
 /**
  * Move one sourced applicant from job opening through hire.
- * Odoo (hr.job, hr.applicant, stage, hire) when Odoo env is complete,
- * otherwise SMART. With neither system configured, LinkedIn sourcing
- * still completes and no ERP request is sent. Demo mode never reaches an ERP.
+ * Odoo when its env is complete, otherwise SMART, otherwise a generic
+ * HTTPS API, otherwise an MCP hire tool. HIRE_CONNECTOR selects one path.
+ * With none configured, LinkedIn sourcing still completes and no upstream
+ * request is sent. Demo mode never reaches a connector.
  */
 const HireSchema = z.object({
   idempotencyKey: z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/),
