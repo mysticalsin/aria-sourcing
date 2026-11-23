@@ -290,6 +290,51 @@ const liResult = mapWebSearchCandidates(
 ok("LinkedIn lead sets linkedinUrl", liResult.accepted[0]?.linkedinUrl === "https://www.linkedin.com/in/jane-doe-4471");
 ok("LinkedIn lead leaves sourceUrl unset", liResult.accepted[0]?.sourceUrl === undefined);
 
+const companyOnly = extractLead(
+  { title: "Jane Doe - Capgemini | LinkedIn", url: "https://www.linkedin.com/in/jane-doe", snippet: "Backend engineer working on Go services." },
+  "LinkedIn",
+);
+ok("two-part LinkedIn title: a company is not taken for the job title", companyOnly.company === "Capgemini");
+ok("two-part LinkedIn title: the title falls back to the result text", companyOnly.title === "Backend engineer working on Go services");
+const bioOnly = extractLead(
+  { title: "Kris V. - Greater Paris Metropolitan Region | LinkedIn", url: "https://www.linkedin.com/in/kris-v", snippet: "I will contribute to its expansion in France and lead on Transformation." },
+  "LinkedIn",
+);
+ok("a bio sentence is not taken for the headline", bioOnly.title === "");
+ok("a region in the company slot becomes the location", bioOnly.location === "Greater Paris Metropolitan Region" && bioOnly.company === "");
+const similar = extractLead(
+  { title: "Tristan B. | LinkedIn", url: "https://www.linkedin.com/in/tristan-b", snippet: "## Other similar profiles\n- Axel D. 🍀 I lead group-level digital transformation" },
+  "LinkedIn",
+);
+ok("another member's text under 'Other similar profiles' is dropped", similar.title === "" && similar.snippet === "");
+const statedPlace = extractLead(
+  { title: "Aldric V. - As an expert in digital transformation, I have acquired a… · Location: Paris. | LinkedIn", url: "https://www.linkedin.com/in/aldric-v", snippet: "" },
+  "LinkedIn",
+);
+ok("'Location: X' in a bio headline gives the location, not a title", statedPlace.title === "" && statedPlace.location === "Paris");
+ok("a lead without a stated place has no location", liLead.location === undefined);
+const titleOnly = extractLead({ title: "Jean Martin - Ingénieur DevOps | LinkedIn", url: "https://www.linkedin.com/in/jean-martin", snippet: "" }, "LinkedIn");
+ok("two-part LinkedIn title: a job title stays the title", titleOnly.title === "Ingénieur DevOps" && titleOnly.company === "");
+
+const weak = mapWebSearchCandidates(
+  [{ name: "No Role", title: "", company: "", url: "https://www.linkedin.com/in/no-role", snippet: "Hello there." }],
+  campaign,
+  "site:linkedin.com/in engineer",
+  "LinkedIn",
+  [],
+  W,
+);
+ok("a LinkedIn profile with no role and no brief skill is not kept", weak.accepted.length === 0 && weak.skipped.length === 1);
+const skilled = mapWebSearchCandidates(
+  [{ name: "Ada", title: "", company: "Northwind", url: "https://www.linkedin.com/in/ada", snippet: "Kubernetes and PostgreSQL.", location: "Lyon, France" }],
+  campaign,
+  "site:linkedin.com/in kubernetes",
+  "LinkedIn",
+  [],
+  W,
+);
+ok("a skill named in the public text keeps the profile and its location", skilled.accepted[0]?.techStack.includes("Kubernetes") && skilled.accepted[0]?.location === "Lyon, France");
+
 // --- dedupeCandidates: sourceUrl is a dedupe key (Dribbble/Behance/SO) ---
 const existingWithSourceUrl = [{ ...webResult.accepted[0]!, id: "existing_1" }];
 const dupeAttempt = dedupeCandidates(

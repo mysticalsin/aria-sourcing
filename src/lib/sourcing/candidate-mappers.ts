@@ -3,6 +3,7 @@ import { scoreCandidate } from "@/lib/scoring";
 import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
+import { skillsObservedIn, linkedInProfileMeetsQualityBar } from "@/lib/sourcing/skill-evidence";
 import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
@@ -205,10 +206,22 @@ export function mapWebSearchCandidates(
 ): SourceResult {
   const jd = campaign.jobAnalysis;
   const allSkills = [...jd.requiredSkills, ...jd.niceToHaveSkills];
-  const raw: Candidate[] = leads.map((lead) => {
-    const haystack = `${lead.title} ${lead.snippet}`.toLowerCase();
-    const techStack = allSkills.filter((skill) => haystack.includes(skill.toLowerCase()));
-    return {
+  const qualitySkips: { name: string; reason: string }[] = [];
+  const raw: Candidate[] = [];
+  for (const lead of leads) {
+    const evidenceText = `${lead.title} ${lead.company} ${lead.snippet}`;
+    const techStack = skillsObservedIn(evidenceText, allSkills);
+    if (
+      platform === "LinkedIn" &&
+      !linkedInProfileMeetsQualityBar({ title: lead.title, text: evidenceText }, allSkills)
+    ) {
+      qualitySkips.push({
+        name: lead.name,
+        reason: "Below the LinkedIn quality bar: no stated role and no brief skill in the public text.",
+      });
+      continue;
+    }
+    raw.push({
       id: genId("cand"),
       campaignId: campaign.id,
       name: lead.name,
@@ -216,7 +229,7 @@ export function mapWebSearchCandidates(
       avatarInitials: initialsFrom(lead.name),
       currentTitle: lead.title,
       currentCompany: lead.company,
-      location: "",
+      location: lead.location ?? "",
       timezone: "",
       linkedinUrl: platform === "LinkedIn" ? lead.url : "",
       githubUrl: "",
@@ -245,10 +258,11 @@ export function mapWebSearchCandidates(
       },
       createdAt: new Date().toISOString(),
       provenance: "live",
-    };
-  });
+    });
+  }
 
-  return scoreAndDedupe(raw, campaign, existing, weights);
+  const result = scoreAndDedupe(raw, campaign, existing, weights);
+  return { accepted: result.accepted, skipped: [...qualitySkips, ...result.skipped] };
 }
 
 function scoreAndDedupe(

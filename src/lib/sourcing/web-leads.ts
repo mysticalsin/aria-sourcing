@@ -22,6 +22,8 @@ export interface WebLead {
   company: string;
   url: string;
   snippet: string;
+  /** Only when the result text itself names a place. Never guessed. */
+  location?: string;
 }
 
 /** Platforms real-sourced via a site:-scoped web search rather than a dedicated API. */
@@ -108,7 +110,79 @@ export function extractLead(hit: SearchHit, platform: WebSearchPlatform): WebLea
     rawName ||
     cleanedTitle.slice(0, 60) ||
     "Unknown";
-  const title = parts[1] || hit.snippet.slice(0, 120);
-  const company = parts[2] || "";
-  return { name, title, company, url: hit.url, snippet: hit.snippet.slice(0, 300) };
+  let title = parts[1] ?? "";
+  let company = parts[2] ?? "";
+  // "Name - X": LinkedIn shows the current company there when the profile has
+  // no public headline, so X is a title only if it reads like one.
+  if (parts.length === 2 && !looksLikeJobTitle(title)) {
+    company = title;
+    title = "";
+  }
+  const atCompany = !company ? /^(.+?)\s+(?:at|chez|@)\s+(.+)$/i.exec(title) : null;
+  if (atCompany) {
+    title = atCompany[1]!.trim();
+    company = atCompany[2]!.trim();
+  }
+  let location = "";
+  if (company && looksLikeLocation(company)) {
+    location = company;
+    company = "";
+  }
+  if (title && looksLikeLocation(title)) {
+    location ||= title;
+    title = "";
+  }
+  if (title && (/^(?:i|i'm|i am|my|we|as an?)\b/i.test(title) || title.length > 100 || /\blocation\s*:/i.test(title))) {
+    location ||= locationFromText(title);
+    title = "";
+  }
+  const snippet = cleanSnippet(hit.snippet);
+  location ||= locationFromText(snippet);
+  if (!title) title = headlineFromSnippet(snippet);
+  const lead: WebLead = { name, title, company, url: hit.url, snippet: snippet.slice(0, 300) };
+  if (location) lead.location = location.slice(0, 120);
+  return lead;
+}
+
+/** Search-result text without markdown headings and the "similar profiles" tail. */
+export function cleanSnippet(text: string): string {
+  return text
+    .split(/#{1,6}\s*(?:other similar profiles|people also viewed|explore more posts)/i)[0]!
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function headlineFromSnippet(snippet: string): string {
+  const first = snippet.split(/(?<=[.!?])\s|\s[·|]\s/)[0]?.trim() ?? "";
+  if (!first || first.length > 90 || /^(?:i|i'm|i am|my|we|as an?)\b/i.test(first)) return "";
+  return looksLikeJobTitle(first) ? first.replace(/[.!?]$/, "") : "";
+}
+
+const COUNTRIES =
+  /\b(?:france|united kingdom|uk|germany|deutschland|spain|espa[ñn]a|italy|italia|belgium|belgique|netherlands|switzerland|suisse|portugal|ireland|luxembourg|austria|poland|sweden|denmark|norway|finland|united states|usa|canada|singapore|india|morocco|maroc|tunisia|tunisie|united arab emirates|uae)\b/i;
+
+/** "Greater Paris Metropolitan Region", "Paris, Île-de-France, France", "Lyon Area". */
+export function looksLikeLocation(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 80 || looksLikeJobTitle(t)) return false;
+  if (/\bgreater\s+\S.*\b(?:area|region)\b|\bmetropolitan\b|[îi]le-de-france|\br[ée]gion(?!\p{L})/iu.test(t)) return true;
+  if (/^[\p{L} .'-]+\s+area$/iu.test(t)) return true;
+  return /^[\p{L} .'-]+(?:,\s*[\p{L} .'-]+){1,2}$/u.test(t) && COUNTRIES.test(t.split(",").pop()!);
+}
+
+function locationFromText(text: string): string {
+  const stated = /\b(?:location|localisation|lieu)\s*:\s*([\p{L} '-]+(?:,\s*[\p{L} '-]+){0,2})/iu.exec(text);
+  if (stated) return stated[1]!.trim().replace(/[.\s]+$/, "");
+  const segment = text.split(/\s[·|]\s/).map((s) => s.trim()).find((s) => looksLikeLocation(s));
+  return segment ?? "";
+}
+
+const JOB_TITLE_WORDS =
+  /\b(?:engineer|developer|programmer|architect|manager|lead|head of|director|consultant|analyst|scientist|designer|devops|sre|administrator|specialist|officer|cto|ceo|cfo|coo|cio|vp|founder|co-founder|recruiter|intern|student|freelance|freelancer|expert|technician|coordinator|product owner|scrum master|tester|ing[ée]nieure?|d[ée]veloppeu(?:r|se)|chef de projet|responsable|directeur|directrice|architecte|stagiaire|alternante?|technicienne?|charg[ée]e? de)\b/i;
+
+function looksLikeJobTitle(text: string): boolean {
+  return JOB_TITLE_WORDS.test(text);
 }

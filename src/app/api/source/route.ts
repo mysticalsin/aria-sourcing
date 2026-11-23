@@ -17,6 +17,7 @@ import {
 } from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
+import { linkedInLeadsForSearch } from "@/lib/sourcing/linkedin-recruiter";
 import { runWebTool } from "@/lib/ai/web-tools";
 import { buildSeedState } from "@/lib/seed";
 import { clearDiscoveryCriteria, clearIdentityResolution, clearProviderProbe } from "@/lib/sourcing/provider-egress";
@@ -183,6 +184,17 @@ export async function POST(req: NextRequest) {
     }
     const content = result.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
     const hits = (content?.results ?? []).slice(0, count);
+    if (platform === "LinkedIn") {
+      const linkedIn = await linkedInLeadsForSearch({ query: scopedQuery, count, publicHits: hits });
+      return NextResponse.json({
+        ok: true,
+        source: "web",
+        platform,
+        leads: linkedIn.leads,
+        recruiter: linkedIn.recruiter,
+        ...(linkedIn.error ? { error: linkedIn.error } : {}),
+      });
+    }
     const leads: WebLead[] = hits.map((h) => extractLead(h, platform));
     return NextResponse.json({ ok: true, source: "web", platform, leads });
   }

@@ -17,7 +17,8 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
-import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCandidate, useIntegrations, useOutreach, useRole, useSettings } from "@/lib/store";
+import { CandidateLinkedInPanel } from "@/components/linkedin/candidate-linkedin-panel";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
@@ -496,6 +497,7 @@ export function CandidateDrawer({
   const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
   const confidentialityMode = Boolean(useSettings().confidentialityMode);
+  const integrations = useIntegrations();
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -1475,6 +1477,13 @@ export function CandidateDrawer({
               )}
             </div>
           </div>
+          {(c.linkedinUrl || c.sourcePlatform === "LinkedIn") && (
+            <CandidateLinkedInPanel
+              candidate={c}
+              masked={masked}
+              recruiterConnected={integrations.some((item) => item.id === "int_linkedin_rsc" && item.status === "connected")}
+            />
+          )}
           {hasFlags && (
             <div className="flex flex-wrap gap-1.5">
               {flags.doNotContact && (
