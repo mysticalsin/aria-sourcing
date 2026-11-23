@@ -167,7 +167,7 @@ test("workflows cancel stale PR runs and push only the release branches", () => 
   }
 });
 
-test("handoff records the shared config and does not claim the hygiene test", () => {
+test("handoff records the shared config and the hygiene watch", () => {
   const handoff = read("_relay/HANDOFF.md");
   assert.match(
     handoff,
