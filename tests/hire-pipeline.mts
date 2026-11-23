@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { runSourcingThroughHired } from "../src/lib/mcp-client";
+import { envForHireRequest, runSourcingThroughHired } from "../src/lib/mcp-client";
 
 let pass = 0;
 let fail = 0;
@@ -137,6 +137,14 @@ ok("an Odoo HTTP error stops the pipeline before later writes", failed.ok === fa
 const route = readFileSync(new URL("../src/app/api/hire/route.ts", import.meta.url), "utf8");
 const client = readFileSync(new URL("../src/lib/mcp-client.ts", import.meta.url), "utf8");
 ok("the hire route is the HTTP entry for sourcing through hired", route.includes("runSourcingThroughHired") && /export const runtime\s*=\s*["']nodejs["']/.test(route));
+const erpEnv: NodeJS.ProcessEnv = { ...odooEnv, NODE_ENV: "test" };
+const demoEnv = envForHireRequest(erpEnv, false);
+ok("demo hire env drops Odoo and SMART credentials", !demoEnv.ODOO_URL && !demoEnv.ODOO_API_KEY && !demoEnv.SMART_URL && !demoEnv.SMART_TOKEN);
+ok("live hire env keeps Odoo credentials", envForHireRequest(erpEnv, true).ODOO_URL === erpEnv.ODOO_URL);
+calls.length = 0;
+const demoHire = await runSourcingThroughHired(input, demoEnv, fakeFetch);
+ok("a demo hire never writes to the configured ERP", demoHire.erp === "skipped" && calls.length === 0);
+ok("an open demo hire does not forward process.env", route.includes("envForHireRequest(process.env, supabaseEnabled)"));
 ok("the MCP client does not call fetch directly", !/(?<!PublicUrl)\bfetch\s*\(/.test(client));
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
