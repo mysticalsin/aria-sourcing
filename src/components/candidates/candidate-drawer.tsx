@@ -17,7 +17,7 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
-import { useActions, useCampaign, useCandidate, useIntegrations, useOutreach, useRole, useSettings } from "@/lib/store";
+import { useActions, useActivities, useCampaign, useCandidate, useIntegrations, useOutreach, useRole, useSettings } from "@/lib/store";
 import { CandidateLinkedInPanel } from "@/components/linkedin/candidate-linkedin-panel";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
@@ -39,6 +39,7 @@ import {
   postCandidateHire,
   type HireUiOutcome,
 } from "@/lib/hire-ui";
+import { buildHireTrail, hireTrailRows, type HireTrail } from "@/lib/hire-trail";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
@@ -446,6 +447,19 @@ function TaniaPanel({ c }: { c: Candidate }) {
   );
 }
 
+function HireTrailList({ trail }: { trail: HireTrail }) {
+  return (
+    <dl data-hire-trail className="mt-2 space-y-1">
+      {hireTrailRows(trail).map((row) => (
+        <div key={row.label} className="flex gap-2 text-sm">
+          <dt className="w-28 shrink-0 text-muted">{row.label}</dt>
+          <dd className="min-w-0 break-words font-medium text-ink">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Onboarding progress (TAnIA Stages III→IV) — shown once a candidate reaches an
  *  offer. Steps derive from stage; this is the offer→signed→pre-boarding→employee
  *  journey plus the post-fill signal. */
@@ -506,7 +520,9 @@ export function CandidateDrawer({
   // reflect immediately instead of showing the click-time snapshot.
   const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
-  const confidentialityMode = Boolean(useSettings().confidentialityMode);
+  const settings = useSettings();
+  const activities = useActivities();
+  const confidentialityMode = Boolean(settings.confidentialityMode);
   const integrations = useIntegrations();
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -758,6 +774,12 @@ export function CandidateDrawer({
   }
 
   const c = liveCandidate ?? candidate;
+  const persistedHire = activities.find(
+    (activity) =>
+      activity.linkedEntityType === "candidate" &&
+      activity.linkedEntityId === c.id &&
+      activity.title.startsWith("Hired:"),
+  );
   const erasureTombstone = isCandidateErasureTombstone(c);
   const purpose = hasOutreachPurpose(c.stage);
   const masked = confidentialityMode && !purpose && !revealed;
@@ -810,20 +832,22 @@ export function CandidateDrawer({
     const requestId = hireRequestRef.current + 1;
     hireRequestRef.current = requestId;
     const candidateIdForHire = c.id;
+    const stageFrom = c.stage;
+    const need = campaign?.title || c.currentTitle || "Open role";
     setHiring(true);
     const outcome = await postCandidateHire(
       buildHireRequest({
         candidateId: c.id,
         candidateName: c.name,
         email: c.email,
-        jobName: campaign?.title || c.currentTitle || "Open role",
+        jobName: need,
         department: campaign?.department,
       }),
     );
     if (hireRequestRef.current !== requestId) return;
     setHiring(false);
-    setHireResult(outcome);
     if (!localHireCompletes(outcome)) {
+      setHireResult(outcome);
       toast({
         title: "Hire was not recorded",
         description: outcome.label,
@@ -831,13 +855,20 @@ export function CandidateDrawer({
       });
       return;
     }
-    actions.setCandidateStage(candidateIdForHire, "Hired");
     const [closedVacancy] = closeMatchingVacancy(campaign ? [campaign] : [], campaign?.id ?? null);
-    const vacancyClosed =
-      closedVacancy?.status === "Filled"
-        ? actions.updateCampaign(closedVacancy.id, { status: "Filled", previousStatus: null })
-        : false;
-    const closedTitle = vacancyClosed && campaign ? campaign.title : null;
+    const trail = buildHireTrail({
+      who: settings.operatorName,
+      when: new Date().toISOString(),
+      need,
+      erp: outcome.erp,
+      stageFrom,
+      stageTo: "Hired",
+      steps: outcome.steps,
+      vacancyClosed: outcome.vacancyClosed || closedVacancy?.status === "Filled",
+    });
+    setHireResult({ ...outcome, trail });
+    actions.recordHiredCandidate(candidateIdForHire, trail);
+    const closedTitle = trail.vacancyClosed && campaign ? campaign.title : null;
     toast({
       title: hireStatusText(outcome),
       description:
@@ -1732,6 +1763,13 @@ export function CandidateDrawer({
               }
             >
               {hireStatusText(hireResult)}
+            </p>
+          ) : null}
+          {hireResult?.ok && hireResult.trail ? (
+            <HireTrailList trail={hireResult.trail} />
+          ) : persistedHire ? (
+            <p data-hire-trail className="mt-2 whitespace-pre-line text-sm text-ink-soft">
+              {persistedHire.notes}
             </p>
           ) : null}
           {c.stage === "Hired" && campaign?.status === "Filled" && (
