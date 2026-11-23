@@ -35,6 +35,7 @@ harness="$ROOT/scripts/integration-e2e.sh"
 
 if [ -f "$helper" ]; then
   got="$(
+    # shellcheck disable=SC2016
     env -u COMPOSE_PROJECT bash -c '
       set -u
       # shellcheck disable=SC1090
@@ -47,6 +48,7 @@ if [ -f "$helper" ]; then
   fi
 
   kept="$(
+    # shellcheck disable=SC2016
     COMPOSE_PROJECT="aria-int-kept" bash -c '
       set -u
       . "$1"

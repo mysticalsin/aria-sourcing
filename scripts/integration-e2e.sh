@@ -43,7 +43,12 @@ fi
 } >"$ART/logs/compose-config.log" 2>&1 || echo "compose-config=fail" >>"$ART/logs/compose-config.log"
 
 # Bring the packaged stack up. A failure is recorded; it does not hide the UI run.
-COMPOSE_PROJECT="aria-int-${STAMP,,}"
+# macOS /bin/bash 3.2 rejects Bash 4 lowercase expansion. The helper
+# fills the project name when the environment did not set one, so set -u
+# does not stop the sweep on the next use.
+# shellcheck source=scripts/e2e-compose-project.sh
+. "$ROOT/scripts/e2e-compose-project.sh"
+COMPOSE_PROJECT="$(e2e_compose_project "$STAMP")"
 set +e
 $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" up -d --build >"$ART/logs/compose-up.log" 2>&1
 COMPOSE_EXIT=$?
