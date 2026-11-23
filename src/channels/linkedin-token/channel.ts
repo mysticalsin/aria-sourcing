@@ -4,6 +4,7 @@ import { lookup } from "node:dns/promises";
 import type { OutgoingHttpHeaders } from "node:http";
 import https from "node:https";
 import { DatabaseSync } from "node:sqlite";
+import { connect as tlsConnect, type ConnectionOptions } from "node:tls";
 
 import { approvalHash } from "@/lib/outreach-content";
 import { decryptToken, encryptToken, type Env } from "./crypto";
@@ -250,6 +251,9 @@ function blockedIpv4(parts: number[]): boolean {
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224 && a <= 239) return true;
+  if (parts.every((part) => part === 255)) return true;
   return false;
 }
 
@@ -546,7 +550,15 @@ export class LinkedInTokenChannel {
           body: input.body,
           senderId: input.senderId,
         });
-        this.waiters.push({ id, input, resolve: () => undefined });
+        this.waiters.push({
+          id,
+          input,
+          resolve: (result) => {
+            if (result.ok) return;
+            const row = this.memory(input.workspaceId).queue.find((item) => item.id === id);
+            if (row && (row.state === "queued" || row.state === "sending")) row.state = "failed";
+          },
+        });
         this.persist(input.workspaceId);
         return { ok: true, reason: "queued" } satisfies ActionResult;
       }
@@ -670,22 +682,13 @@ export class LinkedInTokenChannel {
       body: spec.body,
       signal: controller.signal,
     };
-    const dedupe = this.env.lookup("ARIA_LINKEDIN_TOKEN_DEDUPE") === "on";
-    const attempts = input.hold || !dedupe ? 1 : 2;
     const timeoutMs = input.hold ? 120_000 : intEnv(this.env, "ARIA_LINKEDIN_TOKEN_TIMEOUT_MS", 10_000);
-    let last: TransportResult = { status: 0, body: "", timeout: true, error: "timeout" };
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      this.reloadKill(input.workspaceId);
-      if (controller.signal.aborted || killEngaged(this.env) || this.memory(input.workspaceId).killed) {
-        throw Object.assign(new Error("aborted"), { name: "AbortError" });
-      }
-      last = this.transport
-        ? await this.transport.deliver({ ...requestBase, attempt })
-        : await this.fetchOnce({ ...requestBase, attempt }, timeoutMs);
-      if (last.timeout && attempt === 0 && attempts > 1) continue;
-      return last;
+    this.reloadKill(input.workspaceId);
+    if (controller.signal.aborted || killEngaged(this.env) || this.memory(input.workspaceId).killed) {
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
     }
-    return last;
+    const once = { ...requestBase, attempt: 0 };
+    return this.transport ? this.transport.deliver(once) : this.fetchOnce(once, timeoutMs);
   }
 
   private async fetchOnce(request: TransportRequest, timeoutMs: number): Promise<TransportResult> {
@@ -1036,8 +1039,7 @@ function fetchPinned(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
         path: `${url.pathname}${url.search}`,
         method: extra.method,
         headers: extra.headers as OutgoingHttpHeaders,
-        servername: extra.servername,
-        rejectUnauthorized: true,
+        ...pinnedTlsOptions(url.hostname.replace(/^\[|\]$/g, ""), Number(url.port || 443)),
         signal: extra.signal ?? undefined,
       },
       (res) => {
@@ -1064,28 +1066,77 @@ function ensureColumn(db: DatabaseSync, table: string, column: string, statement
   if (!columns.some((item) => item.name === column)) db.exec(statement);
 }
 
+function expandIpv6(input: string): number[] | null {
+  let host = input.toLowerCase().split("%")[0];
+  if (host.includes(".")) {
+    const last = host.lastIndexOf(":");
+    const parts = ipv4Parts(host.slice(last + 1));
+    if (!parts) return null;
+    const hi = ((parts[0] << 8) | parts[1]).toString(16);
+    const lo = ((parts[2] << 8) | parts[3]).toString(16);
+    host = `${host.slice(0, last)}:${hi}:${lo}`;
+  }
+  const halves = host.split("::");
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if (halves.length === 1 && left.length !== 8) return null;
+  const missing = 8 - left.length - right.length;
+  if (missing < 0) return null;
+  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
+  if (groups.length !== 8) return null;
+  const nums = groups.map((group) => (/^[0-9a-f]{1,4}$/.test(group) ? Number.parseInt(group, 16) : Number.NaN));
+  if (nums.some((part) => Number.isNaN(part))) return null;
+  return nums;
+}
+
 function mappedIpv4(address: string): number[] | null {
-  const dotted = address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
-  if (dotted) return ipv4Parts(dotted[1]);
-  const hex = address.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
-  if (!hex) return null;
-  const hi = Number.parseInt(hex[1], 16);
-  const lo = Number.parseInt(hex[2], 16);
-  if (!Number.isInteger(hi) || !Number.isInteger(lo)) return null;
-  return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255];
+  const groups = expandIpv6(address);
+  if (!groups) return null;
+  const head = groups.slice(0, 5).every((part) => part === 0);
+  const compatible = groups.slice(0, 6).every((part) => part === 0) && (groups[6] !== 0 || groups[7] !== 0);
+  const nat64 = groups[0] === 0x64 && groups[1] === 0xff9b && groups.slice(2, 6).every((part) => part === 0);
+  if (!(head && groups[5] === 0xffff) && !compatible && !nat64) return null;
+  return [(groups[6] >> 8) & 255, groups[6] & 255, (groups[7] >> 8) & 255, groups[7] & 255];
 }
 
 function publicAddress(address: string): boolean {
-  const host = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = address.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
   const mapped = mappedIpv4(host);
   if (mapped) return !blockedIpv4(mapped);
   if (host.includes(":")) {
-    if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
+    const groups = expandIpv6(host);
+    if (!groups) return false;
+    if (groups.every((part) => part === 0)) return false;
+    if (groups.slice(0, 7).every((part) => part === 0) && groups[7] === 1) return false;
+    if ((groups[0] & 0xffc0) === 0xfe80) return false;
+    if ((groups[0] & 0xfe00) === 0xfc00) return false;
+    if ((groups[0] & 0xff00) === 0xff00) return false;
     return true;
   }
   const parts = ipv4Parts(host);
   if (!parts) return false;
   return !blockedIpv4(parts);
+}
+
+function pinnedTlsOptions(host: string, port: number, ca?: Buffer): ConnectionOptions {
+  return {
+    host,
+    port,
+    servername: PINNED_HOST,
+    rejectUnauthorized: true,
+    ...(ca ? { ca } : {}),
+  };
+}
+
+export function probePinnedTls(input: { host: string; port: number; ca: Buffer }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = tlsConnect(pinnedTlsOptions(input.host, input.port, input.ca), () => {
+      socket.end();
+      resolve();
+    });
+    socket.once("error", reject);
+  });
 }
 
 function escapeHtml(value: string): string {

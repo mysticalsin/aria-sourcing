@@ -4,3 +4,8 @@ title = "aria-sourcing-demo gitleaks config"
 # or on the single synthetic line that triggers a rule; never allowlist a path.
 [extend]
 useDefault = true
+
+[allowlist]
+description = "SHA-256 of a retired sample HMAC. The sample is not stored. generic-api-key matches that digest on one historical line."
+regexTarget = "line"
+regexes = ['''1453cea2dc3799e9026e42b3e465e455256d5a149582e4c5b92d4c8d604731a2''']

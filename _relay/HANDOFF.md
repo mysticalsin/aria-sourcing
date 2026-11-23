@@ -1,44 +1,45 @@
 ---
 project: MSourcing / ARIA
-shift: 471
+shift: 472
 agent: cursor
-updated: 2026-11-23
+updated: 2026-11-23 14:08 America/Sao_Paulo
 status: linkedin-token-devin-followup
 ---
 
-# Handoff - Shift 471
+# Handoff - Shift 472
 
 ## Current state
 
-- Branch `cursor/linkedin-token-channel-3374`, PR #178, base `twa-odoo` (`e3fa3f59`). Do not merge.
-- Tip after the mapped-address and timeout follow-up: see `git rev-parse HEAD`.
+- Branch `cursor/linkedin-token-channel-3374`, PR #178, base `twa-odoo` (`e3fa3f594a6d86aec31d42a65414a96be4c8400e`). Do not merge.
+- Tip: `git rev-parse HEAD` on this branch. Additive commits only. No force push.
 - The channel stays in `src/channels/linkedin-token/`. It is off until an owner or admin records the risk notice.
 - `next` in the lockfile is still 16.4.3. This branch does not upgrade Next.js.
 
 ## Done this shift
 
-- IPv4-mapped private addresses are refused the same way as private IPv4.
-- A pinned `www.linkedin.com` address is fetched with the certificate name `www.linkedin.com` and certificate checking left on.
-- A timeout keeps one transport attempt and does not free the cap slot or the approval.
-- The queued-send test checks that the next send runs after the current one finishes.
-- A JSON body whose message says login stays an accepted answer. Checkpoint URLs and redirects still pause.
+- Expanded, compatible, and NAT64 IPv4 embeddings are refused, along with unspecified, multicast, and CGNAT answers. A public mapped address is still allowed.
+- Dedupe no longer retries a timeout. A timeout still keeps the approval and the cap slot.
+- `probePinnedTls` shares the pinned certificate name with the production HTTPS request. A test certificate for another name fails the handshake.
+- A pumped send that is still queued or sending is marked failed when the result is a refusal.
+- `.gitleaks.toml` allowlists one historical line: the SHA-256 of a retired sample HMAC. `gitleaks git --log-opts=--all` on this tree exits 0 (1754 commits, no leaks). History was not rewritten.
 
 ## Blockers
 
-- `gitleaks git --log-opts=--all` still reports one finding on commit `0f2b86e1238067f7525245a7f492d90ee25737b9` (`scripts/jwt-secret-policy.mjs:4`). That commit is not reachable from this head. A scan of `HEAD` reports zero findings. The fingerprint was not added here.
+- None for this follow-up. Sentinel CONSENSUS is PENDING. Do not merge.
 
 ## Next steps
 
-1. Leave this tip frozen after the PR body update. Do not merge.
+1. Wait for CI on the new tip. Do not merge.
 2. Stack conflicts with #251, #272, and #282 are shared files (`.gitleaksignore`, `docker-compose.yml`, `scripts/accept-local-demo.mjs`, `tests/test-manifest.mjs`, `_relay/HANDOFF.md`, `.github/workflows/ci.yml`). Do not rewrite those tips.
 
 ## Decisions made (don't relitigate)
 
 - Tony: the token option stays the existing one, off by default, with approved text, daily caps, a kill switch, and auto-pause.
 - H-01, NEW-2, and NEW-6 stay as already fixed.
+- A timeout keeps the cap slot and the approval. It does not start a second transport attempt.
 - Do not upgrade Next.js on this branch.
 
 ## Watch out
 
 - `@playwright/test` is pinned to 1.65.1. `scripts/e2e-mac.sh` refuses Node versions other than 22.x.
-- Full-history gitleaks sees other branches. A clean `HEAD` scan does not mean `--all` is clean.
+- The gitleaks exception is one exact digest line, not a path.
