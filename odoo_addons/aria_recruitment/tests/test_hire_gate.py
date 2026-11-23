@@ -29,6 +29,59 @@ class TestHireGate(AriaRecruitmentCommon):
         self.env.invalidate_all()
         self.assertEqual(applicant.stage_id.aria_stage_key, 'to_hire')
 
+    def _sql_set_stage(self, applicant, stage_key):
+        self.env.cr.execute(
+            "UPDATE hr_applicant SET stage_id = %s WHERE id = %s",
+            (self.stage[stage_key].id, applicant.id),
+        )
+
+    def test_sql_hire_guard_calls_adapter_and_rejects_empty_contract(self):
+        """Direct SQL must use the adapter result and a non-empty contract."""
+        hired = 'hired'
+        parameter = self.env['ir.config_parameter'].sudo()
+
+        unknown = self.applicant('to_hire', name='Unknown Adapter', email='unknown.adapter@example.test')
+        unknown.aria_dna_integration_status = 'complete'
+        self.contract(unknown)
+        parameter.set_param('aria_recruitment.dna_adapter', 'not-a-live-endpoint')
+        with self.assertRaises(psycopg2.Error):
+            self._sql_set_stage(unknown, hired)
+        self.env.invalidate_all()
+        self.assertEqual(unknown.stage_id.aria_stage_key, 'to_hire')
+
+        wrong_case = self.applicant('to_hire', name='Wrong Case', email='wrong.case@example.test')
+        wrong_case.aria_dna_integration_status = 'complete'
+        self.contract(wrong_case)
+        parameter.set_param('aria_recruitment.dna_adapter', 'Fake')
+        with self.assertRaises(psycopg2.Error):
+            self._sql_set_stage(wrong_case, hired)
+        self.env.invalidate_all()
+        self.assertEqual(wrong_case.stage_id.aria_stage_key, 'to_hire')
+
+        empty = self.applicant('to_hire', name='Empty Contract', email='empty.contract@example.test')
+        empty.aria_dna_integration_status = 'complete'
+        contract = self.contract(empty)
+        self.env.cr.execute(
+            """
+            UPDATE ir_attachment
+               SET file_size = 0,
+                   db_datas = NULL,
+                   store_fname = 'dummy-store'
+             WHERE id = %s
+            """,
+            (contract.id,),
+        )
+        parameter.set_param('aria_recruitment.dna_adapter', 'fake')
+        self.env.invalidate_all()
+        with self.assertRaises(psycopg2.Error):
+            self._sql_set_stage(empty, hired)
+        self.env.invalidate_all()
+        self.assertEqual(empty.stage_id.aria_stage_key, 'to_hire')
+        error = self.move(empty, hired)
+        self.assertTrue(error)
+        self.assertIn('contract', str(error))
+        self.assertEqual(empty.stage_id.aria_stage_key, 'to_hire')
+
     def test_hired_status_on_hired_applicant_is_idempotent(self):
         applicant = self.applicant('to_hire', name='Again Example', email='again.example@example.test')
         applicant.aria_dna_integration_status = 'integrated'

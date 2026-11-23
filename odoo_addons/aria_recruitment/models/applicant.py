@@ -281,7 +281,43 @@ class HrApplicant(models.Model):
         return super().message_post(**kwargs)
 
     def _aria_install_hire_guard(self):
-        """Block a direct SQL move onto Hired unless the contract and DNA are stored."""
+        """Block a direct SQL move onto Hired unless the adapter and contract pass.
+
+        The guard calls aria_recruitment_dna_adapter_status(). That function
+        returns the status recorded by resolve_adapter for this transaction.
+        A direct update that did not call the adapter fails closed. The
+        contract must contain bytes: a zero-length row with a store name does
+        not count.
+        """
+        self.env.cr.execute(
+            """
+            CREATE OR REPLACE FUNCTION aria_recruitment_dna_adapter_status()
+            RETURNS text
+            LANGUAGE plpgsql
+            AS $dna$
+            DECLARE
+                configured text;
+                called_name text;
+                called_status text;
+            BEGIN
+                SELECT btrim(value) INTO configured
+                  FROM ir_config_parameter
+                 WHERE key = 'aria_recruitment.dna_adapter'
+                 LIMIT 1;
+                configured := COALESCE(configured, '');
+                IF configured = '' OR configured IN ('unconfigured', 'none') THEN
+                    RETURN 'unconfigured';
+                END IF;
+                called_name := COALESCE(current_setting('aria.dna_adapter', true), '');
+                called_status := btrim(COALESCE(current_setting('aria.dna_status', true), ''));
+                IF called_name = configured AND called_status <> '' THEN
+                    RETURN called_status;
+                END IF;
+                RETURN 'missing-adapter';
+            END;
+            $dna$
+            """
+        )
         self.env.cr.execute(
             """
             CREATE OR REPLACE FUNCTION aria_recruitment_hire_guard()
@@ -290,7 +326,6 @@ class HrApplicant(models.Model):
             AS $guard$
             DECLARE
                 hired boolean;
-                adapter text;
                 dna text;
                 has_contract boolean;
             BEGIN
@@ -304,12 +339,7 @@ class HrApplicant(models.Model):
                 IF NOT COALESCE(hired, false) THEN
                     RETURN NEW;
                 END IF;
-                SELECT value INTO adapter
-                  FROM ir_config_parameter
-                 WHERE key = 'aria_recruitment.dna_adapter'
-                 LIMIT 1;
-                adapter := lower(btrim(COALESCE(adapter, '')));
-                dna := lower(btrim(COALESCE(NEW.aria_dna_integration_status, '')));
+                dna := btrim(COALESCE(aria_recruitment_dna_adapter_status(), ''));
                 SELECT EXISTS (
                     SELECT 1
                       FROM ir_attachment
@@ -317,13 +347,14 @@ class HrApplicant(models.Model):
                        AND res_id = NEW.id
                        AND aria_document_kind = 'contract'
                        AND (
-                            COALESCE(file_size, 0) > 0
-                            OR db_datas IS NOT NULL
-                            OR COALESCE(store_fname, '') <> ''
+                            COALESCE(octet_length(db_datas), 0) > 0
+                            OR (
+                                COALESCE(file_size, 0) > 0
+                                AND COALESCE(store_fname, '') <> ''
+                            )
                        )
                 ) INTO has_contract;
-                IF adapter IN ('', 'unconfigured', 'none')
-                   OR dna NOT IN ('integrated', 'complete')
+                IF dna NOT IN ('integrated', 'complete')
                    OR NOT COALESCE(has_contract, false) THEN
                     RAISE EXCEPTION 'hire refused: a signed contract and cleared DNA are required'
                         USING ERRCODE = 'check_violation';
@@ -394,12 +425,20 @@ class HrApplicant(models.Model):
             })
 
     def _aria_contract_attached(self):
+        """A contract counts only when the stored file is non-empty."""
         self.ensure_one()
-        return bool(self.env['ir.attachment'].sudo().search_count([
+        attachments = self.env['ir.attachment'].sudo().search([
             ('res_model', '=', 'hr.applicant'),
             ('res_id', '=', self.id),
             ('aria_document_kind', '=', 'contract'),
-        ]))
+        ])
+        for attachment in attachments:
+            payload = attachment.with_context(bin_size=False).db_datas
+            if payload:
+                return True
+            if (attachment.file_size or 0) > 0 and (attachment.store_fname or ''):
+                return True
+        return False
 
     def _aria_can_set_dna(self):
         return bool(
@@ -414,12 +453,28 @@ class HrApplicant(models.Model):
             'aria_recruitment.dna_adapter',
             '',
         ) or '').strip()
-        if configured == 'fake':
-            return (self.sudo().aria_dna_integration_status or 'pending').strip()
         if not configured or configured in ('unconfigured', 'none'):
             return 'unconfigured'
         status = resolve_adapter(configured).integration_status(self.sudo())
         return (status or '').strip()
+
+    def _aria_record_dna_adapter_call(self):
+        """Call the DNA adapter and record its result for the database guard."""
+        self.ensure_one()
+        configured = (self.env['ir.config_parameter'].sudo().get_param(
+            'aria_recruitment.dna_adapter',
+            '',
+        ) or '').strip()
+        status = self._aria_dna_status()
+        self.env.cr.execute(
+            "SELECT set_config('aria.dna_adapter', %s, true), set_config('aria.dna_status', %s, true)",
+            [configured, status or ''],
+        )
+
+    def _aria_clear_dna_adapter_call(self):
+        self.env.cr.execute(
+            "SELECT set_config('aria.dna_adapter', '', true), set_config('aria.dna_status', '', true)"
+        )
 
     def _aria_is_hired_outcome(self):
         self.ensure_one()
@@ -800,7 +855,20 @@ class HrApplicant(models.Model):
             for applicant, decision, target in decisions:
                 if decision is not None and not decision.noop:
                     applicant._aria_record_transition(applicant.stage_id, target, decision)
-                super(HrApplicant, applicant.with_context(aria_hire_authorized=token)).write(dict(vals))
+                calls_adapter = bool(
+                    decision is not None
+                    and decision.allowed
+                    and not decision.noop
+                    and target
+                    and applicant._aria_is_hired_stage(target)
+                )
+                if calls_adapter:
+                    applicant._aria_record_dna_adapter_call()
+                try:
+                    super(HrApplicant, applicant.with_context(aria_hire_authorized=token)).write(dict(vals))
+                finally:
+                    if calls_adapter:
+                        applicant._aria_clear_dna_adapter_call()
         finally:
             self.env.registry._aria_hire_token = None
         self._aria_record_opt_outs(opting_out)
