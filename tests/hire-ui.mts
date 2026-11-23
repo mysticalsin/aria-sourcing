@@ -359,7 +359,7 @@ function workspace(): HermesState {
     status: "Interviewing",
     activities: [] as Activity[],
   } as Campaign;
-  return { candidates: [candidate], campaigns: [campaign], activities: [] } as HermesState;
+  return { candidates: [candidate], campaigns: [campaign], activities: [] } as unknown as HermesState;
 }
 
 const recorded = applyHireTrail(workspace(), {

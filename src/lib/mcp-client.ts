@@ -543,6 +543,43 @@ function hiredStageId(env: NodeJS.ProcessEnv): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+type HiredStageLookup = { id: number } | { missing: true } | { error: string };
+
+/** One Hired-stage search per process. A configured id never consults this. */
+let hiredStageLookup: Promise<HiredStageLookup> | undefined;
+
+export function resetOdooHiredStageLookup(): void {
+  hiredStageLookup = undefined;
+}
+
+async function lookupHiredStage(connector: HireConnector, idempotencyKey: string): Promise<HiredStageLookup> {
+  const result = await connector.call({
+    idempotencyKey,
+    model: "hr.recruitment.stage",
+    method: "search",
+    values: { name: "Hired" },
+  });
+  if (result.ok) {
+    const id = Number(result.id);
+    return Number.isSafeInteger(id) && id > 0 ? { id } : { missing: true };
+  }
+  if (result.found === false) return { missing: true };
+  return { error: result.error };
+}
+
+async function resolveHiredStageId(
+  connector: HireConnector,
+  env: NodeJS.ProcessEnv,
+  idempotencyKey: string,
+): Promise<HiredStageLookup> {
+  const configured = hiredStageId(env);
+  if (configured != null) return { id: configured };
+  if (!hiredStageLookup) hiredStageLookup = lookupHiredStage(connector, `${idempotencyKey}:stage-lookup`);
+  const resolved = await hiredStageLookup;
+  if ("error" in resolved) hiredStageLookup = undefined;
+  return resolved;
+}
+
 function odooRef(id: string): number | string {
   return /^[1-9]\d*$/.test(id) ? Number(id) : id;
 }
@@ -550,7 +587,9 @@ function odooRef(id: string): number | string {
 /**
  * Odoo hr.job / hr.applicant fields only. `state: "open"` with
  * `no_of_recruitment: 0` is the standard set_open write that stops recruiting.
- * A hired stage write is sent only when ODOO_HIRED_STAGE_ID is a positive id.
+ * A hired stage write sends numeric stage_id. ODOO_HIRED_STAGE_ID is that id
+ * when set. Otherwise the Hired stage is looked up once per process.
+ * An empty lookup skips the write. No stage name and no hired flag is sent.
  */
 async function runOdooHire(
   connector: HireConnector,
@@ -589,8 +628,19 @@ async function runOdooHire(
   });
   if (!applicant.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: applicant.error };
 
-  const stageId = hiredStageId(env);
-  if (stageId == null) {
+  const stageRef = await resolveHiredStageId(connector, env, input.idempotencyKey);
+  if ("error" in stageRef) {
+    steps.push({
+      erp: "odoo",
+      model: "hr.applicant",
+      action: "stage",
+      method: "write",
+      ok: false,
+      error: stageRef.error,
+    });
+    return { ok: false, erp: "odoo", linkedIn: true, steps, error: stageRef.error };
+  }
+  if ("missing" in stageRef) {
     steps.push({
       erp: "odoo",
       model: "hr.applicant",
@@ -598,14 +648,14 @@ async function runOdooHire(
       method: "write",
       ok: true,
       skipped: true,
-      reason: "Hired stage id is not configured.",
+      reason: "not written",
     });
   } else {
     const stage = await connector.call({
       idempotencyKey: `${input.idempotencyKey}:stage`,
       model: "hr.applicant",
       method: "write",
-      values: { id: odooRef(applicant.id), stage_id: stageId },
+      values: { id: odooRef(applicant.id), stage_id: stageRef.id },
     });
     steps.push({
       erp: "odoo",
