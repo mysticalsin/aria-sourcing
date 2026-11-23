@@ -281,13 +281,13 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # The image HEALTHCHECK probes the web server. This process is the runner,
-    # so compose --wait gets a process check instead of that HTTP probe.
+    # The image HEALTHCHECK probes the web server. This process is the
+    # agents runner, so compose up --wait checks that pid 1 is alive.
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 12
       start_period: 5s
     restart: unless-stopped
     logging: *logging

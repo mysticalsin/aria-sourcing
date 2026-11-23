@@ -27,7 +27,7 @@
   ],
   "stakeholders": [
     {
-      "name": "Tony Walteur",
+      "name": "Workspace owner",
       "role": "owner/builder",
       "notify_on": [
         "blocker",

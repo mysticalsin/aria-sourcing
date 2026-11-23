@@ -1,10 +1,18 @@
 name: CI
 
+# Jobs pin ubuntu-24.04. ubuntu-latest has stayed queued with no runner.
+
 on:
   push:
-    branches: ["**"]
+    branches: [vercel-demo, main, twa-odoo]
   pull_request:
     branches: ["**"]
+
+# One group per workflow and branch. Pull requests cancel a stale run.
+# Pushes to the default branch and twa-odoo do not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}
 
 permissions:
   contents: read
@@ -12,7 +20,7 @@ permissions:
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -45,7 +53,7 @@ jobs:
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -66,7 +74,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -95,15 +103,38 @@ jobs:
           test "$("$install_dir/gitleaks" version)" = "$GITLEAKS_VERSION"
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Scan full history including the current release commit
+      # #168. HEAD is this branch, or the pull request merge commit.
+      - name: Scan the checked-out history
+        shell: bash
+        run: |
+          set -euo pipefail
+          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='HEAD'
+
+      # #167. --all covers history that is fetched. An ignore commit that is
+      # not in this checkout yet is skipped. A commit that is here must be reachable.
+      - name: Scan the history of this checkout
         shell: bash
         run: |
           set -euo pipefail
           gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
+          git rev-list --all > "$RUNNER_TEMP/all-commits"
+          while IFS= read -r line; do
+            case "$line" in
+              ''|\#*) continue ;;
+            esac
+            sha="${line%%:*}"
+            if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+              continue
+            fi
+            grep -qx "$sha" "$RUNNER_TEMP/all-commits" || {
+              echo "gitleaks ignore commit is not reachable with --all: $sha" >&2
+              exit 1
+            }
+          done < .gitleaksignore
 
   database-security:
     name: Database security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -140,6 +171,33 @@ jobs:
       - name: Verify candidate outcome events
         run: npm run test:db-email-outcomes
 
+      # #167. The database test is not on twa-odoo yet, so these steps skip.
+      - name: Detect approval dispatch database test
+        id: approval-dispatch
+        run: |
+          set -euo pipefail
+          if grep -q '"test:db-approval-dispatch"' package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "test:db-approval-dispatch is not in package.json on this branch"
+          fi
+
+      - name: Setup Node 22
+        if: steps.approval-dispatch.outputs.present == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.approval-dispatch.outputs.present == 'true'
+        run: npm ci
+
+      - name: Verify approval dispatch hashes on Postgres
+        if: steps.approval-dispatch.outputs.present == 'true'
+        run: npm run test:db-approval-dispatch
+
   local-demo:
     name: Local Docker demo
     runs-on: ubuntu-24.04
@@ -167,9 +225,43 @@ jobs:
           ARIA_BROWSER_CHANNEL: chrome
         run: npm run test:local-demo
 
+  channel-adapters:
+    name: Channel adapters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.22"
+          cache: false
+
+      # #175. services/channels is not on twa-odoo yet, so each step skips.
+      - name: Vet channel adapters
+        run: |
+          set -euo pipefail
+          if [ ! -f services/channels/go.mod ]; then
+            echo "services/channels is not on this branch yet"
+            exit 0
+          fi
+          (cd services/channels && go vet ./...)
+
+      - name: Test channel adapters with the race detector
+        run: |
+          set -euo pipefail
+          if [ ! -f services/channels/go.mod ]; then
+            echo "services/channels is not on this branch yet"
+            exit 0
+          fi
+          (cd services/channels && go test -race ./...)
+
   linkedin-token-e2e:
     name: LinkedIn token Playwright
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -194,8 +286,8 @@ jobs:
   release-gate:
     name: Release gate
     if: always()
-    needs: [quality, dependency-audit, secret-scan, database-security, local-demo, linkedin-token-e2e]
-    runs-on: ubuntu-latest
+    needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
@@ -206,9 +298,10 @@ jobs:
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
           DATABASE_SECURITY_RESULT: ${{ needs.database-security.result }}
           LOCAL_DEMO_RESULT: ${{ needs.local-demo.result }}
+          CHANNEL_ADAPTERS_RESULT: ${{ needs.channel-adapters.result }}
           LINKEDIN_TOKEN_E2E_RESULT: ${{ needs.linkedin-token-e2e.result }}
         run: |
-          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ] || [ "$LINKEDIN_TOKEN_E2E_RESULT" != success ]; then
-            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT linkedin_token_e2e=$LINKEDIN_TOKEN_E2E_RESULT"
+          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ] || [ "$CHANNEL_ADAPTERS_RESULT" != success ] || [ "$LINKEDIN_TOKEN_E2E_RESULT" != success ]; then
+            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT channel_adapters=$CHANNEL_ADAPTERS_RESULT linkedin_token_e2e=$LINKEDIN_TOKEN_E2E_RESULT"
             exit 1
           fi

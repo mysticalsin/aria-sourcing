@@ -4,7 +4,7 @@ Status: ready-for-agent
 Found: 2026-11-09 (tournage de la vidéo de démo, shift 465)
 
 ## Constat
-Tony Walteur supprimé puis ré-ajouté (nouvel id `cand_mw9c9w7ea`). Le message
+Workspace owner supprimé puis ré-ajouté (nouvel id `cand_mw9c9w7ea`). Le message
 approuvé part bien (outbox `sent`, il réutilise la conversation existante),
 mais l'onglet LinkedIn du candidat affiche « No conversation with Tony yet ».
 
