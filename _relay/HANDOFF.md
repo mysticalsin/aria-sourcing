@@ -3,14 +3,16 @@ project: MSourcing / ARIA
 shift: 470
 agent: cursor
 updated: 2026-11-23
-status: resolve-251-into-282
+status: odoo-sor-slices
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 469
 
 ## Current state
 
-- Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
+- Slice ARIA-A01 on `cursor/odoo-sor-go-client-8ed5`, stacked on PR #289 (`cursor/aria-251-282-merge-resolve-d8a3`), which sits on the twa-odoo shared config. Go module `services/` is the Odoo 19 JSON-2 client. Odoo is the system of record. `ARIA_MODE=live` is refused. DNA has no URL and no credential. SMARTX is an offline copy seam: no network client, no ARP, no scrape. Tests use in-memory fakes and `example.test` mail only.
+- The Odoo addon hired gate (ARIA-A02), exact-text approval (ARIA-A03), and the HeyReach channel (ARIA-A04) are the next stacked slices. They are not in this commit.
+- Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md. This slice keeps that copy.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
 - Follow-up branch `cursor/aria-251-282-merge-resolve-d8a3` ordinary-merges #251 `bb7aa075` into #282 `1054a3d4`. Those two heads stay frozen. `.gitleaksignore` keeps the union of both fingerprint lines and both justification comments, including `da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333`. The local demo keeps the manual-tab retry and fills `[id$='-manual-name']` and `[id$='-manual-lawful-basis']`.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
