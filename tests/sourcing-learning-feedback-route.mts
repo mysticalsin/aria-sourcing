@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
 import { NextRequest } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 
 const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -72,7 +73,7 @@ function reset() {
 }
 
 function pendingRequest(campaignId = "campaign-1") {
-  return new NextRequest(
+  return isolateConnection(new NextRequest(
     `http://localhost/api/sourcing-learning/feedback?campaignId=${encodeURIComponent(campaignId)}`,
     {
       method: "GET",
@@ -81,7 +82,7 @@ function pendingRequest(campaignId = "campaign-1") {
         "x-real-ip": `203.0.113.${sequence}`,
       },
     },
-  );
+  ));
 }
 
 test("pending aggregate feedback survives reload and remains actor scoped", async () => {
@@ -115,7 +116,7 @@ function request(
   body: unknown = { receiptId, verdict: "useful" },
   options: { origin?: string; idempotencyKey?: string; contentType?: string } = {},
 ) {
-  return new NextRequest("http://localhost/api/sourcing-learning/feedback", {
+  return isolateConnection(new NextRequest("http://localhost/api/sourcing-learning/feedback", {
     method: "POST",
     headers: {
       "content-type": options.contentType ?? "application/json",
@@ -126,7 +127,7 @@ function request(
       "x-real-ip": `198.51.100.${sequence}`,
     },
     body: JSON.stringify(body),
-  });
+  }));
 }
 
 test("authenticated sourcers can record one aggregate feedback receipt", async () => {

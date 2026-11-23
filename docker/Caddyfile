@@ -3,6 +3,9 @@
 # replaces, it requires the anon or service key on every API call, turns a bare
 # key into the Authorization bearer, and answers CORS. Nothing else is routed.
 # Upstreams default to the compose service names; tests can point them elsewhere.
+#
+# ARIA_CORS_ORIGINS is a comma- or space-separated origin allowlist. Empty denies.
+# The gateway entrypoint fills the origin matcher before Caddy starts.
 {
 	admin off
 	auto_https off
@@ -31,30 +34,38 @@
 		level ERROR
 	}
 
+	# Overwrite caller-supplied forwarding headers with the address this proxy observed.
+	request_header X-Real-IP {http.request.remote.host}
+	request_header X-Forwarded-For {http.request.remote.host}
+
+	@cors_ok {
+		__CORS_ORIGIN_MATCHER__
+	}
+
 	route {
 		respond /gateway-health 200
 
 		# A CORS preflight carries no key: answer it before the key check.
+		# The allow-origin header is set only for an origin in ARIA_CORS_ORIGINS.
 		@preflight method OPTIONS
 		header @preflight {
-			Access-Control-Allow-Origin "*"
 			Access-Control-Allow-Methods "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS"
 			Access-Control-Allow-Headers "{http.request.header.Access-Control-Request-Headers}"
 			Access-Control-Max-Age "3600"
 		}
+		header @cors_ok Access-Control-Allow-Origin "{http.request.header.Origin}"
+		header @cors_ok Vary "Origin"
 		respond @preflight 204
 
 		# The browser opens GoTrue's email-link, OAuth and JWKS routes without a key.
+		# The key is a header. A query credential is not accepted.
 		@missingKey {
 			path /auth/v1/* /rest/v1/*
 			not path /auth/v1/verify* /auth/v1/callback* /auth/v1/authorize* /auth/v1/.well-known/jwks.json
 			not header apikey {$SUPABASE_ANON_KEY}
 			not header apikey {$SUPABASE_SERVICE_KEY}
-			not query apikey={$SUPABASE_ANON_KEY}
-			not query apikey={$SUPABASE_SERVICE_KEY}
 		}
 		header @missingKey {
-			Access-Control-Allow-Origin "*"
 			Content-Type "application/json"
 		}
 		respond @missingKey `{"message":"Invalid authentication credentials"}` 401
@@ -68,23 +79,24 @@
 
 		handle_path /auth/v1/* {
 			reverse_proxy {$AUTH_UPSTREAM:auth:9999} {
-				header_down Access-Control-Allow-Origin "*"
+				header_down -Access-Control-Allow-Origin
 				import upstream_resilience
 			}
 		}
 		handle_path /rest/v1/* {
 			reverse_proxy {$REST_UPSTREAM:rest:3000} {
-				header_down Access-Control-Allow-Origin "*"
+				header_down -Access-Control-Allow-Origin
 				import upstream_resilience
 			}
 		}
 		respond 404
 	}
 
-	# An upstream that is down answers 502/504 with the CORS header, so the
-	# browser shows the real status instead of an opaque CORS failure.
+	# An upstream that is down answers 502/504. A listed origin still receives
+	# the allow-origin header so the browser shows the real status.
 	handle_errors {
-		header Access-Control-Allow-Origin "*"
+		header @cors_ok Access-Control-Allow-Origin "{http.request.header.Origin}"
+		header @cors_ok Vary "Origin"
 		header Content-Type "application/json"
 		respond `{"message":"API gateway: {err.status_code} {err.status_text}"}`
 	}

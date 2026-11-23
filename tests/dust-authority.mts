@@ -2,6 +2,7 @@ import { loadBaselineSchema } from "./lib/baseline-schema.mts";
 import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 
 let pass = 0;
 let fail = 0;
@@ -95,11 +96,11 @@ mock.module(moduleUrl("src/lib/dust/client.ts"), {
 
 const route = await import("../src/app/api/dust/run/route");
 const response = await route.POST(
-  new NextRequest("http://localhost/api/dust/run", {
+  isolateConnection(new NextRequest("http://localhost/api/dust/run", {
     method: "POST",
     headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
     body: JSON.stringify({ task: "jdAnalysis", message: "Confidential role data" }),
-  }),
+  })),
 );
 const body = (await response.json()) as { ok?: boolean };
 

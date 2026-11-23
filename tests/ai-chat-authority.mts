@@ -1,5 +1,6 @@
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
+import { isolateConnection } from "./helpers/connection.mts";
 import { buildSeedState } from "../src/lib/seed";
 import { createProcessEnvScope } from "./helpers/process-env.mts";
 
@@ -236,7 +237,7 @@ try {
   const aiChatRoute = await import("../src/app/api/ai/chat/route");
   const sourcingRoute = await import("../src/app/api/sourcing-agent/route");
   const aiChatRequest = (provider = "openai", overrides: Record<string, unknown> = {}) =>
-    new NextRequest("http://localhost/api/ai/chat", {
+    isolateConnection(new NextRequest("http://localhost/api/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
       body: JSON.stringify({
@@ -246,14 +247,14 @@ try {
         ...(provider === "none" ? {} : { model: "gpt-4o-mini", apiKeyId: "11111111-1111-4111-8111-111111111111" }),
         ...overrides,
       }),
-    });
+    }));
   const campaign = {
     id: "campaign-1",
     jobAnalysis: { title: "Platform Engineer", skills: ["TypeScript"] },
     scoringWeights: {},
   };
   const sourcingRequest = () =>
-    new NextRequest("http://localhost/api/sourcing-agent", {
+    isolateConnection(new NextRequest("http://localhost/api/sourcing-agent", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -265,7 +266,7 @@ try {
         campaignId: sourcingCampaign.id,
         count: 1,
       }),
-    });
+    }));
   const resetCalls = () => {
     resolverCalls.length = 0;
     upstreamCalls = 0;
@@ -307,8 +308,8 @@ try {
 
   resetCalls();
   const localChat = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
-  ok("admin can draft with a keyless local model tag", localChat.status === 200 && (await localChat.json()).ok === true);
-  ok("keyless local drafting does not consult the vault", resolverCalls.length === 0 && upstreamCalls === 1);
+  ok("a body model URL is not dialed", localChat.status === 400 && upstreamCalls === 0);
+  ok("keyless local drafting does not consult the vault", resolverCalls.length === 0);
   resetCalls();
   const unsafeLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
   ok("local drafting blocks metadata URL before egress", unsafeLocal.status === 400 && upstreamCalls === 0 && resolverCalls.length === 0);

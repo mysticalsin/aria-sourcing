@@ -318,7 +318,9 @@ for (const url of ["http://169.254.169.254/v1", "https://example.com/v1", "http:
   try { resolveProviderEndpoint("local", url); } catch { blocked = true; }
   ok(`unsafe local endpoint blocked: ${url}`, blocked);
 }
-ok("Docker host endpoint allowed", resolveProviderEndpoint("local", "http://host.docker.internal:11434/v1").includes("host.docker.internal"));
+let dockerHostBlocked = false;
+try { resolveProviderEndpoint("local", "http://host.docker.internal:11434/v1"); } catch { dockerHostBlocked = true; }
+ok("Docker host endpoint refused", dockerHostBlocked);
 ok("hosted provider ignores custom URL", resolveProviderEndpoint("openai", "http://localhost:1234") === "https://api.openai.com/v1/chat/completions");
 
 /* ---- 14. Claude spend ledger and budget gate ------------------------------ */

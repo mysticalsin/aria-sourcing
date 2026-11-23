@@ -58,24 +58,36 @@ const store: RateLimitStore =
   globalRef.__msourcingRateLimit ??
   (globalRef.__msourcingRateLimit = { buckets: new Map(), lastSweep: Date.now() });
 
+function connectionAddress(req: Request): string {
+  const peer = (req as Request & { socket?: { remoteAddress?: string | null } }).socket?.remoteAddress;
+  return typeof peer === "string" ? peer.trim() : "";
+}
+
+/** Comma-separated socket addresses of proxies allowed to set the client address. */
+function trustedProxyPeers(): Set<string> {
+  return new Set(
+    (process.env.ARIA_TRUSTED_PROXY_IPS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+}
+
 /**
- * Build a stable rate-limit key from the request IP, a logical scope, and an
+ * Build a stable rate-limit key from the client address, a logical scope, and an
  * optional user id.
  *
- * IP resolution is spoof-resistant: prefer `x-real-ip` (set by Vercel / most
- * proxies to the TRUE client IP and not client-appendable), then the LAST hop of
- * `x-forwarded-for` (appended by the closest trusted proxy — the leftmost entry is
- * attacker-controlled and must never be trusted), then a constant so unidentifiable
- * callers share one bucket rather than minting unlimited buckets. `scope` isolates
- * limits per endpoint; `userId` (when known) ties the limit to the principal.
+ * The address is the connection peer. A peer listed in `ARIA_TRUSTED_PROXY_IPS`
+ * may supply the address in `x-real-ip`, which the proxy overwrites before the
+ * app sees it. Any other caller-supplied forwarding header is ignored, so one
+ * connection shares one bucket. `scope` isolates limits per endpoint; `userId`
+ * (when known) ties the limit to the principal.
  */
 export function rateLimitKey(req: Request, scope: string, userId?: string | null): string {
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  const forwarded = req.headers.get("x-forwarded-for");
-  const lastHop = forwarded
-    ? forwarded.split(",").map((s) => s.trim()).filter(Boolean).pop()
-    : "";
-  const ip = realIp || lastHop || "unknown";
+  const peer = connectionAddress(req);
+  const trusted = peer.length > 0 && trustedProxyPeers().has(peer);
+  const proxySet = req.headers.get("x-real-ip")?.trim() ?? "";
+  const ip = trusted ? proxySet || peer : peer || "unknown";
   return `${scope}:${ip}:${userId ?? "anon"}`;
 }
 
