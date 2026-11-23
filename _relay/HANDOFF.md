@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 438
 agent: cursor-grok
-updated: 2026-11-23T13:22Z
+updated: 2026-11-23T13:24Z
 status: local-main-hire-route
 ---
 
@@ -10,7 +10,7 @@ status: local-main-hire-route
 
 ## Current state
 
-- Local `main` tip is the hire-route commit whose parent is `0fd61f6c78424cc9eca867d10d8b60e321364f46` (dependency audit). `git rev-parse HEAD` is that tip.
+- Audit `0fd61f6c78424cc9eca867d10d8b60e321364f46`. Hire route `66cbfac6432c3023a85a8f2d2fff374251b41840`. Next 16 agent-rules block `91386259`. This handoff sits on top of those.
 - `origin/main` is still `b5480986`. Do not push. Do not open a PR. GitHub rejected `main` (`GH006`, protected branch).
 - `npx tsc --noEmit && npm test` green with `flyctl` on `PATH` and `FLY_API_TOKEN=local-validate-only`.
 - Manifest freeze: pretest 51, application 156, posttest 2, all 209, parity 211.
