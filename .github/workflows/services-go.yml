@@ -1,10 +1,18 @@
 name: Services (Go)
 
+# Same push set as ci.yml. ubuntu-latest has stayed queued with no runner.
+
 on:
   push:
-    branches: ["**"]
+    branches: [vercel-demo, main, twa-odoo]
   pull_request:
     branches: ["**"]
+
+# One group per workflow and branch. Pull requests cancel a stale run.
+# Pushes to the default branch and twa-odoo do not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}
 
 permissions:
   contents: read
@@ -12,7 +20,7 @@ permissions:
 jobs:
   go:
     name: Go test and bench
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
