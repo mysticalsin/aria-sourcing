@@ -4,7 +4,7 @@ import type { ApolloSearchProfile } from "@/lib/sourcing/apollo";
 import type { GithubUser } from "@/lib/sourcing/github-identity";
 import type { SeamlessContact } from "@/lib/sourcing/seamless";
 import { skillsObservedIn, linkedInProfileMeetsQualityBar } from "@/lib/sourcing/skill-evidence";
-import type { WebLead, WebSearchPlatform } from "@/lib/sourcing/web-leads";
+import { isPublicLinkedInProfileUrl, type WebLead, type WebSearchPlatform } from "@/lib/sourcing/web-leads";
 import type { Campaign, Candidate, ScoringWeights } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { genId, initialsFrom } from "@/lib/utils";
@@ -209,6 +209,10 @@ export function mapWebSearchCandidates(
   const qualitySkips: { name: string; reason: string }[] = [];
   const raw: Candidate[] = [];
   for (const lead of leads) {
+    if (platform === "LinkedIn" && !isPublicLinkedInProfileUrl(lead.url)) {
+      qualitySkips.push({ name: lead.name, reason: "Not a public LinkedIn profile URL." });
+      continue;
+    }
     const evidenceText = `${lead.title} ${lead.company} ${lead.snippet}`;
     const techStack = skillsObservedIn(evidenceText, allSkills);
     if (
