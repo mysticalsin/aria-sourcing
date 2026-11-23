@@ -491,7 +491,9 @@ func (c *Client) UpsertJob(ctx context.Context, in Job) (Job, error) {
 			return Job{}, err
 		}
 	}
-	_, _ = c.createOne(ctx, "utm.campaign", map[string]any{"name": in.Name})
+	if _, err := c.createBound(ctx, "utm.campaign", "campaign_"+in.AriaID, map[string]any{"name": in.Name}); err != nil {
+		return Job{}, err
+	}
 	c.jobs[in.AriaID] = in
 	c.jobOrder = append(c.jobOrder, in.AriaID)
 	_ = c.box.Store(in.IdempotencyKey, in)
@@ -532,11 +534,8 @@ func (c *Client) UpsertPerson(ctx context.Context, in Person) (Person, error) {
 	if in.LinkedInProfile != "" {
 		vals["linkedin_profile"] = in.LinkedInProfile
 	}
-	id, err := c.createOne(ctx, model, vals)
+	id, err := c.createBound(ctx, model, "person_"+in.AriaID, vals)
 	if err != nil {
-		return Person{}, err
-	}
-	if err := c.bindXMLID(ctx, "person_"+in.AriaID, model, id); err != nil {
 		return Person{}, err
 	}
 	in.ID = id
@@ -599,14 +598,14 @@ func (c *Client) partnerByEmail(ctx context.Context, name, email, ariaID string)
 }
 
 func (c *Client) upsertPartnerLocked(ctx context.Context, in Partner) (Partner, error) {
-	if row, ok := c.partners[in.AriaID]; ok {
+	if row, ok := c.partners[in.AriaID]; ok && row.ID != 0 {
 		return row, nil
 	}
 	vals := map[string]any{"name": in.Name, "is_company": in.IsCompany}
 	if in.Email != "" {
 		vals["email"] = in.Email
 	}
-	id, err := c.createOne(ctx, "res.partner", vals)
+	id, err := c.createBound(ctx, "res.partner", "partner_"+in.AriaID, vals)
 	if err != nil {
 		return Partner{}, err
 	}
@@ -724,6 +723,11 @@ func (c *Client) cacheApplicant(ctx context.Context, in Applicant, resID int64, 
 		}
 	}
 	if err := c.bindXMLID(ctx, "applicant_"+in.AriaID, "hr.applicant", resID); err != nil {
+		if !update {
+			if _, found, findErr := c.findXMLID(ctx, "applicant_"+in.AriaID, "hr.applicant"); findErr == nil && !found {
+				_ = c.unlink(ctx, "hr.applicant", resID)
+			}
+		}
 		return Applicant{}, err
 	}
 	if in.SmartCandidateID != "" && in.PartnerID != 0 {
