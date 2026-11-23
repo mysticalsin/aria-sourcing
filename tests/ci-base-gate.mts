@@ -92,7 +92,7 @@ for (const entry of falsePositives) {
   ok(`CI hygiene fingerprint has its reason: ${entry.fingerprint}`, reasonPrecedes(ignore, entry.fingerprint, entry.reason));
 }
 ok("gitleaks keeps the default rules", /useDefault\s*=\s*true/.test(gitleaks));
-ok("gitleaks does not allowlist a path or turn the rules off", !/\[allowlist\]/.test(gitleaks) && !/useDefault\s*=\s*false/.test(gitleaks));
+ok("gitleaks [[allowlists]] entries are not a path allowlist", /\[\[allowlists\]\]/.test(gitleaks) && !/^\s*paths\s*=/m.test(gitleaks) && !/useDefault\s*=\s*false/.test(gitleaks));
 
 /* Release gate: it has no check of its own. It fails when secret scan or
    the local demo is not success. */

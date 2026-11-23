@@ -112,13 +112,19 @@ try {
   await page.getByRole("tab", { name: /^Candidates/ }).click();
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
-  await dialog.getByRole("tab", { name: "Manual", exact: true }).click();
   // The LinkedIn tab keeps its own Name and Lawful basis inputs mounted and
   // hidden. getByLabel hits that hidden input and times out.
+  const manualTab = dialog.getByRole("tab", { name: "Manual", exact: true });
+  await manualTab.click();
+  if ((await manualTab.getAttribute("aria-selected")) !== "true") await manualTab.evaluate((el) => el.click());
+  await until(async () => (await manualTab.getAttribute("aria-selected")) === "true", "Manual intake tab did not become selected.");
   const manualName = dialog.locator("[id$='-manual-name']");
   await manualName.waitFor({ state: "visible" });
+  await manualName.scrollIntoViewIfNeeded();
   await manualName.fill(marker + " Person");
-  await dialog.locator("[id$='-manual-lawful-basis']").selectOption("consent");
+  const manualBasis = dialog.locator("[id$='-manual-lawful-basis']");
+  await manualBasis.scrollIntoViewIfNeeded();
+  await manualBasis.selectOption("consent");
   await dialog.getByRole("button", { name: "Add candidate", exact: true }).click();
   const candidate = await until(async () => (await persisted(token))?.candidates?.find((item) => item.name === marker + " Person"), "Candidate did not persist.");
   candidateId = candidate.id;
