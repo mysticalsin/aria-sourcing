@@ -13,6 +13,7 @@
 // a candidate or a score; it only chooses which real, already-scored people to
 // draft outreach for.
 
+import { fetchPublicUrl } from "@/lib/api/public-fetch";
 import type { McpTool } from "@/lib/mcp-client";
 import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
@@ -148,7 +149,7 @@ export function makeSourcingToolRunner(
         ? (await linkedInLeadsForSearch(
             { query: scopedQuery, count, publicHits: hits },
             process.env,
-            (webFetchImpl as typeof fetch | undefined) ?? fetch,
+            (webFetchImpl as typeof fetch | undefined) ?? fetchPublicUrl,
           )).leads
         : hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);

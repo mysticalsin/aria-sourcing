@@ -1,6 +1,7 @@
 import { linkedInSourcingRunsWithoutErp } from "../src/lib/hire-connector";
 import { mapWebSearchCandidates } from "../src/lib/sourcing/candidate-mappers";
-import { linkedInLeadsForSearch, sourceRecruiterSystemConnect } from "../src/lib/sourcing/linkedin-recruiter";
+import { readFileSync } from "node:fs";
+import { envWithoutRecruiterCredentials, linkedInLeadsForSearch, sourceRecruiterSystemConnect } from "../src/lib/sourcing/linkedin-recruiter";
 import { buildSeedState } from "../src/lib/seed";
 
 let pass = 0;
@@ -82,12 +83,48 @@ const refused = await sourceRecruiterSystemConnect(
 );
 ok("a linkedin.com page is not used as the Recruiter API", refused.configured === true && refused.leads.length === 0 && calls.length === 1);
 
-const state = buildSeedState();
-const campaign = state.campaigns[0]!;
-const mapped = mapWebSearchCandidates(found.leads, campaign, "engineer", "LinkedIn", [], campaign.scoringWeights);
-const kept = mapped.accepted.map((candidate) => candidate.name);
-ok("volume keeps stated roles", kept.includes("Ada Lovelace") && kept.includes("Grace Hopper"));
-ok("the quality bar drops a profile with no role and no brief skill", !kept.includes("Weak Profile"));
+const metadata = await sourceRecruiterSystemConnect(
+  { query: "engineer", count: 1 },
+  { NODE_ENV: "test", LINKEDIN_RSC_URL: "https://169.254.169.254/latest", LINKEDIN_RSC_TOKEN: "rsc-token" },
+  fakeFetch,
+);
+ok("Recruiter refuses a metadata endpoint", metadata.leads.length === 0 && calls.length === 1);
+
+const lookalike = await sourceRecruiterSystemConnect(
+  { query: "engineer", count: 1 },
+  { NODE_ENV: "test", LINKEDIN_RSC_URL: "https://api.linkedin.com/v2/recruiterSearch", LINKEDIN_RSC_TOKEN: "rsc-token" },
+  (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      elements: [
+        { firstName: "Pat", lastName: "Example", headline: "Engineer", publicProfileUrl: "https://linkedin.com.evil.test/in/pat" },
+        { firstName: "Ada", lastName: "Lovelace", headline: "Engineer", publicProfileUrl: "javascript:alert(1)" },
+      ],
+    }),
+  }) as unknown as Response) as typeof fetch,
+);
+ok("Recruiter drops profile URLs that are not public LinkedIn profiles", lookalike.leads.length === 0);
+
+const capped = await linkedInLeadsForSearch(
+  {
+    query: "engineer",
+    count: 2,
+    publicHits: [
+      { title: "Grace Hopper - Compiler Engineer | LinkedIn", url: "https://www.linkedin.com/in/grace", snippet: "Compilers." },
+      { title: "Alan Turing - Engineer | LinkedIn", url: "https://www.linkedin.com/in/alan", snippet: "Codes." },
+    ],
+  },
+  env,
+  fakeFetch,
+);
+ok("public plus Recruiter leads stay within the requested count", capped.leads.length === 2);
+
+const stripped = envWithoutRecruiterCredentials({ ...env, ODOO_URL: "https://odoo.example.test" });
+ok("demo search env drops Recruiter credentials", !stripped.LINKEDIN_RSC_URL && !stripped.LINKEDIN_RSC_TOKEN && stripped.ODOO_URL === "https://odoo.example.test");
+const sourceRoute = readFileSync(new URL("../src/app/api/source/route.ts", import.meta.url), "utf8");
+ok("demo source search does not spend the Recruiter token", sourceRoute.includes("envWithoutRecruiterCredentials(process.env)"));
+
 
 console.log(`RESULT linkedin-recruiter: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

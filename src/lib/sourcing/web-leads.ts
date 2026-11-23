@@ -84,6 +84,25 @@ function nameFromSlug(url: string): string {
   }
 }
 
+/** An https linkedin.com /in/ profile with no credentials or port. Anything else is not a profile link. */
+export function isPublicLinkedInProfileUrl(value: string | undefined | null): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase();
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      (host === "linkedin.com" || host.endsWith(".linkedin.com")) &&
+      url.pathname.startsWith("/in/")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** A raw url-slug ("jane-doe-4471"), not prose — prefer the title-cased slug over this. */
 function looksLikeSlug(s: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(s);
