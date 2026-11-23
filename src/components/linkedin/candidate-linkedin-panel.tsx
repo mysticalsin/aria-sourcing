@@ -1,6 +1,7 @@
 "use client";
 
 import { Linkedin } from "lucide-react";
+import { isPublicLinkedInProfileUrl } from "@/lib/sourcing/web-leads";
 import type { Candidate } from "@/lib/types";
 
 /**
@@ -54,7 +55,7 @@ export function CandidateLinkedInPanel({
           </dd>
         </div>
       </dl>
-      {candidate.linkedinUrl && !masked ? (
+      {candidate.linkedinUrl && !masked && isPublicLinkedInProfileUrl(candidate.linkedinUrl) ? (
         <a
           href={candidate.linkedinUrl}
           target="_blank"

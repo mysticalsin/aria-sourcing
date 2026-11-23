@@ -125,6 +125,35 @@ ok("demo search env drops Recruiter credentials", !stripped.LINKEDIN_RSC_URL && 
 const sourceRoute = readFileSync(new URL("../src/app/api/source/route.ts", import.meta.url), "utf8");
 ok("demo source search does not spend the Recruiter token", sourceRoute.includes("envWithoutRecruiterCredentials(process.env)"));
 
+const React = (await import("react")).default;
+const { renderToStaticMarkup } = await import("react-dom/server");
+const { CandidateLinkedInPanel } = await import("../src/components/linkedin/candidate-linkedin-panel.tsx");
+const panelCandidate = {
+  location: "",
+  currentTitle: "Engineer",
+  techStack: [],
+  sourcePlatform: "LinkedIn" as const,
+  sourceQuery: "",
+};
+const scriptPanel = renderToStaticMarkup(
+  React.createElement(CandidateLinkedInPanel, { candidate: { ...panelCandidate, linkedinUrl: "javascript:alert(1)" }, masked: false, recruiterConnected: false }),
+);
+ok("the LinkedIn panel never links a javascript URL", !scriptPanel.includes("javascript:") && !scriptPanel.includes("Open public profile"));
+const lookalikePanel = renderToStaticMarkup(
+  React.createElement(CandidateLinkedInPanel, { candidate: { ...panelCandidate, linkedinUrl: "https://linkedin.com.evil.test/in/pat" }, masked: false, recruiterConnected: false }),
+);
+ok("the LinkedIn panel does not link a lookalike host", !lookalikePanel.includes("evil.test"));
+const safePanel = renderToStaticMarkup(
+  React.createElement(CandidateLinkedInPanel, { candidate: { ...panelCandidate, linkedinUrl: "https://www.linkedin.com/in/pat-example" }, masked: false, recruiterConnected: false }),
+);
+ok("the LinkedIn panel links a public profile with noreferrer", safePanel.includes('href="https://www.linkedin.com/in/pat-example"') && safePanel.includes('rel="noreferrer"'));
+
+const state = buildSeedState();
+const campaign = state.campaigns[0]!;
+const mapped = mapWebSearchCandidates(found.leads, campaign, "engineer", "LinkedIn", [], campaign.scoringWeights);
+const kept = mapped.accepted.map((candidate) => candidate.name);
+ok("volume keeps stated roles", kept.includes("Ada Lovelace") && kept.includes("Grace Hopper"));
+ok("the quality bar drops a profile with no role and no brief skill", !kept.includes("Weak Profile"));
 
 console.log(`RESULT linkedin-recruiter: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
