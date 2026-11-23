@@ -29,6 +29,8 @@ scan() {
 scan "$ROOT/scripts/integration-e2e.sh"
 scan "$ROOT/scripts/integration-e2e-mac.sh"
 scan "$ROOT/scripts/e2e-compose-project.sh"
+scan "$ROOT/scripts/e2e-go.sh"
+scan "$ROOT/stress/run.sh"
 
 helper="$ROOT/scripts/e2e-compose-project.sh"
 harness="$ROOT/scripts/integration-e2e.sh"

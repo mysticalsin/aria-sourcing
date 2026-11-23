@@ -3,6 +3,20 @@
 # Prints a JSON object on stdout. Logs land in $ARTIFACT_DIR.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/e2e-go.sh
+. "$ROOT/scripts/e2e-go.sh"
+GO_BIN=""
+if GO_BIN="$(e2e_find_go)"; then
+  case "$GO_BIN" in
+    /*)
+      PATH="$(dirname "$GO_BIN"):${PATH:-}"
+      export PATH
+      ;;
+  esac
+else
+  GO_BIN=""
+  printf '%s\n' "harness: $(e2e_go_skip_repro)" >&2
+fi
 ART="${ARTIFACT_DIR:-${ROOT}/e2e-artifacts/stress}"
 mkdir -p "$ART"
 HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
@@ -40,7 +54,11 @@ link_channels
 run_go() {
   local id="$1" dir="$2" pkg="$3" pattern="$4" limit="$5"
   local log="$ART/${id}.log"
-  if (cd "$dir" && go test -count=1 -timeout "$limit" -run "$pattern" "$pkg") >"$log" 2>&1; then
+  if [ -z "$GO_BIN" ]; then
+    record "$id" SKIP "$(e2e_go_skip_repro)"
+    return 0
+  fi
+  if (cd "$dir" && "$GO_BIN" test -count=1 -timeout "$limit" -run "$pattern" "$pkg") >"$log" 2>&1; then
     record "$id" PASS "$(tail -n 5 "$log" | tr '\n' ' ')"
   else
     record "$id" FAIL "$(tail -n 20 "$log" | tr '\n' ' ')"
@@ -102,7 +120,9 @@ else
 fi
 
 if [ "$SOAK" != 0 ]; then
-  if (cd "$ROOT/services/channels" && STRESS_SOAK_SECONDS="$SOAK" go test -count=1 -timeout "$((SOAK + 120))s" -run TestStressA8Soak .) >"$ART/A8.log" 2>&1; then
+  if [ -z "$GO_BIN" ]; then
+    record A8 SKIP "$(e2e_go_skip_repro)"
+  elif (cd "$ROOT/services/channels" && STRESS_SOAK_SECONDS="$SOAK" "$GO_BIN" test -count=1 -timeout "$((SOAK + 120))s" -run TestStressA8Soak .) >"$ART/A8.log" 2>&1; then
     record A8 PASS "$(tail -n 3 "$ART/A8.log" | tr '\n' ' ')"
   else
     record A8 FAIL "$(tail -n 20 "$ART/A8.log" | tr '\n' ' ')"
