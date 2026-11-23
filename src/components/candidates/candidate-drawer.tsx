@@ -22,6 +22,7 @@ import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { VerifyProfileFields, readVerifiedProfile } from "@/components/candidates/verify-profile-fields";
 import { inPocScope } from "@/components/app/nav";
 import { CandidateLinkedIn, LinkedInQuickAction, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
+import { CandidateOdooAction } from "@/components/odoo/candidate-odoo";
 import { bookingCalendarSummary } from "@/lib/booking-status";
 import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
@@ -1481,6 +1482,15 @@ export function CandidateDrawer({
                   candidateId={c.id}
                   onOpen={() => setTab("linkedin")}
                   autoCheck={!masked && !erasureTombstone && can(role, "outreach") && !linkedInContactBlock(c.complianceFlags)}
+                />
+              )}
+              {supabaseEnabled && (
+                <CandidateOdooAction
+                  candidateId={c.id}
+                  campaignId={c.campaignId}
+                  name={dc.name}
+                  hidden={masked || erasureTombstone}
+                  blocked={linkedInContactBlock(c.complianceFlags)}
                 />
               )}
             </div>

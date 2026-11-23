@@ -10,6 +10,7 @@ export const SETTINGS_SECTION_ORDER = [
   "03",
   "04",
   "20",
+  "21",
   "05",
   "06",
   "07",
@@ -31,6 +32,7 @@ export const SETTINGS_SECTION_ORDER = [
 export const SETTINGS_N_TO_TAB: Record<string, string> = {
   "04": "integrations",
   "20": "integrations",
+  "21": "integrations",
   "14": "ai",
   "15": "ai",
   "16": "ai",
@@ -58,6 +60,7 @@ export const SETTINGS_HASH_TO_SECTION: Record<string, string> = {
   "linkedin-outreach-stack": "04",
   "integrations-catalog": "04",
   linkedin: "20",
+  odoo: "21",
 };
 
 const SESSION_KEY = "aria.settings.openSection";

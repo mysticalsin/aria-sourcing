@@ -29,6 +29,7 @@ import {
 import { parseIntakeLive, deriveValidationWarnings } from "@/lib/ai/intake";
 import { useActions, useCampaigns, useHydrated, useSettings } from "@/lib/store";
 import { supabaseEnabled } from "@/lib/supabase/config";
+import { OdooImportButton, linkCampaignToOdooJob, type ImportedOdooJob } from "@/components/odoo/odoo-import-button";
 import {
   copyToClipboard,
   formatPercent,
@@ -98,6 +99,8 @@ export function SingleRoleIntake() {
   const [skillDraft, setSkillDraft] = useState("");
   const [dustPending, setDustPending] = useState(false);
   const [parsing, setParsing] = useState(false);
+  // The Odoo job position the brief was imported from; the new campaign gets linked to it.
+  const [odooJob, setOdooJob] = useState<{ jobId: number; jobName: string } | null>(null);
   // Guards against a slow Dust reply from an earlier parse landing on top of a
   // newer one if the user re-parses before the first call resolves.
   const parseSeqRef = React.useRef(0);
@@ -139,7 +142,19 @@ export function SingleRoleIntake() {
     });
   }
 
+  function importOdooJob(job: ImportedOdooJob) {
+    setEmail(job.brief.email);
+    setJd(job.brief.jd);
+    setOdooJob({ jobId: job.jobId, jobName: job.jobName });
+    toast({
+      title: "Odoo job imported",
+      description: `“${job.jobName}” is ready to parse. The campaign will stay linked to it.`,
+      variant: "info",
+    });
+  }
+
   function loadSample() {
+    setOdooJob(null);
     setEmail(SAMPLE_INTAKE_EMAIL);
     setJd(SAMPLE_INTAKE_JD);
     toast({
@@ -150,6 +165,7 @@ export function SingleRoleIntake() {
   }
 
   function loadMantu() {
+    setOdooJob(null);
     setEmail(SAMPLE_MANTU_EMAIL);
     setJd("");
     toast({
@@ -274,6 +290,12 @@ export function SingleRoleIntake() {
       description: `${campaign.title} is ready. Review sources and profile limits on the campaign page.`,
       variant: "success",
     });
+    if (odooJob) {
+      const linked = await linkCampaignToOdooJob(campaign.id, odooJob.jobId);
+      if (!linked.ok) {
+        toast({ title: "Campaign not linked to Odoo", description: `${linked.error} Link it from the campaign page.`, variant: "warning" });
+      }
+    }
     router.push(`/campaigns/${campaign.id}`);
   }
 
@@ -351,6 +373,7 @@ export function SingleRoleIntake() {
                   >
                     Load Mantu need
                   </Button>
+                  <OdooImportButton onImported={importOdooJob} disabled={parsing} />
                   <Button
                     type="button"
                     leftIcon={<ScanText aria-hidden />}
@@ -362,6 +385,14 @@ export function SingleRoleIntake() {
                     {parsing ? "Parsing…" : "Parse JD"}
                   </Button>
                 </div>
+                {odooJob && (
+                  <p className="text-xs text-muted" data-odoo-import>
+                    From Odoo: <span className="font-semibold text-ink">{odooJob.jobName}</span>. The new campaign will be linked to it.{" "}
+                    <button type="button" className="font-semibold text-electric underline" onClick={() => setOdooJob(null)}>
+                      Don&apos;t link
+                    </button>
+                  </p>
+                )}
               </div>
             </CardBody>
           </Card>

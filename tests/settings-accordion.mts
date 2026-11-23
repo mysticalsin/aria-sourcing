@@ -20,9 +20,11 @@ import {
 assert.deepEqual(settingsSectionsForTab("ai"), ["14", "15", "16", "17", "19"]);
 assert.equal(settingsDefaultSectionForTab("ai"), "14");
 assert.equal(settingsDefaultSectionForTab("integrations"), "04");
-assert.equal(settingsSectionsForTab("integrations").length, 2);
-assert.deepEqual(settingsSectionsForTab("integrations"), ["04", "20"]);
+assert.equal(settingsSectionsForTab("integrations").length, 3);
+assert.deepEqual(settingsSectionsForTab("integrations"), ["04", "20", "21"]);
 assert.equal(settingsSectionFromHash("#linkedin"), "20");
+assert.equal(settingsSectionFromHash("#odoo"), "21");
+assert.equal(settingsTabFromHash("odoo"), "integrations");
 assert.deepEqual(settingsSectionsForTab("fleet"), ["03", "06", "09", "18"]);
 
 assert.equal(settingsSectionFromHash("email-connections-panel"), "04");
@@ -86,6 +88,7 @@ assert.equal(settingsNeighborSection("ai", "14", "prev"), "19", "wraps up");
 assert.equal(settingsNeighborSection("ai", "15", "first"), "14");
 assert.equal(settingsNeighborSection("ai", "15", "last"), "19");
 assert.equal(settingsNeighborSection("integrations", "04", "next"), "20");
-assert.equal(settingsNeighborSection("integrations", "20", "next"), "04", "wraps");
+assert.equal(settingsNeighborSection("integrations", "20", "next"), "21");
+assert.equal(settingsNeighborSection("integrations", "21", "next"), "04", "wraps");
 
 console.log("settings-accordion: ok");

@@ -38,6 +38,7 @@ import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
 import { CampaignSourcingPanel } from "@/components/run/campaign-sourcing-panel";
 import { CampaignAutopilotCard } from "@/components/agents/campaign-autopilot-card";
+import { CampaignOdooBar } from "@/components/odoo/campaign-odoo";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
@@ -1042,6 +1043,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           className="mb-6 animate-fade-in"
         />
       )}
+
+      {supabaseEnabled && <CampaignOdooBar key={`odoo-${c.id}`} campaignId={c.id} />}
 
       {supabaseEnabled && <CampaignSourcingPanel key={c.id} campaignId={c.id} open={runOpen} onClose={() => setRunOpen(false)} onCandidate={openCandidate} onCandidates={() => {
         setTab("candidates");

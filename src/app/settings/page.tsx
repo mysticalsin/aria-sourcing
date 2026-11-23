@@ -31,6 +31,7 @@ import { AiUsagePanel } from "@/components/settings/ai-usage-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
+import { OdooPanel } from "@/components/settings/odoo-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
@@ -816,6 +817,18 @@ export default function SettingsPage() {
           >
             <div id="linkedin">
               <LinkedInSettingsPanel />
+            </div>
+          </Section>
+
+          {/* 21 — Odoo (recruitment system of record, ADR 0003) */}
+          <Section
+            n="21"
+            eyebrow="Recruitment system"
+            title="Odoo"
+            description="Odoo Recruitment keeps the applications: start campaigns from Odoo job positions, send the candidates you pursue to Odoo, and get their Odoo stage back."
+          >
+            <div id="odoo">
+              <OdooPanel />
             </div>
           </Section>
 
