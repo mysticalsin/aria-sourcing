@@ -1,50 +1,44 @@
 ---
 project: MSourcing / ARIA
-shift: 470
+shift: 471
 agent: cursor
-updated: 2026-11-21
-status: linkedin-token-auth-host-checks
+updated: 2026-11-23
+status: linkedin-token-devin-followup
 ---
 
-# Handoff - Shift 470
+# Handoff - Shift 471
 
 ## Current state
 
-- Branch `cursor/linkedin-token-channel-3374`, based on `origin/twa-odoo` (`e3fa3f59`). PR #178. Do not merge.
-- The LinkedIn session-token channel stays in `src/channels/linkedin-token/`. It is off until an owner or admin records the risk notice.
-- Feature red-first commit: `ac8162a70b89cc8ed6622858e746ef0c66360393`.
-- Authorization and host-check red-first commit: `624d7d8373d51ce1ba0fbfbbdd8b00f18f422c14`.
-- Unit suite: `tests/linkedin-token.mts` and `tests/linkedin-token-security.mts` pass (34). Playwright `e2e/linkedin-token.spec.ts`: 14 passed, 0 failed (log `e2e-artifacts/20261121T034838Z`).
-- `next` in the lockfile is still 16.4.3. No upgrade in this branch.
+- Branch `cursor/linkedin-token-channel-3374`, PR #178, base `twa-odoo` (`e3fa3f59`). Do not merge.
+- Tip after the mapped-address and timeout follow-up: see `git rev-parse HEAD`.
+- The channel stays in `src/channels/linkedin-token/`. It is off until an owner or admin records the risk notice.
+- `next` in the lockfile is still 16.4.3. This branch does not upgrade Next.js.
 
 ## Done this shift
 
-- Token routes require a signed-in user and the session workspace. Viewers cannot change the channel. Approval stamps come from server state.
-- Outbound delivery stays on loopback or one configured https host. The remote flag does not replace that check.
-- The test-session route stays closed unless `NODE_ENV` is `test` and `ARIA_LINKEDIN_TOKEN_TEST_SESSION=1`. `scripts/e2e-mac.sh` sets both.
+- IPv4-mapped private addresses are refused the same way as private IPv4.
+- A pinned `www.linkedin.com` address is fetched with the certificate name `www.linkedin.com` and certificate checking left on.
+- A timeout keeps one transport attempt and does not free the cap slot or the approval.
+- The queued-send test checks that the next send runs after the current one finishes.
+- A JSON body whose message says login stays an accepted answer. Checkpoint URLs and redirects still pause.
 
 ## Blockers
 
-- None in this port. Wait for every CI check on the new head before freezing.
+- `gitleaks git --log-opts=--all` still reports one finding on commit `0f2b86e1238067f7525245a7f492d90ee25737b9` (`scripts/jwt-secret-policy.mjs:4`). That commit is not reachable from this head. A scan of `HEAD` reports zero findings. The fingerprint was not added here.
 
 ## Next steps
 
-1. After CI is green, leave the branch frozen. Do not merge.
-2. Narrow PR #168's negative test to allow exactly `src/channels/linkedin-token/`.
-3. Apply `src/channels/linkedin-token/migration.sql` on Postgres when this channel is installed. Local proof uses SQLite via `ARIA_LINKEDIN_TOKEN_DB`.
+1. Leave this tip frozen after the PR body update. Do not merge.
+2. Stack conflicts with #251, #272, and #282 are shared files (`.gitleaksignore`, `docker-compose.yml`, `scripts/accept-local-demo.mjs`, `tests/test-manifest.mjs`, `_relay/HANDOFF.md`, `.github/workflows/ci.yml`). Do not rewrite those tips.
 
 ## Decisions made (don't relitigate)
 
-- Tony, 20:31 BRT: "the token option should be the existing one, toggleable on and off, off by default, with the same guardrails: approved text, daily caps, a kill switch and auto-pause."
-- Tony, earlier: "Yes, build the Aria LinkedIn token option as an off-by-default switch with those safeguards."
-- The port stays TypeScript and reuses `approvalHash` in `src/lib/outreach-content.ts`. The Go guardrails on PR #175 are not on this base and are not imported.
-- The Chrome extension is not copied. The adapter sends HTTP with a user-supplied token to a configured base URL. Tests use a loopback fake only.
-- Do not port `src/lib/sourcing/apify.ts` or `src/app/api/source/apify/**`.
+- Tony: the token option stays the existing one, off by default, with approved text, daily caps, a kill switch, and auto-pause.
+- H-01, NEW-2, and NEW-6 stay as already fixed.
 - Do not upgrade Next.js on this branch.
 
 ## Watch out
 
 - `@playwright/test` is pinned to 1.65.1. `scripts/e2e-mac.sh` refuses Node versions other than 22.x.
-- `next dev` may exit once to show a Next.js security upgrade reminder, then continue on the next start. The script starts it twice for that reason.
-- The dev bundler rewrites a direct `NODE_ENV` read. The session check builds that key at runtime.
-- The token value is never logged. The end-to-end script fails if `fake-li-token-000` appears in the server log, Playwright log, HTML report, traces, or screenshots.
+- Full-history gitleaks sees other branches. A clean `HEAD` scan does not mean `--all` is clean.
