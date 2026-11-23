@@ -7,6 +7,9 @@
 import type { EmailConnection } from "./types";
 import { getAccessTokenForReading } from "./email-oauth";
 import { classifyFailedHttpDeliveryState } from "./delivery-outcome";
+import { sendPolicyFromEnv } from "./approval/dispatch-guard";
+import { exactBodyHash } from "./approval/hash";
+import type { PolicyEnv } from "./approval/types";
 
 export interface CalendarEventInput {
   candidateName: string;
@@ -42,26 +45,64 @@ function agendaText(ev: CalendarEventInput): string {
   return ev.agenda.length ? `Agenda:\n- ${ev.agenda.join("\n- ")}` : "Interview";
 }
 
+const CALENDAR_NOTICE = "calendar-invite-1";
+
+export interface CalendarSendOptions {
+  env?: PolicyEnv;
+  /** Server-checked hash of the exact invite. A client-supplied mismatch stays silent. */
+  approvedHash?: string | null;
+}
+
+/** Hash of the invite a guest would receive: channel, both recipients, subject, and agenda. */
+export function calendarInviteHash(ev: CalendarEventInput): string {
+  const recipients = attendeeEmails(ev).map((email) => email.trim().toLocaleLowerCase()).filter(Boolean).sort();
+  return exactBodyHash({
+    channel: "Calendar",
+    recipient: recipients.join(","),
+    subject: `Interview: ${ev.candidateName}, ${ev.role}`,
+    body: agendaText(ev),
+    noticeVersion: CALENDAR_NOTICE,
+  });
+}
+
+/**
+ * Guest notices stay off until the kill switch is off, every recipient is
+ * allowlisted, and the recorded approval matches this exact invite.
+ */
+export function calendarSendUpdates(
+  env: PolicyEnv,
+  ev: CalendarEventInput,
+  approvedHash: string | null | undefined,
+): "all" | "none" {
+  for (const recipient of attendeeEmails(ev)) {
+    if (!sendPolicyFromEnv(env, recipient).ok) return "none";
+  }
+  if (!approvedHash || approvedHash !== calendarInviteHash(ev)) return "none";
+  return "all";
+}
+
 /** Create the event on the connection owner's primary Google Calendar. */
 export async function createGoogleCalendarEvent(
   ev: CalendarEventInput,
   connection: EmailConnection,
+  options: CalendarSendOptions = {},
 ): Promise<CalendarEventOutcome> {
   const token = await getAccessTokenForReading(connection);
   // A missing/unrefreshable token is proven pre-transport: no request ever
   // reached Google, so this is always safe to retry.
   if (!token) return { ok: false, provider: "Gmail API", deliveryState: "not-sent", detail: "No access token." };
 
+  const sendUpdates = calendarSendUpdates(options.env ?? {}, ev, options.approvedHash);
   const body = {
     summary: `Interview: ${ev.candidateName}, ${ev.role}`,
     description: agendaText(ev),
     start: { dateTime: ev.startTime, timeZone: ev.timezone || "UTC" },
     end: { dateTime: ev.endTime, timeZone: ev.timezone || "UTC" },
-    attendees: attendeeEmails(ev).map((email) => ({ email })),
+    ...(sendUpdates === "all" ? { attendees: attendeeEmails(ev).map((email) => ({ email })) } : {}),
   };
   try {
     const res = await fetch(
-      "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=${sendUpdates}`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -97,21 +138,27 @@ export async function createGoogleCalendarEvent(
 export async function createGraphCalendarEvent(
   ev: CalendarEventInput,
   connection: EmailConnection,
+  options: CalendarSendOptions = {},
 ): Promise<CalendarEventOutcome> {
   const token = await getAccessTokenForReading(connection);
   // A missing/unrefreshable token is proven pre-transport: no request ever
   // reached Graph, so this is always safe to retry.
   if (!token) return { ok: false, provider: "Microsoft Graph", deliveryState: "not-sent", detail: "No access token." };
 
+  const sendUpdates = calendarSendUpdates(options.env ?? {}, ev, options.approvedHash);
   const body = {
     subject: `Interview: ${ev.candidateName}, ${ev.role}`,
     body: { contentType: "text", content: agendaText(ev) },
     start: { dateTime: ev.startTime, timeZone: ev.timezone || "UTC" },
     end: { dateTime: ev.endTime, timeZone: ev.timezone || "UTC" },
-    attendees: attendeeEmails(ev).map((address) => ({
-      emailAddress: { address },
-      type: "required",
-    })),
+    ...(sendUpdates === "all"
+      ? {
+          attendees: attendeeEmails(ev).map((address) => ({
+            emailAddress: { address },
+            type: "required",
+          })),
+        }
+      : {}),
   };
   try {
     const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {

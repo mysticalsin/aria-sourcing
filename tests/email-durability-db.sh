@@ -219,6 +219,11 @@ insert into public.outreach_approvals(
   encode(digest('cand-1' || E'\n' || 'Email' || E'\n' || 'cand1@target.example.test', 'sha256'), 'hex'),
   'e2000000-0000-4000-8000-000000000002', now(), 'human'
 );
+update public.outreach_approvals
+  set exact_body_hash = public.exact_outreach_body_hash(
+    'Email', 'cand1@target.example.test', 'Subject 1', 'Body one',
+    'outreach-v1', approved_by::text, approved_at)
+  where message_id = 'draft-1';
 
 -- ===========================================================================
 -- 1. enqueue_email_outbound: happy path, duplicate return, validation, RBAC.
@@ -467,6 +472,11 @@ insert into public.outreach_approvals(
   encode(digest('cand-1' || E'\n' || 'Email' || E'\n' || 'cand1@target.example.test', 'sha256'), 'hex'),
   'e2000000-0000-4000-8000-000000000002', now(), 'human'
 );
+update public.outreach_approvals
+  set exact_body_hash = public.exact_outreach_body_hash(
+    'Email', 'cand1@target.example.test', 'Subject S', 'Body supp',
+    'outreach-v1', approved_by::text, approved_at)
+  where message_id = 'draft-supp';
 set role authenticated;
 select email_durability_test.set_authenticated_claims('e2000000-0000-4000-8000-000000000002');
 create temporary table enqueue_supp as
@@ -498,6 +508,11 @@ insert into public.outreach_approvals(
   encode(digest('cand-3' || E'\n' || 'Email' || E'\n' || 'cand3@target.example.test', 'sha256'), 'hex'),
   'e2000000-0000-4000-8000-000000000002', now(), 'human'
 );
+update public.outreach_approvals
+  set exact_body_hash = public.exact_outreach_body_hash(
+    'Email', 'cand3@target.example.test', 'Subject F', 'Body fail',
+    'outreach-v1', approved_by::text, approved_at)
+  where message_id = 'draft-fail';
 set role authenticated;
 select email_durability_test.set_authenticated_claims('e2000000-0000-4000-8000-000000000002');
 create temporary table enqueue_fail as

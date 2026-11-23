@@ -6,6 +6,8 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
+import { approvalPolicyFromEnv } from "@/lib/approval/allowlist";
+import { exactBodyHash, OUTREACH_NOTICE_VERSION } from "@/lib/approval/hash";
 import { approvalHash, approvalScopeHash } from "@/lib/outreach-content";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
@@ -18,6 +20,8 @@ import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateB
  * the "human approval required / never auto-send" guarantee is enforced
  * server-side — not just in browser state. Re-approving the same message_id with
  * different content updates the recorded hash (re-review required after an edit).
+ * A configured recipient allowlist, and test mode even with an empty list,
+ * refuses the approval before that row is written.
  */
 const ApproveSchema = z.object({
   messageId: z.string().min(1).max(120),
@@ -87,9 +91,23 @@ export async function POST(req: NextRequest) {
 
   // Hash the EXACT content the operator approved; the send route recomputes this
   // and refuses if it differs (the body was changed after approval).
+  const approvedAt = new Date().toISOString();
   const bodyHash = approvalHash(subject, body);
+  const exactHash = exactBodyHash({
+    channel,
+    recipient,
+    subject,
+    body,
+    noticeVersion: OUTREACH_NOTICE_VERSION,
+    approverId: user.id,
+    approvedAt,
+  });
   const scopeHash = approvalScopeHash({ candidateId, channel, recipient });
   if (!scopeHash) return NextResponse.json({ ok: false, error: "Invalid approval recipient." }, { status: 400 });
+  const approvalPolicy = approvalPolicyFromEnv(process.env, recipient);
+  if (!approvalPolicy.ok) {
+    return NextResponse.json({ ok: false, error: approvalPolicy.error }, { status: approvalPolicy.status });
+  }
   const disclosure = validateCandidateBoundText(body, disclosureInternalFromCampaignLike(campaign));
   const injection = detectInjection(body);
   if (!disclosure.safe || injection.flagged) {
@@ -107,6 +125,8 @@ export async function POST(req: NextRequest) {
     p_message_id: messageId,
     p_body_hash: bodyHash,
     p_approval_scope_hash: scopeHash,
+    p_approved_at: approvedAt,
+    p_exact_body_hash: exactHash,
   });
   const result = recorded as { ok?: boolean; reason?: string } | null;
   if (error || result?.ok !== true) {
