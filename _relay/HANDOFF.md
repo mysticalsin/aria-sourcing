@@ -13,6 +13,7 @@ status: stack-shared-config
 - Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
+- Merged twa-odoo 70e72d6c (the squash of pull request 251) with a merge commit. The agents healthcheck stays process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The cmdline probe from that squash is not the shared probe. Line allowlists in .gitleaks.toml stay, and they do not allowlist a path.
 
 - Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
   (fix(intake): keep skills Claude reworded from the brief's own words).
@@ -55,6 +56,7 @@ status: stack-shared-config
 
 - 2026-11-21: the five shared files above are canonical on cursor/aria-stack-shared-config. Later pull requests merge that branch with an ordinary merge and keep this version of those files.
 - 2026-11-21: the agents healthcheck is process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The agents service stays in docker-compose.yml.
+- 2026-11-23: pull request 251 landed on twa-odoo as 70e72d6c. This branch merged that commit and kept process.kill(1, 0). The two wantTokenMAC fingerprints are different digests.
 - 2026-11-21: pull request 168 deletes LinkedIn bridge routes and strips LinkedIn dispatch. Pull request 167 keeps its approval hash, allowlist, and kill switch on the remaining send path and does not restore the deleted LinkedIn files.
 
 - Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages

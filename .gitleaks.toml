@@ -2,5 +2,26 @@ title = "aria-sourcing-demo gitleaks config"
 
 # Keep every built-in detection rule. Exceptions belong in exact fingerprints
 # or on the single synthetic line that triggers a rule; never allowlist a path.
+# Fingerprints stay in .gitleaksignore. These tables match that same line shape.
 [extend]
 useDefault = true
+
+[[allowlists]]
+description = "16-letter source identifier linkedinPublicId, not a client secret"
+regexTarget = "line"
+regexes = ['''const linkedinUrl = linkedinPublicId \? linkedInProfileUrl\(linkedinPublicId\)''']
+
+[[allowlists]]
+description = "SHA-256 digest of a retired sample. The sample value is not stored."
+regexTarget = "line"
+regexes = ['''RETIRED_JWT_SECRET_SHA256\s*=\s*"[0-9a-fA-F]{64}"''']
+
+[[allowlists]]
+description = "expected HMAC of a synthetic test vector"
+regexTarget = "line"
+regexes = ['''wantTokenMAC\s*=\s*"[0-9a-fA-F]{64}"''']
+
+[[allowlists]]
+description = "synthetic idempotency slug in a unit test, not an API key"
+regexTarget = "line"
+regexes = ['''IdempotencyKey(?::\s*|\s*=\s*)"upsert-cand-[A-Za-z0-9-]+"''']

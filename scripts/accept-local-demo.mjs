@@ -112,6 +112,8 @@ try {
   await page.getByRole("tab", { name: /^Candidates/ }).click();
   await page.getByRole("button", { name: "Add candidate", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add a candidate" });
+  // The LinkedIn tab keeps its own Name and Lawful basis inputs mounted and
+  // hidden. getByLabel hits that hidden input and times out.
   const manualTab = dialog.getByRole("tab", { name: "Manual", exact: true });
   await manualTab.click();
   if ((await manualTab.getAttribute("aria-selected")) !== "true") await manualTab.evaluate((el) => el.click());
