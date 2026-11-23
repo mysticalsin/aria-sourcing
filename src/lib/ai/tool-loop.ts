@@ -27,6 +27,7 @@ import {
 import type { AiTask } from "@/lib/ai/generate";
 import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
 import type { AiActivity } from "@/lib/ai/activities";
+import { assertProviderUrlPublic } from "@/lib/api/url";
 import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
 
@@ -473,8 +474,16 @@ export async function runOpenAiWithTools(args: {
   );
   const deadlineAt = Date.now() + timeoutMs;
   let url: string;
-  try { url = resolveProviderEndpoint(provider, args.baseUrl); }
-  catch { return { ok: false, reason: "Invalid local provider URL.", toolCalls: [] }; }
+  try {
+    url = resolveProviderEndpoint(provider, args.baseUrl);
+    if (provider === "local") {
+      const base = (args.baseUrl ?? "").trim().replace(/\/+$/, "");
+      const resolved = await assertProviderUrlPublic(base);
+      if (!resolved.ok) return { ok: false, reason: "Invalid local provider URL.", toolCalls: [] };
+    }
+  } catch {
+    return { ok: false, reason: "Invalid local provider URL.", toolCalls: [] };
+  }
   const toolCallLog: ToolCallRecord[] = [];
   let toolCallAttempts = 0;
 
