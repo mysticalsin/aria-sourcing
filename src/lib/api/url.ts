@@ -102,6 +102,13 @@ function isPrivateIp(ipRaw: string): boolean {
   return false;
 }
 
+/** True only for a syntactically valid IP literal that is not private or otherwise blocked. */
+export function isPublicIpAddress(ipRaw: string): boolean {
+  const ip = ipRaw.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!isIpLiteral(ip)) return false;
+  return !isPrivateIp(ip);
+}
+
 function isIpLiteral(host: string): boolean {
   const h = host.replace(/^\[|\]$/g, "");
   return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) || h.includes(":");
