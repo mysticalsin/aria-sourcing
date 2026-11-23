@@ -97,9 +97,14 @@ ok("gitleaks keeps the default rules", /useDefault\s*=\s*true/.test(gitleaks));
 ok("gitleaks [[allowlists]] entries are not a path allowlist", /\[\[allowlists\]\]/.test(gitleaks) && !/^\s*paths\s*=/m.test(gitleaks) && !/useDefault\s*=\s*false/.test(gitleaks));
 
 /* Release gate: it has no check of its own. It fails when secret scan or
-   the local demo is not success. */
+   the local demo is not success. The shared workflow also needs
+   channel-adapters, and the original jobs stay on that list. */
 const gate = workflow.slice(workflow.indexOf("\n  release-gate:\n"));
-ok("the release gate always runs", gate.includes("if: always()") && gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo]"));
+ok(
+  "the release gate always runs",
+  gate.includes("if: always()") &&
+    gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters]"),
+);
 ok(
   "the release gate fails unless secret scan and the local demo succeed",
   gate.includes('[ "$SECRET_SCAN_RESULT" != success ]') && gate.includes('[ "$LOCAL_DEMO_RESULT" != success ]'),
