@@ -167,7 +167,7 @@ test("workflows cancel stale PR runs and push only the release branches", () => 
   }
 });
 
-test("handoff records the shared config and the public-repo hygiene watch", () => {
+test("handoff records the shared config and does not claim the hygiene test", () => {
   const handoff = read("_relay/HANDOFF.md");
   assert.match(
     handoff,
@@ -175,6 +175,7 @@ test("handoff records the shared config and the public-repo hygiene watch", () =
   );
   assert.match(handoff, /process\.kill\(1, 0\)/);
   assert.match(handoff, /interval 5s, timeout 5s, retries 12, start_period 5s/);
-  assert.match(handoff, /tests\/public-repo-hygiene\.mts/);
-  assert.match(handoff, /non-placeholder address outside `tests\/`/);
+  assert.match(handoff, /`tests\/public-repo-hygiene\.mts` is absent/);
+  assert.match(handoff, /Goal records on this tip still include non-placeholder addresses/);
+  assert.doesNotMatch(handoff, /addresses in relay notes and goal records at this tip are placeholders/);
 });

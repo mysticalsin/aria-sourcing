@@ -142,7 +142,7 @@ status: stack-shared-config
 
 ## Watch out
 
-- Public-repo hygiene: addresses in relay notes and goal records at this tip are placeholders. `tests/public-repo-hygiene.mts` rejects a private-key block, a non-sample linkedin.com/in/ URL outside tests/, and a non-placeholder address outside `tests/`. History was not rewritten.
+- Public-repo hygiene is not on this tip. `tests/public-repo-hygiene.mts` is absent. Goal records on this tip still include non-placeholder addresses. That cleanup stays on pull request 272. History was not rewritten.
 
 - Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
   the app) before any real autopilot use beyond the demo; set but invalid
