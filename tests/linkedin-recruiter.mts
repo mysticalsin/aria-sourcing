@@ -41,11 +41,16 @@ const fakeFetch = (async (url: string, init?: RequestInit) => {
   } as Response;
 }) as typeof fetch;
 
-const absent = await sourceRecruiterSystemConnect({ query: "engineer", count: 5 }, {}, fakeFetch);
+const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: "test" };
+const absent = await sourceRecruiterSystemConnect({ query: "engineer", count: 5 }, emptyEnv, fakeFetch);
 ok("absent Odoo and SMART still leave Recruiter unconfigured", absent.configured === false && absent.leads.length === 0 && calls.length === 0);
-ok("LinkedIn sourcing still runs without Odoo or SMART", linkedInSourcingRunsWithoutErp({}) === true);
+ok("LinkedIn sourcing still runs without Odoo or SMART", linkedInSourcingRunsWithoutErp(emptyEnv) === true);
 
-const env = { LINKEDIN_RSC_URL: "https://api.linkedin.com/v2/recruiterSearch", LINKEDIN_RSC_TOKEN: "rsc-token" };
+const env: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  LINKEDIN_RSC_URL: "https://api.linkedin.com/v2/recruiterSearch",
+  LINKEDIN_RSC_TOKEN: "rsc-token",
+};
 const found = await linkedInLeadsForSearch(
   {
     query: "site:linkedin.com/in engineer",
@@ -70,7 +75,11 @@ ok(
 );
 ok("public and Recruiter leads are both returned", found.recruiter === "recruiter-system-connect" && found.leads.length === 3);
 
-const refused = await sourceRecruiterSystemConnect({ query: "engineer", count: 2 }, { LINKEDIN_RSC_URL: "https://www.linkedin.com/in/search", LINKEDIN_RSC_TOKEN: "rsc-token" }, fakeFetch);
+const refused = await sourceRecruiterSystemConnect(
+  { query: "engineer", count: 2 },
+  { NODE_ENV: "test", LINKEDIN_RSC_URL: "https://www.linkedin.com/in/search", LINKEDIN_RSC_TOKEN: "rsc-token" },
+  fakeFetch,
+);
 ok("a linkedin.com page is not used as the Recruiter API", refused.configured === true && refused.leads.length === 0 && calls.length === 1);
 
 const state = buildSeedState();

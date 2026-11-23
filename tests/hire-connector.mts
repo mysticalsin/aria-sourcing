@@ -31,14 +31,18 @@ const call: HireCall = {
   values: { name: "Ada" },
 };
 
-const odooEnv = {
+const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: "test" };
+
+const odooEnv: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
   ODOO_URL: "https://odoo.example.test/",
   ODOO_DB: "mantu",
   ODOO_USERNAME: "api",
   ODOO_API_KEY: "secret",
 };
 
-const smartEnv = {
+const smartEnv: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
   SMART_URL: "https://smart.example.test/",
   SMART_TOKEN: "smart-token",
 };
@@ -104,16 +108,20 @@ const countingFetch = (async () => {
   fetchCalls += 1;
   return jsonResponse(200, { id: "should-not-run" });
 }) as typeof fetch;
-const missingOdoo = await odooHireConnector({}, countingFetch).call(call);
-const missingSmart = await smartHireConnector({}, countingFetch).call(call);
+const missingOdoo = await odooHireConnector(emptyEnv, countingFetch).call(call);
+const missingSmart = await smartHireConnector(emptyEnv, countingFetch).call(call);
 ok("missing odoo env returns ok:false", missingOdoo.ok === false && missingOdoo.error.includes("ODOO_URL"));
 ok("missing smart env returns ok:false", missingSmart.ok === false && missingSmart.error.includes("SMART_URL"));
 ok("missing env does not call fetch", fetchCalls === 0);
 
-ok("linkedin gating stays true with empty env", linkedInSourcingRunsWithoutErp({}) === true);
+ok("linkedin gating stays true with empty env", linkedInSourcingRunsWithoutErp(emptyEnv) === true);
 ok(
   "linkedin gating stays true when ERP urls are set",
-  linkedInSourcingRunsWithoutErp({ ODOO_URL: "https://odoo.example.test", SMART_URL: "https://smart.example.test" }) === true,
+  linkedInSourcingRunsWithoutErp({
+    NODE_ENV: "test",
+    ODOO_URL: "https://odoo.example.test",
+    SMART_URL: "https://smart.example.test",
+  } satisfies NodeJS.ProcessEnv) === true,
 );
 
 console.log(`RESULT hire-connector: ${pass} passed, ${fail} failed`);

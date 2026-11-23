@@ -32,14 +32,16 @@ const fakeFetch = (async (url: string, init?: RequestInit) => {
   return jsonResponse(200, { result: nextId });
 }) as typeof fetch;
 
-const absent = await runSourcingThroughHired(input, {}, fakeFetch);
+const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: "test" };
+const absent = await runSourcingThroughHired(input, emptyEnv, fakeFetch);
 ok("Odoo and SMART absent still completes LinkedIn sourcing", absent.ok === true && absent.erp === "skipped" && absent.linkedIn === true && absent.steps.length === 0);
 ok("absent ERP does not call fetch", calls.length === 0);
 
-const partial = await runSourcingThroughHired(input, { ODOO_URL: "https://odoo.example.test" }, fakeFetch);
+const partial = await runSourcingThroughHired(input, { NODE_ENV: "test", ODOO_URL: "https://odoo.example.test" }, fakeFetch);
 ok("a partial Odoo env does not call fetch", partial.erp === "skipped" && calls.length === 0);
 
-const odooEnv = {
+const odooEnv: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
   ODOO_URL: "https://odoo.example.test/",
   ODOO_DB: "mantu",
   ODOO_USERNAME: "api",
@@ -103,7 +105,7 @@ const smartFetch = (async (url: string, init?: RequestInit) => {
 }) as typeof fetch;
 const smart = await runSourcingThroughHired(
   input,
-  { SMART_URL: "https://smart.example.test/", SMART_TOKEN: "smart-token" },
+  { NODE_ENV: "test", SMART_URL: "https://smart.example.test/", SMART_TOKEN: "smart-token" },
   smartFetch,
 );
 ok("SMART posts the four hire steps with a bearer token", smart.ok === true && smart.erp === "smart" && smartCalls.length === 4);
