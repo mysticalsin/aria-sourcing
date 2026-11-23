@@ -33,6 +33,7 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
 import {
   buildHireRequest,
+  closeMatchingVacancy,
   hireStatusText,
   localHireCompletes,
   postCandidateHire,
@@ -831,12 +832,22 @@ export function CandidateDrawer({
       return;
     }
     actions.setCandidateStage(candidateIdForHire, "Hired");
+    const [closedVacancy] = closeMatchingVacancy(campaign ? [campaign] : [], campaign?.id ?? null);
+    const vacancyClosed =
+      closedVacancy?.status === "Filled"
+        ? actions.updateCampaign(closedVacancy.id, { status: "Filled", previousStatus: null })
+        : false;
+    const closedTitle = vacancyClosed && campaign ? campaign.title : null;
     toast({
       title: hireStatusText(outcome),
       description:
         outcome.outcome === "skipped"
-          ? `${c.name} moved to Hired. LinkedIn sourcing completed.`
-          : `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`,
+          ? closedTitle
+            ? `${c.name} moved to Hired. ${closedTitle} is filled and closed. LinkedIn sourcing completed.`
+            : `${c.name} moved to Hired. LinkedIn sourcing completed.`
+          : closedTitle
+            ? `${c.name} moved to Hired. ${closedTitle} is filled and closed.`
+            : `${c.name} moved to Hired.`,
       variant: "success",
     });
   };
@@ -1723,6 +1734,11 @@ export function CandidateDrawer({
               {hireStatusText(hireResult)}
             </p>
           ) : null}
+          {c.stage === "Hired" && campaign?.status === "Filled" && (
+            <p data-vacancy-status="filled" className="text-sm text-muted">
+              {campaign.title} is filled and closed.
+            </p>
+          )}
           {c.stage === "Rejected" && (
             <div>
               <label

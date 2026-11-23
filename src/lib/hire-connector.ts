@@ -2,7 +2,7 @@ import { fetchPublicUrl } from "@/lib/api/public-fetch";
 import { classifyFetchHost } from "@/lib/api/url";
 import { redactSecrets } from "@/lib/log-redact";
 
-export type HireConnectorKind = "odoo" | "smart" | "linkedin";
+export type HireConnectorKind = "odoo" | "smart" | "api" | "mcp" | "linkedin";
 
 export type HireResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -58,6 +58,121 @@ function odooRecordId(result: unknown, input: HireCall): string | null {
   return null;
 }
 
+function odooRecordRef(value: unknown): number | null {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+/**
+ * Odoo create(vals_list) and write(ids, vals) take positional arguments.
+ * A non-empty kwargs object is the shape real Odoo rejects with TypeError.
+ */
+function odooPositional(input: HireCall): { ok: true; args: unknown[] } | { ok: false; error: string } {
+  const vals = { ...input.values };
+  delete vals.id;
+  if (input.method === "create") return { ok: true, args: [[vals]] };
+  if (input.method === "write") {
+    const id = odooRecordRef(input.values.id);
+    if (id == null) return { ok: false, error: "odoo write requires a record id" };
+    return { ok: true, args: [[id], vals] };
+  }
+  return { ok: false, error: "odoo method must be create or write" };
+}
+
+const MCP_PROTOCOL = "2024-11-05";
+const MCP_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+function positiveId(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
+  return null;
+}
+
+/** A false, empty, or id-less payload is not a hire record. */
+function idFromPayload(payload: unknown): string | null {
+  if (payload === false || payload == null) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed || trimmed === "false" || trimmed === "null") return null;
+    try {
+      return idFromPayload(JSON.parse(trimmed) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  if (record.ok === false || record.result === false || record.isError === true || record.error) return null;
+  const direct = positiveId(record.id);
+  if (direct) return direct;
+  if (typeof record.result === "string" || typeof record.result === "number") return positiveId(record.result);
+  if (record.result && typeof record.result === "object") return idFromPayload(record.result);
+  return null;
+}
+
+function idFromMcpResult(result: unknown): string | null {
+  if (result === false || result == null || typeof result !== "object" || Array.isArray(result)) return null;
+  const record = result as Record<string, unknown>;
+  if (record.isError === true) return null;
+  const structured = idFromPayload(record.structuredContent);
+  if (structured) return structured;
+  if (Array.isArray(record.content)) {
+    if (record.content.length === 0) return null;
+    for (const item of record.content) {
+      if (!item || typeof item !== "object") continue;
+      const text = (item as { text?: unknown }).text;
+      if (typeof text !== "string") continue;
+      const id = idFromPayload(text);
+      if (id) return id;
+    }
+    return null;
+  }
+  return idFromPayload(record);
+}
+
+function mcpErrorText(result: unknown): string {
+  if (!result || typeof result !== "object") return "mcp tool failed";
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) return "mcp tool failed";
+  const text = content
+    .map((item) => (item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string" ? (item as { text: string }).text : ""))
+    .filter(Boolean)
+    .join(" ");
+  return text || "mcp tool failed";
+}
+
+function assertHireModel(kind: HireConnectorKind, model: string): HireResult | null {
+  if (HIRE_MODELS.has(model)) return null;
+  return { ok: false, error: `${kind} model must be hr.job or hr.applicant` };
+}
+
+async function send(
+  fetchImpl: FetchLike,
+  url: string,
+  init: RequestInit,
+  secrets: string[],
+): Promise<{ ok: true; response: Response } | { ok: false; error: string }> {
+  try {
+    return { ok: true, response: await fetchImpl(url, { ...init, redirect: "error" }) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "request failed";
+    return { ok: false, error: scrubbed(message, secrets) };
+  }
+}
+
+async function readJson(response: Response, secrets: string[]): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await response.json() };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "invalid json";
+    return { ok: false, error: scrubbed(message, secrets) };
+  }
+}
+
 export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike = fetchPublicUrl): HireConnector {
   return {
     kind: "odoo",
@@ -87,6 +202,8 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (typeof uid !== "number" || !Number.isSafeInteger(uid) || uid <= 0) {
         return { ok: false, error: scrubbed(authBody.error?.message ?? "odoo auth failed", [key, user]) };
       }
+      const positional = odooPositional(input);
+      if (!positional.ok) return positional;
       const writeRes = await fetchImpl(endpoint, {
         method: "POST",
         redirect: "error",
@@ -98,7 +215,7 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
           params: {
             service: "object",
             method: "execute_kw",
-            args: [db, uid, key, input.model, input.method, [], { ...input.values, x_idempotency_key: input.idempotencyKey }],
+            args: [db, uid, key, input.model, input.method, positional.args, {}],
           },
         }),
       });
@@ -137,7 +254,148 @@ export function smartHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike 
   };
 }
 
-/** LinkedIn sourcing does not depend on Odoo or SMART. Callers gate ERP sync separately. */
+export function genericApiHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike = fetchPublicUrl): HireConnector {
+  return {
+    kind: "api",
+    async call(input) {
+      const refused = assertHireModel("api", input.model);
+      if (refused) return refused;
+      const raw = env.HIRE_API_URL;
+      const token = env.HIRE_API_TOKEN;
+      if (!raw || !token) return missing("api", "HIRE_API_URL or HIRE_API_TOKEN");
+      const base = erpBase(raw);
+      if (!base) return { ok: false, error: "api HIRE_API_URL must be a public https URL without credentials" };
+      const res = await send(
+        fetchImpl,
+        `${base}/v1/hire/${encodeURIComponent(input.model)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            "idempotency-key": input.idempotencyKey,
+          },
+          body: JSON.stringify({ method: input.method, values: input.values }),
+        },
+        [token],
+      );
+      if (!res.ok) return res;
+      if (!res.response.ok) return { ok: false, error: `api http ${res.response.status}` };
+      const body = await readJson(res.response, [token]);
+      if (!body.ok) return body;
+      if (body.value && typeof body.value === "object" && "error" in body.value && (body.value as { error?: unknown }).error) {
+        return { ok: false, error: scrubbed(String((body.value as { error: unknown }).error), [token]) };
+      }
+      const id = idFromPayload(body.value);
+      if (!id) return { ok: false, error: "api response missing id" };
+      return { ok: true, id };
+    },
+  };
+}
+
+export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike = fetchPublicUrl): HireConnector {
+  return {
+    kind: "mcp",
+    async call(input) {
+      const refused = assertHireModel("mcp", input.model);
+      if (refused) return refused;
+      const raw = env.HIRE_MCP_URL;
+      const token = env.HIRE_MCP_TOKEN;
+      const toolName = env.HIRE_MCP_TOOL || "hire";
+      if (!raw || !token) return missing("mcp", "HIRE_MCP_URL or HIRE_MCP_TOKEN");
+      if (!MCP_TOOL_NAME.test(toolName)) return { ok: false, error: "mcp HIRE_MCP_TOOL is invalid" };
+      const base = erpBase(raw);
+      if (!base) return { ok: false, error: "mcp HIRE_MCP_URL must be a public https URL without credentials" };
+      const secrets = [token];
+      const headers = (session?: string): Record<string, string> => {
+        const next: Record<string, string> = {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${token}`,
+        };
+        if (session) next["mcp-session-id"] = session;
+        return next;
+      };
+      const init = await send(
+        fetchImpl,
+        base,
+        {
+          method: "POST",
+          headers: headers(),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: MCP_PROTOCOL,
+              capabilities: {},
+              clientInfo: { name: "aria-sourcing", version: "1.0" },
+            },
+          }),
+        },
+        secrets,
+      );
+      if (!init.ok) return init;
+      if (!init.response.ok) return { ok: false, error: `mcp initialize http ${init.response.status}` };
+      const initBody = await readJson(init.response, secrets);
+      if (!initBody.ok) return initBody;
+      const initJson = initBody.value as { result?: unknown; error?: { message?: string } };
+      if (!initJson.result || typeof initJson.result !== "object") {
+        return { ok: false, error: scrubbed(initJson.error?.message ?? "mcp initialize failed", secrets) };
+      }
+      const session = init.response.headers.get("mcp-session-id") ?? undefined;
+      const notified = await send(
+        fetchImpl,
+        base,
+        {
+          method: "POST",
+          headers: headers(session),
+          body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+        },
+        secrets,
+      );
+      if (!notified.ok) return notified;
+      const call = await send(
+        fetchImpl,
+        base,
+        {
+          method: "POST",
+          headers: headers(session),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: input.idempotencyKey,
+            method: "tools/call",
+            params: {
+              name: toolName,
+              arguments: {
+                model: input.model,
+                method: input.method,
+                idempotencyKey: input.idempotencyKey,
+                values: input.values,
+              },
+            },
+          }),
+        },
+        secrets,
+      );
+      if (!call.ok) return call;
+      if (!call.response.ok) return { ok: false, error: `mcp tool http ${call.response.status}` };
+      const callBody = await readJson(call.response, secrets);
+      if (!callBody.ok) return callBody;
+      const callJson = callBody.value as { result?: unknown; error?: { message?: string } };
+      if (callJson.error) return { ok: false, error: scrubbed(callJson.error.message ?? "mcp tool failed", secrets) };
+      if (callJson.result === false || callJson.result == null) return { ok: false, error: "mcp tool returned no record" };
+      if (typeof callJson.result === "object" && (callJson.result as { isError?: unknown }).isError === true) {
+        return { ok: false, error: scrubbed(mcpErrorText(callJson.result), secrets) };
+      }
+      const id = idFromMcpResult(callJson.result);
+      if (!id) return { ok: false, error: "mcp tool returned no record" };
+      return { ok: true, id };
+    },
+  };
+}
+
+/** LinkedIn sourcing does not depend on Odoo, SMART, the generic API, or MCP. Callers gate those separately. */
 export function linkedInSourcingRunsWithoutErp(_env: NodeJS.ProcessEnv): boolean {
   return true;
 }

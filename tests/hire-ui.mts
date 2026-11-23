@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import {
+  API_SYNCED_LABEL,
   ERP_SKIPPED_LABEL,
   LINKEDIN_COMPLETED_LABEL,
+  MCP_SYNCED_LABEL,
   ODOO_SYNCED_LABEL,
   SMART_SYNCED_LABEL,
   buildHireRequest,
+  closeMatchingVacancy,
   hireStatusText,
   localHireCompletes,
   postCandidateHire,
@@ -84,6 +87,29 @@ ok(
     smart.calls[0]?.url === "/api/hire",
 );
 
+const api = await post({ ok: true, erp: "api", linkedIn: true, steps: [] });
+ok(
+  "generic API sync is shown from POST /api/hire",
+  api.outcome.ok === true &&
+    api.outcome.outcome === "synced" &&
+    api.outcome.erp === "api" &&
+    api.outcome.label === API_SYNCED_LABEL &&
+    hireStatusText(api.outcome) === API_SYNCED_LABEL &&
+    localHireCompletes(api.outcome) &&
+    api.calls[0]?.url === "/api/hire",
+);
+
+const mcp = await post({ ok: true, erp: "mcp", linkedIn: true, steps: [] });
+ok(
+  "MCP sync is shown from POST /api/hire",
+  mcp.outcome.ok === true &&
+    mcp.outcome.outcome === "synced" &&
+    mcp.outcome.erp === "mcp" &&
+    hireStatusText(mcp.outcome) === MCP_SYNCED_LABEL &&
+    localHireCompletes(mcp.outcome) &&
+    mcp.calls[0]?.url === "/api/hire",
+);
+
 const skipped = await post({ ok: true, erp: "skipped", linkedIn: true, steps: [] });
 ok(
   "a skipped ERP still completes LinkedIn and the local hire",
@@ -153,6 +179,27 @@ ok(
     drawer.includes("hireStatusText(hireResult)") &&
     drawer.includes("data-hire-outcome={hireResult.outcome}") &&
     drawer.includes('void recordHire()'),
+);
+const vacancies = [
+  { id: "need-a", status: "Interviewing", title: "Need Alpha" },
+  { id: "need-b", status: "Sourcing", title: "Need Beta" },
+];
+const closed = closeMatchingVacancy(vacancies, "need-a");
+ok(
+  "one hire closes that vacancy and leaves a different vacancy open",
+  closed[0]?.status === "Filled" &&
+    closed[0]?.title === "Need Alpha" &&
+    closed[1]?.status === "Sourcing" &&
+    closed[1]?.id === "need-b" &&
+    vacancies[0]?.status === "Interviewing",
+);
+ok(
+  "the drawer closes the hired vacancy and does not ask to mark it filled",
+  !drawer.includes("Consider marking") &&
+    drawer.includes("closeMatchingVacancy") &&
+    drawer.includes('status: "Filled"') &&
+    drawer.includes('data-vacancy-status="filled"') &&
+    drawer.includes("is filled and closed."),
 );
 
 console.log(`RESULT hire-ui: ${pass} passed, ${fail} failed`);
