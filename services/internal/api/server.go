@@ -45,6 +45,9 @@ func New(svc *recruit.Service, mode, version, token string) *Server {
 	s.mux.HandleFunc("GET /approvals", s.listApprovals)
 	s.mux.HandleFunc("POST /approvals", s.createApproval)
 	s.mux.HandleFunc("POST /approvals/from-odoo", s.approvalFromOdoo)
+	s.mux.HandleFunc("POST /campaigns/{id}/full-auto", s.enableFullAuto)
+	s.mux.HandleFunc("POST /qc", s.recordQualityCheck)
+	s.mux.HandleFunc("POST /kill-switch", s.setKillSwitch)
 	return s
 }
 
@@ -324,6 +327,66 @@ func (s *Server) listApprovals(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) enableFullAuto(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Channel string `json:"channel"`
+	}
+	if err := decode(w, r, &req); err != nil {
+		writeCode(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	campaignID := r.PathValue("id")
+	if err := s.svc.EnableFullAuto(r.Context(), campaignID, req.Channel); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"campaign_aria_id": campaignID,
+		"channel":          req.Channel,
+		"mode":             s.svc.SendMode(campaignID, req.Channel),
+	})
+}
+
+func (s *Server) recordQualityCheck(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Channel         string `json:"channel"`
+		RecipientRef    string `json:"recipient_ref"`
+		Subject         string `json:"subject"`
+		Body            string `json:"body"`
+		NoticeVersion   string `json:"notice_version"`
+		Actor           string `json:"actor"`
+		ApplicantAriaID string `json:"applicant_aria_id"`
+	}
+	if err := decode(w, r, &req); err != nil {
+		writeCode(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	row, err := s.svc.RecordQualityCheck(r.Context(), recruit.ApprovalInput{
+		Channel: req.Channel, RecipientRef: req.RecipientRef, Subject: req.Subject, Body: req.Body,
+		NoticeVersion: req.NoticeVersion, ApplicantAriaID: req.ApplicantAriaID,
+	}, req.Actor)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"sha256": row.Hash, "actor": row.Actor, "channel": row.Channel,
+		"applicant_aria_id": row.ApplicantAriaID, "grants_approval": false,
+	})
+}
+
+func (s *Server) setKillSwitch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Engaged bool `json:"engaged"`
+	}
+	if err := decode(w, r, &req); err != nil {
+		writeCode(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	s.svc.SetKillSwitch(req.Engaged)
+	writeJSON(w, http.StatusOK, map[string]bool{"engaged": s.svc.KillSwitchEngaged()})
+}
+
 func (s *Server) approvalFromOdoo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Note string `json:"note"`
@@ -388,6 +451,12 @@ func writeErr(w http.ResponseWriter, err error) {
 		writeCode(w, http.StatusConflict, "conflict")
 	case errors.Is(err, recruit.ErrTouchNotApproved):
 		writeCode(w, http.StatusForbidden, "touch_not_approved")
+	case errors.Is(err, recruit.ErrKillSwitch):
+		writeCode(w, http.StatusForbidden, "kill_switch")
+	case errors.Is(err, recruit.ErrQCRequired):
+		writeCode(w, http.StatusForbidden, "qc_required")
+	case errors.Is(err, recruit.ErrQCRejected):
+		writeCode(w, http.StatusUnprocessableEntity, "qc_rejected")
 	case errors.Is(err, recruit.ErrTouchAfterHired), errors.Is(err, recruit.ErrApplicantClosed):
 		writeCode(w, http.StatusConflict, "applicant_closed")
 	case errors.Is(err, ledger.ErrOdooCannotGrantApproval):
