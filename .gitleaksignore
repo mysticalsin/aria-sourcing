@@ -1,15 +1,26 @@
 # Exact, reviewed false-positive fingerprints from committed history. Keep this
 # list fingerprint-specific so new findings in the same files still fail CI.
+# Historical generic-api-key in a mocked intake test, not a live credential.
 e1edfeaa551622422d6d21fe0479670ec2e47775:tests/databricks-intake.mts:generic-api-key:88
+# Historical generic-api-key in a local Codex event log, not a live credential.
 5ea23208120ed528511c42e14ba84f66eb3c66f8:.rocket-fuel/codex/rock-5.events.jsonl:generic-api-key:54
+# Historical generic-api-key in a local Codex event log, not a live credential.
 51b0a3058aec43f0dcf0874d2b1e0c0fc91de06e:.rocket-fuel/codex/r3-docs.events.jsonl:generic-api-key:56
+# Historical linkedin-client-id on a route string, not a client identifier.
 c09be844030fb2e88b8cdc1f7090b6012872c7d2:src/app/api/source/sillage/start/route.ts:linkedin-client-id:53
+# Historical linkedin-client-id on a route string, not a client identifier.
 c09be844030fb2e88b8cdc1f7090b6012872c7d2:src/app/api/source/sillage/start/route.ts:linkedin-client-id:62
+# Historical generic-api-key in a local Codex event log, not a live credential.
 51b0a3058aec43f0dcf0874d2b1e0c0fc91de06e:.rocket-fuel/codex/r4-store.events.jsonl:generic-api-key:80
+# Historical jwt placeholder in the local compose file, not a signing key.
 df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:22
+# Historical jwt placeholder in the local compose file, not a signing key.
 df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:23
+# Historical generic-api-key in an example env file, not a live credential.
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:.env.production.example:generic-api-key:23
+# Historical generic-api-key in a log-redaction fixture, not a live credential.
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/log-redact.mts:generic-api-key:33
+# Historical generic-api-key in an audit fixture, not a live credential.
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/audit-fixes.mts:generic-api-key:83
 
 # 2026-10-27 review: exact historical false positives only. No paths/rules disabled.
@@ -19,9 +30,11 @@ c79dcaa83c7af4240d37dde583b68229a531e3c5:tests/source-enrich-auth.mts:generic-ap
 1a5bfea108eb8f8698d81236b67d870d23b5d58c:scripts/record-marketing-n-agent-linkedin-e2e.mjs:linkedin-client-id:329
 # TypeScript SourcingProvider type annotations, not client secrets.
 2ec563ebd74b084945042f5467b0ca82ffa8fa40:src/lib/sourcing/providers/linkedin-agent-tool.ts:linkedin-client-secret:21
+# TypeScript SourcingProvider type annotations, not client secrets.
 b5d723a3914a029d9efbf3eaed1e34b10c16bca4:src/lib/sourcing/providers/linkedin-profiles.ts:linkedin-client-secret:44
 # Cron authorization fixtures used only by mocked route tests.
 d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
+# Cron authorization fixtures used only by mocked route tests.
 886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
 # An object mapping LinkedIn profile fields from operator input.
 f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75
@@ -31,7 +44,7 @@ f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.
 # 2026-11-21 CI hygiene: exact false positives from a full-history scan.
 # No path or rule is disabled. Each line is one commit:path:rule:line.
 # linkedinPublicId is a variable name on a profile URL assignment.
-# 16-letter source identifier in an assignment, not a client secret.
+# linkedinPublicId is a 16-letter source identifier in an assignment, not a credential and not a client secret.
 da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333
 # SHA-256 of a retired sample HMAC. The sample value is not stored.
 # SHA-256 digest of a retired sample. The sample value is not stored.
