@@ -14,7 +14,7 @@
     "Billing/payments and multi-region infrastructure"
   ],
   "stakeholders": [
-    {"name": "Tony Walteur", "role": "owner + final verifier", "notify_on": ["complete", "blocker", "drift", "expire"]},
+    {"name": "Workspace owner", "role": "owner + final verifier", "notify_on": ["complete", "blocker", "drift", "expire"]},
     {"name": "Mantu sourcing team", "role": "end users (10-20x throughput target)", "notify_on": ["complete"]},
     {"name": "Mantu leadership / demo audience", "role": "demo consumers", "notify_on": ["complete"]}
   ],

@@ -16,7 +16,7 @@
     "Vercel deploy (Fly.io is the deployment target for the proof)"
   ],
   "stakeholders": [
-    {"name": "Tony Walteur", "role": "owner/operator", "notify_on": ["complete", "blocker", "expire"]},
+    {"name": "Workspace owner", "role": "owner/operator", "notify_on": ["complete", "blocker", "expire"]},
     {"name": "MSourcing recruiters (end users)", "role": "beneficiary", "notify_on": ["complete"]},
     {"name": "LinkedIn-policy / GDPR honesty gate", "role": "compliance check", "notify_on": ["m5_complete"]}
   ],
@@ -115,7 +115,7 @@
       "due": "2026-07-18T18:00:00+02:00",
       "depends_on": ["m6", "m7"],
       "status": "PARTIAL",
-      "result": "Deployed-env run PROVEN for a generic real candidate (see m5 — sourced, scored 43/100, enrichment waterfall, draft at approval gate, all live on aria-mantu-app.fly.dev). Tony's OWN profile (linkedin.com/in/example-a): the shipped Apify dialog only exposed searchQuery/location/title/company, and a fuzzy searchQuery for 'Tony Walteur' did not rank his profile (returned unrelated people). Root-caused to a UI/backend capability gap: the harvestapi actor + Zod schema + buildActorInput all accept firstNames[]/lastNames[], but the dialog never surfaced them. A structured firstNames=['Tony']+lastNames=['Walteur'] query against the deployed backend DID resolve his exact profile — publicIdentifier='tonywalteur', real headline/skills — verified as raw Apify JSON (production-readiness/e2e-tony-2026-07-16/retry/v3-raw-profile-response.json). FIXED in code: commit 25b65de adds the First/Last name fields to source-apify-dialog.tsx (typecheck+lint green). REMAINING to fully close m8 for Tony's profile as a SCORED CANDIDATE ROW through the UI: (a) owner-gated Fly redeploy of the integration branch so the new dialog ships, then re-run the name-filter through the real dialog; and/or (b) owner one-click dev_fusion actor approval for the exact-URL enrich path. Both are owner actions — see _relay/2026-07-16-owner-actions.md."
+      "result": "Deployed-env run PROVEN for a generic real candidate (see m5 — sourced, scored 43/100, enrichment waterfall, draft at approval gate, all live on aria-mantu-app.fly.dev). Tony's OWN profile (linkedin.com/in/example-a): the shipped Apify dialog only exposed searchQuery/location/title/company, and a fuzzy searchQuery for 'Workspace owner' did not rank his profile (returned unrelated people). Root-caused to a UI/backend capability gap: the harvestapi actor + Zod schema + buildActorInput all accept firstNames[]/lastNames[], but the dialog never surfaced them. A structured firstNames=['Tony']+lastNames=['Owner'] query against the deployed backend DID resolve his exact profile — publicIdentifier='example-owner', real headline/skills — verified as raw Apify JSON (production-readiness/e2e-tony-2026-07-16/retry/v3-raw-profile-response.json). FIXED in code: commit 25b65de adds the First/Last name fields to source-apify-dialog.tsx (typecheck+lint green). REMAINING to fully close m8 for Tony's profile as a SCORED CANDIDATE ROW through the UI: (a) owner-gated Fly redeploy of the integration branch so the new dialog ships, then re-run the name-filter through the real dialog; and/or (b) owner one-click dev_fusion actor approval for the exact-URL enrich path. Both are owner actions — see _relay/2026-07-16-owner-actions.md."
     },
     {
       "id": "m9",
