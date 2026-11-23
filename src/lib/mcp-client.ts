@@ -423,6 +423,8 @@ export interface SourcingThroughHiredStep {
   ok: boolean;
   id?: string;
   error?: string;
+  skipped?: boolean;
+  reason?: string;
 }
 
 export interface SourcingThroughHiredResult {
@@ -454,6 +456,7 @@ const ERP_ENV_KEYS = [
   "ODOO_DB",
   "ODOO_USERNAME",
   "ODOO_API_KEY",
+  "ODOO_HIRED_STAGE_ID",
   "SMART_URL",
   "SMART_TOKEN",
   "HIRE_API_URL",
@@ -528,7 +531,111 @@ export async function runSourcingThroughHired(
   const selected = selectHireConnector(env);
   if (selected === "skipped") return { ok: true, erp: "skipped", linkedIn: true, steps: [] };
   if (typeof selected === "object") return { ok: false, erp: "skipped", linkedIn: true, steps: [], error: selected.error };
-  return runErpHire(selected, connectorFor(selected, env, fetchImpl), input);
+  const connector = connectorFor(selected, env, fetchImpl);
+  if (selected === "odoo") return runOdooHire(connector, input, env);
+  return runErpHire(selected, connector, input);
+}
+
+function hiredStageId(env: NodeJS.ProcessEnv): number | null {
+  const raw = env.ODOO_HIRED_STAGE_ID?.trim() ?? "";
+  if (!/^[1-9]\d*$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function odooRef(id: string): number | string {
+  return /^[1-9]\d*$/.test(id) ? Number(id) : id;
+}
+
+/**
+ * Odoo hr.job / hr.applicant fields only. `state: "open"` with
+ * `no_of_recruitment: 0` is the standard set_open write that stops recruiting.
+ * A hired stage write is sent only when ODOO_HIRED_STAGE_ID is a positive id.
+ */
+async function runOdooHire(
+  connector: HireConnector,
+  input: SourcingThroughHiredInput,
+  env: NodeJS.ProcessEnv,
+): Promise<SourcingThroughHiredResult> {
+  const steps: SourcingThroughHiredStep[] = [];
+  const job = await connector.call({
+    idempotencyKey: `${input.idempotencyKey}:job`,
+    model: "hr.job",
+    method: "create",
+    values: { name: input.job.name },
+  });
+  steps.push({ erp: "odoo", model: "hr.job", action: "job", method: "create", ok: job.ok, id: job.ok ? job.id : undefined, error: job.ok ? undefined : job.error });
+  if (!job.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: job.error };
+
+  const applicant = await connector.call({
+    idempotencyKey: `${input.idempotencyKey}:applicant`,
+    model: "hr.applicant",
+    method: "create",
+    values: presentValues({
+      name: input.applicant.name,
+      partner_name: input.applicant.name,
+      email_from: input.applicant.email,
+      job_id: odooRef(job.id),
+    }),
+  });
+  steps.push({
+    erp: "odoo",
+    model: "hr.applicant",
+    action: "applicant",
+    method: "create",
+    ok: applicant.ok,
+    id: applicant.ok ? applicant.id : undefined,
+    error: applicant.ok ? undefined : applicant.error,
+  });
+  if (!applicant.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: applicant.error };
+
+  const stageId = hiredStageId(env);
+  if (stageId == null) {
+    steps.push({
+      erp: "odoo",
+      model: "hr.applicant",
+      action: "stage",
+      method: "write",
+      ok: true,
+      skipped: true,
+      reason: "Hired stage id is not configured.",
+    });
+  } else {
+    const stage = await connector.call({
+      idempotencyKey: `${input.idempotencyKey}:stage`,
+      model: "hr.applicant",
+      method: "write",
+      values: { id: odooRef(applicant.id), stage_id: stageId },
+    });
+    steps.push({
+      erp: "odoo",
+      model: "hr.applicant",
+      action: "stage",
+      method: "write",
+      ok: stage.ok,
+      id: stage.ok ? stage.id : undefined,
+      error: stage.ok ? undefined : stage.error,
+    });
+    if (!stage.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: stage.error };
+  }
+
+  const closed = await connector.call({
+    idempotencyKey: `${input.idempotencyKey}:hire`,
+    model: "hr.job",
+    method: "write",
+    values: { id: odooRef(job.id), state: "open", no_of_recruitment: 0 },
+  });
+  steps.push({
+    erp: "odoo",
+    model: "hr.job",
+    action: "hire",
+    method: "write",
+    ok: closed.ok,
+    id: closed.ok ? closed.id : undefined,
+    error: closed.ok ? undefined : closed.error,
+  });
+  if (!closed.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: closed.error };
+  return { ok: true, erp: "odoo", linkedIn: true, steps };
 }
 
 async function runErpHire(

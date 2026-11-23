@@ -58,6 +58,31 @@ function odooRecordId(result: unknown, input: HireCall): string | null {
   return null;
 }
 
+function odooRecordRef(value: unknown): number | null {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+/**
+ * Odoo create(vals_list) and write(ids, vals) take positional arguments.
+ * A non-empty kwargs object is the shape real Odoo rejects with TypeError.
+ */
+function odooPositional(input: HireCall): { ok: true; args: unknown[] } | { ok: false; error: string } {
+  const vals = { ...input.values };
+  delete vals.id;
+  if (input.method === "create") return { ok: true, args: [[vals]] };
+  if (input.method === "write") {
+    const id = odooRecordRef(input.values.id);
+    if (id == null) return { ok: false, error: "odoo write requires a record id" };
+    return { ok: true, args: [[id], vals] };
+  }
+  return { ok: false, error: "odoo method must be create or write" };
+}
+
 const MCP_PROTOCOL = "2024-11-05";
 const MCP_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -177,6 +202,8 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (typeof uid !== "number" || !Number.isSafeInteger(uid) || uid <= 0) {
         return { ok: false, error: scrubbed(authBody.error?.message ?? "odoo auth failed", [key, user]) };
       }
+      const positional = odooPositional(input);
+      if (!positional.ok) return positional;
       const writeRes = await fetchImpl(endpoint, {
         method: "POST",
         redirect: "error",
@@ -188,7 +215,7 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
           params: {
             service: "object",
             method: "execute_kw",
-            args: [db, uid, key, input.model, input.method, [], { ...input.values, x_idempotency_key: input.idempotencyKey }],
+            args: [db, uid, key, input.model, input.method, positional.args, {}],
           },
         }),
       });

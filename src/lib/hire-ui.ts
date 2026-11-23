@@ -95,6 +95,17 @@ export function localHireCompletes(outcome: HireUiOutcome): outcome is Extract<H
   return outcome.ok === true && outcome.linkedIn === true;
 }
 
+/** One hire fills that vacancy and leaves every other vacancy unchanged. */
+export function closeMatchingVacancy<T extends { id: string; status: string }>(
+  vacancies: readonly T[],
+  hiredVacancyId: string | null,
+): T[] {
+  if (!hiredVacancyId) return vacancies.map((vacancy) => ({ ...vacancy }));
+  return vacancies.map((vacancy) =>
+    vacancy.id === hiredVacancyId ? { ...vacancy, status: "Filled" } : { ...vacancy },
+  );
+}
+
 export function hireStatusText(outcome: HireUiOutcome): string {
   if (outcome.ok && outcome.outcome === "skipped") {
     return `${outcome.label}. ${LINKEDIN_COMPLETED_LABEL}`;

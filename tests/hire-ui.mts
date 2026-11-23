@@ -7,6 +7,7 @@ import {
   ODOO_SYNCED_LABEL,
   SMART_SYNCED_LABEL,
   buildHireRequest,
+  closeMatchingVacancy,
   hireStatusText,
   localHireCompletes,
   postCandidateHire,
@@ -178,6 +179,27 @@ ok(
     drawer.includes("hireStatusText(hireResult)") &&
     drawer.includes("data-hire-outcome={hireResult.outcome}") &&
     drawer.includes('void recordHire()'),
+);
+const vacancies = [
+  { id: "need-a", status: "Interviewing", title: "Need Alpha" },
+  { id: "need-b", status: "Sourcing", title: "Need Beta" },
+];
+const closed = closeMatchingVacancy(vacancies, "need-a");
+ok(
+  "one hire closes that vacancy and leaves a different vacancy open",
+  closed[0]?.status === "Filled" &&
+    closed[0]?.title === "Need Alpha" &&
+    closed[1]?.status === "Sourcing" &&
+    closed[1]?.id === "need-b" &&
+    vacancies[0]?.status === "Interviewing",
+);
+ok(
+  "the drawer closes the hired vacancy and does not ask to mark it filled",
+  !drawer.includes("Consider marking") &&
+    drawer.includes("closeMatchingVacancy") &&
+    drawer.includes('status: "Filled"') &&
+    drawer.includes('data-vacancy-status="filled"') &&
+    drawer.includes("is filled and closed."),
 );
 
 console.log(`RESULT hire-ui: ${pass} passed, ${fail} failed`);

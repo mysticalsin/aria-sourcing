@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   genericApiHireConnector,
   linkedInSourcingRunsWithoutErp,
@@ -67,8 +68,9 @@ const writeBody = JSON.parse(String(odooCalls[1]?.init?.body)) as {
   params: { service: string; method: string; args: unknown[] };
 };
 ok("odoo authenticate hits jsonrpc common.authenticate", odooCalls[0]?.url === "https://odoo.example.test/jsonrpc" && authBody.params.service === "common" && authBody.params.method === "authenticate");
+const createVals = (writeBody.params.args[5] as unknown[][])[0]?.[0] as { name?: string };
 ok(
-  "odoo execute_kw uses the authenticated uid and idempotency key",
+  "odoo execute_kw create uses positional vals_list and empty kwargs",
   odooCalls[1]?.url === "https://odoo.example.test/jsonrpc" &&
     writeBody.params.service === "object" &&
     writeBody.params.method === "execute_kw" &&
@@ -76,7 +78,10 @@ ok(
     writeBody.params.args[1] === 7 &&
     writeBody.params.args[3] === "hr.applicant" &&
     writeBody.params.args[4] === "create" &&
-    (writeBody.params.args[6] as { x_idempotency_key?: string }).x_idempotency_key === "hire-1",
+    Array.isArray(writeBody.params.args[5]) &&
+    (writeBody.params.args[5] as unknown[]).length === 1 &&
+    createVals?.name === "Ada" &&
+    Object.keys(writeBody.params.args[6] as object).length === 0,
 );
 
 const authFailFetch = (async () => jsonResponse(503, { error: { message: "down" } })) as typeof fetch;
@@ -152,6 +157,20 @@ const falseResult = await odooHireConnector(odooEnv, (async () => {
 }) as typeof fetch).call(call);
 ok("a false execute_kw result is not a hire", falseResult.ok === false && !(falseResult.ok === false && falseResult.error.includes("secret")));
 
+const writeCalls: { init?: RequestInit }[] = [];
+const written = await odooHireConnector(odooEnv, (async (_url: string, init?: RequestInit) => {
+  writeCalls.push({ init });
+  if (writeCalls.length === 1) return jsonResponse(200, { result: 7 });
+  return jsonResponse(200, { result: true });
+}) as typeof fetch).call({ ...call, method: "write", values: { id: 42, stage_id: 9 } });
+const writeKw = JSON.parse(String(writeCalls[1]?.init?.body)) as { params: { args: unknown[] } };
+ok(
+  "odoo execute_kw write uses positional ids and vals",
+  written.ok === true &&
+    JSON.stringify(writeKw.params.args[5]) === JSON.stringify([[42], { stage_id: 9 }]) &&
+    Object.keys(writeKw.params.args[6] as object).length === 0,
+);
+
 const echoed = await odooHireConnector(odooEnv, (async () => jsonResponse(200, { error: { message: "rejected secret" } })) as typeof fetch).call(call);
 ok("odoo auth errors do not echo the api key", echoed.ok === false && !echoed.error.includes("secret"));
 
@@ -165,6 +184,9 @@ const foreignModel = await smartHireConnector(smartEnv, (async () => {
 }) as typeof fetch).call({ ...call, model: "../admin" });
 ok("smart refuses a model outside hr.job and hr.applicant", foreignModel.ok === false && foreignModelCalls === 0);
 
+const odooSource = readFileSync(new URL("../src/lib/hire-connector.ts", import.meta.url), "utf8");
+const odooFn = odooSource.slice(odooSource.indexOf("export function odooHireConnector"), odooSource.indexOf("export function smartHireConnector"));
+ok("odoo authenticate body is not logged", odooFn.includes('method: "authenticate"') && !/console\.(log|info|debug|warn|error)/.test(odooFn));
 ok("linkedin gating stays true with empty env", linkedInSourcingRunsWithoutErp(emptyEnv) === true);
 ok(
   "linkedin gating stays true when ERP urls are set",
