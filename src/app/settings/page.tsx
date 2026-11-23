@@ -21,6 +21,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { cn } from "@/lib/utils";
 import { IntegrationCard } from "@/components/settings/integration-card";
+import { LinkedInConnectPanel } from "@/components/settings/linkedin-connect-panel";
 import { CompliancePanel } from "@/components/settings/compliance-panel";
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
@@ -818,6 +819,7 @@ export default function SettingsPage() {
             title="Integrations"
             description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
           >
+            <LinkedInConnectPanel />
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
                 {summary.connected} connected

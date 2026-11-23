@@ -54,6 +54,7 @@ export const SETTINGS_HASH_TO_SECTION: Record<string, string> = {
   "microsoft365-stack": "04",
   "email-connections-panel": "04",
   "linkedin-outreach-stack": "04",
+  "linkedin-rsc-connect": "04",
   "integrations-catalog": "04",
 };
 

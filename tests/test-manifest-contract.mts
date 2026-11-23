@@ -72,13 +72,13 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
         resolveTestGroup(testManifest, group).length,
       ]),
     ),
-    { pretest: 51, application: 152, posttest: 2, all: 205 },
+    { pretest: 51, application: 153, posttest: 2, all: 206 },
   );
   const commands = resolveTestGroup(testManifest, "all");
   const commandLines = commands.map(({ executable, argv }) => `${executable} ${argv.join(" ")}`);
   assert.equal(
     createHash("sha256").update(commandLines.join("\n")).digest("hex"),
-    "2e8191201d868bacd09804fcc6bb3ccb4f2d3b0cd0b9750ed1cef3a62fabe2a8",
+    "6547ebc1c2d2e0afd0a73da542731b75fb5e0b2276939b701d21860accfb24a7",
   );
   assert.equal(new Set(commandLines).size, commandLines.length, "canonical lifecycle must be duplicate-free");
   assert.equal(
@@ -95,7 +95,9 @@ test("manifest preserves parity and freezes the exact deduplicated lifecycle", (
   const parityApplication = resolveTestGroup(testManifest, "application")
     .filter(
       ({ id }) =>
-        id !== "test-manifest-contract" && id !== "store-booking-report-actions",
+        id !== "test-manifest-contract" &&
+        id !== "store-booking-report-actions" &&
+        id !== "linkedin-rsc-connect",
     )
     .flatMap((command) => {
       const line = `${command.executable} ${command.argv.join(" ")}`;

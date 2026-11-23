@@ -49,8 +49,11 @@ ok(
     /no direct linkedin login, scraping, or session automation/i.test(apify?.description ?? ""),
 );
 ok(
-  "Official LinkedIn Recruiter System Connect remains an honest, unbuilt placeholder",
-  linkedinRsc?.real === false && linkedinRsc.status !== "connected",
+  "LinkedIn Recruiter System Connect stays not-connected in the client catalog",
+  linkedinRsc?.real === false &&
+    linkedinRsc.status !== "connected" &&
+    /never stores a token/i.test(linkedinRsc?.description ?? "") &&
+    !/oauth credentials/i.test((linkedinRsc?.errors ?? []).join(" ")),
 );
 
 console.log(`RESULT integrations-honesty: ${pass} passed, ${fail} failed`);

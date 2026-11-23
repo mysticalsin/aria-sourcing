@@ -65,11 +65,12 @@ export function defaultIntegrations(): IntegrationStatus[] {
       id: "int_linkedin_rsc",
       name: "LinkedIn Recruiter System Connect",
       category: "Sourcing",
-      description: "Official LinkedIn ATS integration for automated profile import and InMail. Requires a LinkedIn partnership agreement.",
+      description:
+        "Official Recruiter System Connect. The server reads LINKEDIN_RSC_URL and LINKEDIN_RSC_TOKEN. This card never stores a token.",
       status: "not_configured",
       mode: "mock",
       lastSync: null,
-      errors: ["Not connected. Apply for RSC at LinkedIn Talent Solutions, then enter OAuth credentials."],
+      errors: ["Not connected from this card. The connection panel reads the server state and never stores a token."],
       real: false,
     },
     {
