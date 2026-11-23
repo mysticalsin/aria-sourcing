@@ -3,8 +3,10 @@
  * Synthetic tokens only. No live network.
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createTlsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -583,5 +585,103 @@ test("token actions are rate limited", async () => {
     assert.equal(channel.view("ws-home").enabled, true);
   } finally {
     close();
+  }
+});
+
+test("other non-public address encodings are refused before any fetch", async () => {
+  const blocked = [
+    "::ffff:7f00:1",
+    "::ffff:a9fe:a9fe",
+    "0:0:0:0:0:ffff:10.1.2.3",
+    "::127.0.0.1",
+    "64:ff9b::169.254.169.254",
+    "::",
+    "ff00::1",
+    "224.0.0.1",
+    "100.64.0.1",
+  ];
+  for (const address of blocked) {
+    const harnessed = harness("https://www.linkedin.com", {}, { resolver: async () => [address] });
+    try {
+      await arm(harnessed.channel, "ws-home");
+      const item = spec(`n-enc-${address.replaceAll(":", "-")}`, "ws-home");
+      assert.equal((await harnessed.channel.approve(item)).ok, true);
+      const result = await harnessed.channel.send({ ...item, actorId: "ada-admin" });
+      assert.equal(result.reason, "config", address);
+      assert.equal(harnessed.calls.length, 0, address);
+    } finally {
+      harnessed.close();
+    }
+  }
+});
+
+test("dedupe does not deliver a timed out send twice", async () => {
+  let calls = 0;
+  const transport: Transport = {
+    async deliver() {
+      calls += 1;
+      return { status: 0, body: "", timeout: true, error: "timeout" };
+    },
+  };
+  const { channel, close } = harness("http://127.0.0.1:9", { ARIA_LINKEDIN_TOKEN_DEDUPE: "on" }, { transport });
+  try {
+    await arm(channel, "ws-home");
+    const item = spec("n-dedupe-timeout", "ws-home");
+    assert.equal((await channel.approve(item)).ok, true);
+    const result = await channel.send({ ...item, actorId: "ada-admin" });
+    assert.equal(calls, 1);
+    assert.equal(result.reason, "infrastructure-timeout");
+  } finally {
+    close();
+  }
+});
+
+function writeLeaf(dir: string, name: string, san: string, caKey: string, caCert: string): { key: Buffer; cert: Buffer } {
+  const key = join(dir, `${name}.key`);
+  const csr = join(dir, `${name}.csr`);
+  const crt = join(dir, `${name}.crt`);
+  const ext = join(dir, `${name}.ext`);
+  writeFileSync(ext, `subjectAltName=DNS:${san}\n`);
+  const req = spawnSync("openssl", ["req", "-new", "-newkey", "rsa:2048", "-keyout", key, "-out", csr, "-nodes", "-subj", `/CN=${san}`], { encoding: "utf8" });
+  assert.equal(req.status, 0, req.stderr);
+  const signed = spawnSync("openssl", ["x509", "-req", "-in", csr, "-CA", caCert, "-CAkey", caKey, "-CAcreateserial", "-out", crt, "-days", "1", "-extfile", ext], { encoding: "utf8" });
+  assert.equal(signed.status, 0, signed.stderr);
+  return { key: readFileSync(key), cert: readFileSync(crt) };
+}
+
+test("the pinned TLS check rejects a certificate for another name", async () => {
+  const channelModule = await import("../src/channels/linkedin-token/channel.ts");
+  assert.equal(typeof channelModule.probePinnedTls, "function");
+  const dir = mkdtempSync(join(tmpdir(), "li-tls-"));
+  const caKey = join(dir, "ca.key");
+  const caCert = join(dir, "ca.crt");
+  const ca = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-keyout", caKey, "-out", caCert, "-days", "1", "-nodes", "-subj", "/CN=AriaTestCA"], { encoding: "utf8" });
+  assert.equal(ca.status, 0, ca.stderr);
+  const good = writeLeaf(dir, "good", "www.linkedin.com", caKey, caCert);
+  const evil = writeLeaf(dir, "evil", "evil.example", caKey, caCert);
+  const caPem = readFileSync(caCert);
+  async function handshake(material: { key: Buffer; cert: Buffer }): Promise<Error | undefined> {
+    const server = createTlsServer({ key: material.key, cert: material.cert }, (_req, res) => {
+      res.writeHead(200);
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no port");
+    try {
+      await channelModule.probePinnedTls({ host: "127.0.0.1", port: address.port, ca: caPem });
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err : new Error("tls");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  }
+  try {
+    assert.equal(await handshake(good), undefined);
+    const rejected = await handshake(evil);
+    assert.equal((rejected as NodeJS.ErrnoException | undefined)?.code, "ERR_TLS_CERT_ALTNAME_INVALID");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
