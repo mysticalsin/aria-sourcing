@@ -31,7 +31,7 @@ f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.
 # 2026-11-21 CI hygiene: exact false positives from a full-history scan.
 # No path or rule is disabled. Each line is one commit:path:rule:line.
 # linkedinPublicId is a variable name on a profile URL assignment.
-# 16-letter source identifier in an assignment, not a client secret.
+# linkedinPublicId is a 16-letter source identifier in an assignment, not a credential and not a client secret.
 da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333
 # SHA-256 of a retired sample HMAC. The sample value is not stored.
 # SHA-256 digest of a retired sample. The sample value is not stored.
