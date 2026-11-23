@@ -553,10 +553,18 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
   const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
 
-  // Skills
-  const requiredSkills = SKILL_DICTIONARY.filter((s) =>
+  // Skills: an explicit "Required skills:" line (e.g. an Odoo job's skills,
+  // src/lib/integrations/odoo/mapping.ts) first, then dictionary hits.
+  const statedSkills = (text.match(/^[ \t]*required skills[ \t]*:[ \t]*([^\n]{1,600})$/im)?.[1] ?? "")
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 60);
+  const dictionarySkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
-  ).slice(0, 8);
+  );
+  const requiredSkills = [...statedSkills, ...dictionarySkills]
+    .filter((skill, index, all) => all.findIndex((other) => other.toLowerCase() === skill.toLowerCase()) === index)
+    .slice(0, 8);
   const niceToHaveSkills = SKILL_DICTIONARY.filter(
     (s) => !requiredSkills.includes(s) && new RegExp(`nice to have[^.]*${escapeRegExp(s)}`, "i").test(lower),
   ).slice(0, 4);
