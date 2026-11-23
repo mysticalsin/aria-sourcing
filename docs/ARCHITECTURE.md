@@ -254,6 +254,14 @@ These are current facts, not permission for a broad rewrite:
 - The `production-readiness/*_REPORT.md` files are a dated 2026-06-27 audit
   set. They are useful history, not current runtime truth.
 
+## Floor map
+
+The interactive map of this guide is the `/floor-map` page. Its rooms, edges,
+and cited paths live in `src/lib/architecture-floor-map.ts` and are checked by
+`tests/architecture-floor-map.mts`. The page describes checked-in source and
+the synthetic demo workspace. It is not a live deployment picture, and it does
+not add a connect flow for the assisted-manual channel.
+
 ## Senior developer onboarding
 
 Read in this order:
