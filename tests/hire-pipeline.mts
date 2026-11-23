@@ -18,6 +18,55 @@ function jsonResponse(status: number, body: unknown, headers?: Record<string, st
   });
 }
 
+/** hr.job fields present on Odoo 16, 18, and 19. `state` was removed in Odoo 16. */
+const HR_JOB_FIELDS = new Set([
+  "active",
+  "company_id",
+  "contract_type_id",
+  "department_id",
+  "description",
+  "employee_ids",
+  "expected_employees",
+  "name",
+  "no_of_employee",
+  "no_of_recruitment",
+  "requirements",
+  "sequence",
+]);
+
+function unknownHrJobField(body: { params?: { method?: string; args?: unknown[] } }): string | null {
+  if (body.params?.method !== "execute_kw" || body.params.args?.[3] !== "hr.job") return null;
+  const positional = body.params.args[5];
+  if (!Array.isArray(positional)) return null;
+  const method = body.params.args[4];
+  const vals =
+    method === "create"
+      ? Array.isArray(positional[0])
+        ? positional[0][0]
+        : undefined
+      : method === "write"
+        ? positional[1]
+        : undefined;
+  if (!vals || typeof vals !== "object" || Array.isArray(vals)) return null;
+  for (const field of Object.keys(vals)) {
+    if (!HR_JOB_FIELDS.has(field)) return field;
+  }
+  return null;
+}
+
+function odooExecuteResponse(body: { params?: { method?: string; args?: unknown[] } }, nextId: () => number) {
+  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
+  const kw = body.params?.args?.[6];
+  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
+    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
+  }
+  const field = unknownHrJobField(body);
+  if (field) {
+    return jsonResponse(200, { error: { message: `ValueError: Invalid field '${field}' on model 'hr.job'` } });
+  }
+  return jsonResponse(200, { result: nextId() });
+}
+
 const input = {
   idempotencyKey: "hire-batch-1",
   job: { name: "Staff Engineer", department: "Engineering" },
@@ -30,13 +79,10 @@ let nextId = 10;
 const fakeFetch = (async (url: string, init?: RequestInit) => {
   calls.push({ url, init });
   const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
-  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-  const kw = body.params?.args?.[6];
-  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-  }
-  nextId += 1;
-  return jsonResponse(200, { result: nextId });
+  return odooExecuteResponse(body, () => {
+    nextId += 1;
+    return nextId;
+  });
 }) as typeof fetch;
 
 const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: "test" };
@@ -94,7 +140,20 @@ ok(
   "hire write closes that job instead of sending hired true",
   hireWrite.params.args[3] === "hr.job" &&
     hireWrite.params.args[4] === "write" &&
-    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { no_of_recruitment: 0 }]),
+);
+const rejectedState = await odooExecuteResponse(
+  {
+    params: {
+      method: "execute_kw",
+      args: ["mantu", 7, "secret", "hr.job", "write", [[11], { state: "open", no_of_recruitment: 0 }], {}],
+    },
+  },
+  () => 0,
+).json();
+ok(
+  "the fake Odoo rejects an unknown hr.job field before a hire can succeed",
+  (rejectedState as { error?: { message?: string } }).error?.message === "ValueError: Invalid field 'state' on model 'hr.job'",
 );
 
 calls.length = 0;
@@ -122,8 +181,8 @@ ok(
     closedJobs.length === 2 &&
     JSON.stringify(createdJobs[0]?.params.args[5]) === JSON.stringify([[{ name: "Need Alpha" }]]) &&
     JSON.stringify(createdJobs[1]?.params.args[5]) === JSON.stringify([[{ name: "Need Beta" }]]) &&
-    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]) &&
-    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[14], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[14], { no_of_recruitment: 0 }]),
 );
 
 const stagedCalls: { url: string; init?: RequestInit }[] = [];
@@ -134,13 +193,10 @@ const staged = await runSourcingThroughHired(
   (async (url: string, init?: RequestInit) => {
     stagedCalls.push({ url, init });
     const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
-    if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-    const kw = body.params?.args?.[6];
-    if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-      return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-    }
-    stagedId += 1;
-    return jsonResponse(200, { result: stagedId });
+    return odooExecuteResponse(body, () => {
+      stagedId += 1;
+      return stagedId;
+    });
   }) as typeof fetch,
 );
 const stageBody = JSON.parse(String(stagedCalls[5]?.init?.body)) as { params: { args: unknown[] } };
@@ -315,13 +371,10 @@ let aheadId = 10;
 const aheadFetch = (async (url: string, init?: RequestInit) => {
   aheadCalls.push({ url, init });
   const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
-  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-  const kw = body.params?.args?.[6];
-  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-  }
-  aheadId += 1;
-  return jsonResponse(200, { result: aheadId });
+  return odooExecuteResponse(body, () => {
+    aheadId += 1;
+    return aheadId;
+  });
 }) as typeof fetch;
 const odooAhead = await runSourcingThroughHired(
   input,

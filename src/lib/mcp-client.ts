@@ -548,9 +548,10 @@ function odooRef(id: string): number | string {
 }
 
 /**
- * Odoo hr.job / hr.applicant fields only. `state: "open"` with
- * `no_of_recruitment: 0` is the standard set_open write that stops recruiting.
- * A hired stage write is sent only when ODOO_HIRED_STAGE_ID is a positive id.
+ * Odoo hr.job / hr.applicant fields only. Odoo 16, 18, and 19 have
+ * `no_of_recruitment` and no `hr.job.state`. Writing `no_of_recruitment: 0`
+ * stops recruiting. A hired stage write is sent only when ODOO_HIRED_STAGE_ID
+ * is a positive id.
  */
 async function runOdooHire(
   connector: HireConnector,
@@ -623,7 +624,7 @@ async function runOdooHire(
     idempotencyKey: `${input.idempotencyKey}:hire`,
     model: "hr.job",
     method: "write",
-    values: { id: odooRef(job.id), state: "open", no_of_recruitment: 0 },
+    values: { id: odooRef(job.id), no_of_recruitment: 0 },
   });
   steps.push({
     erp: "odoo",
