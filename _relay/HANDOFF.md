@@ -2,15 +2,17 @@
 project: MSourcing / ARIA
 shift: 469
 agent: cursor
-updated: 2026-11-21
-status: stack-shared-config
+updated: 2026-11-23
+status: odoo-sor-slices
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 469
 
 ## Current state
 
-- Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
+- Slice ARIA-A01 on `cursor/odoo-sor-go-client-8ed5`, stacked on `cursor/aria-stack-shared-config`. Go module `services/` is the Odoo 19 JSON-2 client. Odoo is the system of record. `ARIA_MODE=live` is refused. DNA has no URL and no credential. SMARTX is an offline copy seam: no network client, no ARP, no scrape. Tests use in-memory fakes and `example.test` mail only.
+- The Odoo addon hired gate (ARIA-A02), exact-text approval (ARIA-A03), and the HeyReach channel (ARIA-A04) are the next stacked slices. They are not in this commit.
+- Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md. This slice keeps that copy.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
 
