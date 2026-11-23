@@ -23,6 +23,7 @@ export function MetricCard({
   icon,
   tone = "neutral",
   delta,
+  unavailable = false,
 }: {
   label: string;
   value: string | number;
@@ -30,9 +31,10 @@ export function MetricCard({
   icon?: React.ReactNode;
   tone?: Tone;
   delta?: { value: string; positive?: boolean };
+  unavailable?: boolean;
 }) {
   return (
-    <Card className="p-5 animate-fade-in">
+    <Card className="p-5 animate-fade-in" data-unavailable={unavailable ? "true" : undefined}>
       <div className="flex items-start justify-between gap-3">
         <Eyebrow>{label}</Eyebrow>
         {icon && (

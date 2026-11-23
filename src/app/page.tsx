@@ -33,27 +33,28 @@ import {
   useActions,
   useActiveCampaign,
   useActivities,
+  useBookings,
   useCampaigns,
   useCandidates,
-  useDashboardKpis,
   useHydrated,
+  useOutreach,
   usePendingApprovals,
   useReplies,
 } from "@/lib/store";
 import { funnelForCandidates } from "@/lib/metrics";
-import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/lib/utils";
+import { formatQuickStatValue, selectQuickStats } from "@/lib/quick-stats";
+import { pluralize, type Tone } from "@/lib/utils";
 import {
   CalendarCheck,
   FilePlus2,
   FileText,
   GitBranch,
+  Hourglass,
   Megaphone,
   PlayCircle,
   Radar,
   Reply,
   Sparkles,
-  Target,
-  Timer,
   Users,
 } from "lucide-react";
 
@@ -68,9 +69,10 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const actions = useActions();
 
-  const kpis = useDashboardKpis();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
+  const bookings = useBookings();
+  const outreach = useOutreach();
   const activities = useActivities();
   const pendingApprovals = usePendingApprovals();
   const replies = useReplies();
@@ -114,57 +116,41 @@ export default function DashboardPage() {
     setRunToken((k) => k + 1);
   }
 
+  const quickStats = React.useMemo(
+    () =>
+      selectQuickStats({
+        candidates,
+        interviews: bookings,
+        approvals: outreach,
+        replies,
+        // Seed bookings are anchored to the wall clock, and live bookings are too.
+        now: new Date(),
+      }),
+    [bookings, candidates, outreach, replies],
+  );
+  const quickStatIcons: Record<(typeof quickStats)[number]["id"], React.ReactNode> = {
+    toRate: <Users aria-hidden />,
+    inAssessment: <Radar aria-hidden />,
+    interviewsThisWeek: <CalendarCheck aria-hidden />,
+    awaitingApproval: <Hourglass aria-hidden />,
+    replies: <Reply aria-hidden />,
+    hires: <Sparkles aria-hidden />,
+  };
   const kpiCards: {
     label: string;
-    value: string | number;
+    value: string;
     hint: string;
     icon: React.ReactNode;
     tone: Tone;
-  }[] = [
-    {
-      label: "Active campaigns",
-      value: kpis.activeCampaigns,
-      hint: `${pluralize(kpis.totalCampaigns, "campaign")} created in total`,
-      icon: <Megaphone aria-hidden />,
-      tone: "tangerine",
-    },
-    {
-      label: "Candidates sourced",
-      value: formatNumber(kpis.candidatesSourced),
-      hint: `${pluralize(kpis.contacted, "candidate")} contacted so far`,
-      icon: <Users aria-hidden />,
-      tone: "electric",
-    },
-    {
-      label: "Reply rate",
-      value: formatPercent(kpis.replyRate),
-      hint: `Across ${pluralize(kpis.contacted, "contact")} reached`,
-      icon: <Reply aria-hidden />,
-      tone: "aqua",
-    },
-    {
-      label: "Interviews booked",
-      value: kpis.interviewsBooked,
-      hint: `${pluralize(kpis.interested, "candidate")} interested in flight`,
-      icon: <CalendarCheck aria-hidden />,
-      tone: "violet",
-    },
-    {
-      label: "Avg match score",
-      value: kpis.avgMatchScore,
-      hint: "Quality of the sourced pool",
-      icon: <Target aria-hidden />,
-      tone: scoreTone(kpis.avgMatchScore),
-    },
-    {
-      label: "Time to first interview",
-      value:
-        kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
-      hint: "Mean across active campaigns",
-      icon: <Timer aria-hidden />,
-      tone: "neutral",
-    },
-  ];
+    unavailable: boolean;
+  }[] = quickStats.map((stat) => ({
+    label: stat.label,
+    value: formatQuickStatValue(stat.value),
+    hint: stat.hint,
+    icon: quickStatIcons[stat.id],
+    tone: stat.tone,
+    unavailable: stat.value == null,
+  }));
 
   async function handleSourceBatch() {
     if (!activeCampaign) {
@@ -303,6 +289,7 @@ export default function DashboardPage() {
                   hint={k.hint}
                   icon={k.icon}
                   tone={k.tone}
+                  unavailable={k.unavailable}
                 />
               ))}
             </section>
