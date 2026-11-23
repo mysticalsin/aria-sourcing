@@ -16,6 +16,14 @@ const (
 	ActionHired = "stage.hired"
 	// ActionHireRefused records a hire gate that refused.
 	ActionHireRefused = "hire.refused"
+	// ActionQCPass records a quality-check copy. It is not an approval.
+	ActionQCPass = "qc.pass"
+	// ActionQCRejected records a quality check that did not pass.
+	ActionQCRejected = "qc.rejected"
+	// ActionFullAuto records that one campaign and channel opted into full auto.
+	ActionFullAuto = "qc.opt_in"
+	// ActionKillSwitch records that the send kill switch changed.
+	ActionKillSwitch = "kill.switch"
 )
 
 // ErrDuplicate means this idempotency key was already appended.
