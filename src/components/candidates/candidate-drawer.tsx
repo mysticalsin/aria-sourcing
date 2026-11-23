@@ -453,6 +453,7 @@ function OnboardingPanel({ c }: { c: Candidate }) {
     { label: "Referral Champion", done: false, note: "Engage the new hire to drive referrals." },
   ];
   return (
+    <div className="animate-fade-in">
     <Section title="Onboarding" icon={<PartyPopper className="h-4 w-4" />}>
       <div className="rounded-2xl border border-line bg-canvas/60 p-3">
         <p className="mb-2 text-sm text-muted">
@@ -476,6 +477,7 @@ function OnboardingPanel({ c }: { c: Candidate }) {
         </ul>
       </div>
     </Section>
+    </div>
   );
 }
 
@@ -1324,7 +1326,7 @@ export function CandidateDrawer({
       footer={footer}
       width="max-w-2xl"
     >
-      <div className="space-y-8 animate-fade-in">
+      <div className="space-y-8">
         <div className="space-y-3">
           {campaign && (
             <Badge tone="electric" size="sm">
@@ -1631,9 +1633,6 @@ export function CandidateDrawer({
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
         {!erasureTombstone && <TaniaPanel c={c} />}
 
-        {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
-        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
-
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted">Current:</span>
@@ -1676,6 +1675,9 @@ export function CandidateDrawer({
             </div>
           )}
         </Section>
+
+        {/* Below the stage controls so offer/hired does not shove the buttons. */}
+        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
 
         <Section title="Tech stack">
           <Chips items={c.techStack} label="Tech stack" />

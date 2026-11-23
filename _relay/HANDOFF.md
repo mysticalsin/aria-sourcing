@@ -2,8 +2,8 @@
 project: MSourcing / ARIA
 shift: 438
 agent: cursor-grok
-updated: 2026-11-23T13:24Z
-status: local-main-hire-route
+updated: 2026-11-23T13:35Z
+status: local-main-motion
 ---
 
 # Handoff — Shift 438
@@ -22,6 +22,7 @@ status: local-main-hire-route
 1. Dependency audit commit `0fd61f6c`.
 2. Stress, no code change. In process: score 2,000 candidates 19.4 ms; brief-skill scan 2,000 texts 20 ms; map 500 LinkedIn leads 15.9 ms (454 kept, 46 below the quality bar); 100 metric recomputes of 2,000 candidates 34.7 ms. Warmed pages: `/candidates` 343–361 ms, design campaign 275–332 ms, `/outreach` 70–101 ms, `/campaigns` 200 ms, floor heading 189–194 ms, 3D canvas 402 ms after the toggle. Source next batch 472–540 ms (6 accepted, 2 skipped). Hired click to toast 487–501 ms.
 3. `runSourcingThroughHired` in `src/lib/mcp-client.ts`. HTTP `POST /api/hire`. Odoo runs hr.job create, hr.applicant create, stage write, hire write (authenticate then execute_kw each step). SMART posts the same four steps with a bearer token. Neither configured: `{ ok: true, erp: "skipped", linkedIn: true }` and no fetch. `tests/hire-pipeline.mts` 15 passed.
+4. Motion on the sourcing-to-hired path. Stage clicks were replaying a 1.5s chart tween and logging 0×0 chart measures from the hidden campaign chart. Drawer slide, fit radar, gauge, distribution bars, and the outreach checklist now use 180ms. The offer/hired panel sits below the stage buttons. Re-checked in the browser: LinkedIn panel still shows, chart warnings 0, offer/hired button position unchanged, guardrail detail opens.
 
 ## Blockers
 
