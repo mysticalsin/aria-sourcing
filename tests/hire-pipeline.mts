@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { envForHireRequest, runSourcingThroughHired } from "../src/lib/mcp-client";
+import { envForHireRequest, resetOdooHiredStageLookup, runSourcingThroughHired } from "../src/lib/mcp-client";
 
 let pass = 0;
 let fail = 0;
@@ -25,18 +25,37 @@ const input = {
   stage: "Hired",
 };
 
-const calls: { url: string; init?: RequestInit }[] = [];
-let nextId = 10;
-const fakeFetch = (async (url: string, init?: RequestInit) => {
-  calls.push({ url, init });
-  const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
+type OdooRpc = { params?: { method?: string; args?: unknown[] } };
+
+function odooFakeResponse(body: OdooRpc, nextId: () => number, stage?: { id: number; name: string }[]) {
   if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
   const kw = body.params?.args?.[6];
   if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
     return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
   }
-  nextId += 1;
-  return jsonResponse(200, { result: nextId });
+  if (body.params?.args?.[3] === "hr.recruitment.stage" && body.params?.args?.[4] === "search_read") {
+    if (stage) return jsonResponse(200, { result: stage });
+    const id = nextId();
+    return jsonResponse(200, { result: [{ id, name: "Hired" }] });
+  }
+  return jsonResponse(200, { result: nextId() });
+}
+
+function executeKw(entries: { init?: RequestInit }[]) {
+  return entries
+    .map((entry) => JSON.parse(String(entry.init?.body)) as { params: { method: string; args: unknown[] } })
+    .filter((body) => body.params.method === "execute_kw");
+}
+
+const calls: { url: string; init?: RequestInit }[] = [];
+let nextId = 10;
+const fakeFetch = (async (url: string, init?: RequestInit) => {
+  calls.push({ url, init });
+  const body = JSON.parse(String(init?.body)) as OdooRpc;
+  return odooFakeResponse(body, () => {
+    nextId += 1;
+    return nextId;
+  });
 }) as typeof fetch;
 
 const emptyEnv: NodeJS.ProcessEnv = { NODE_ENV: "test" };
@@ -56,11 +75,21 @@ const odooEnv: NodeJS.ProcessEnv = {
   SMART_URL: "https://smart.example.test",
   SMART_TOKEN: "smart-token",
 };
+resetOdooHiredStageLookup();
 const hired = await runSourcingThroughHired(input, odooEnv, fakeFetch);
 ok("configured Odoo is preferred over SMART", hired.ok === true && hired.erp === "odoo" && hired.steps.map((step) => step.action).join(",") === "job,applicant,stage,hire");
+const hiredKw = executeKw(calls);
+const stageLookup = hiredKw.find((body) => body.params.args[3] === "hr.recruitment.stage");
+const stageWrite = hiredKw.find((body) => body.params.args[3] === "hr.applicant" && body.params.args[4] === "write");
 ok(
-  "Odoo skips the stage write when no hired stage id is configured",
-  calls.length === 6 && hired.steps[2]?.skipped === true && hired.steps[2]?.reason === "Hired stage id is not configured.",
+  "an unset hired stage id looks up Hired once and writes that stage_id",
+  hired.steps[2]?.skipped !== true &&
+    stageLookup?.params.args[4] === "search_read" &&
+    JSON.stringify(stageLookup?.params.args[5]) === JSON.stringify([[["name", "=", "Hired"]], ["id", "name"], 0, 1]) &&
+    Object.keys(stageLookup?.params.args[6] as object).length === 0 &&
+    JSON.stringify(stageWrite?.params.args[5]) === JSON.stringify([[12], { stage_id: 13 }]) &&
+    !JSON.stringify(hiredKw).includes('"hired":true') &&
+    !JSON.stringify(stageWrite?.params.args[5]).includes('"stage":'),
 );
 
 function odooArgs(index: number) {
@@ -69,11 +98,15 @@ function odooArgs(index: number) {
   };
 }
 
-ok("each Odoo step authenticates on jsonrpc", [0, 2, 4].every((index) => calls[index]?.url === "https://odoo.example.test/jsonrpc" && odooArgs(index).params.method === "authenticate"));
+ok(
+  "each Odoo step authenticates on jsonrpc",
+  calls.length === 10 &&
+    calls.every((call, index) => (index % 2 === 0 ? odooArgs(index).params.method === "authenticate" : odooArgs(index).params.method === "execute_kw") && call.url === "https://odoo.example.test/jsonrpc"),
+);
 
 const jobWrite = odooArgs(1);
 const applicantWrite = odooArgs(3);
-const hireWrite = odooArgs(5);
+const hireWrite = odooArgs(9);
 const positional = (body: { params: { args: unknown[] } }) => body.params.args[5];
 ok(
   "hr.job is created with the job name as positional vals",
@@ -123,7 +156,7 @@ ok(
     JSON.stringify(createdJobs[0]?.params.args[5]) === JSON.stringify([[{ name: "Need Alpha" }]]) &&
     JSON.stringify(createdJobs[1]?.params.args[5]) === JSON.stringify([[{ name: "Need Beta" }]]) &&
     JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]) &&
-    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[14], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[15], { state: "open", no_of_recruitment: 0 }]),
 );
 
 const stagedCalls: { url: string; init?: RequestInit }[] = [];
@@ -133,14 +166,11 @@ const staged = await runSourcingThroughHired(
   { ...odooEnv, ODOO_HIRED_STAGE_ID: "15" },
   (async (url: string, init?: RequestInit) => {
     stagedCalls.push({ url, init });
-    const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
-    if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-    const kw = body.params?.args?.[6];
-    if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-      return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-    }
-    stagedId += 1;
-    return jsonResponse(200, { result: stagedId });
+    const body = JSON.parse(String(init?.body)) as OdooRpc;
+    return odooFakeResponse(body, () => {
+      stagedId += 1;
+      return stagedId;
+    });
   }) as typeof fetch,
 );
 const stageBody = JSON.parse(String(stagedCalls[5]?.init?.body)) as { params: { args: unknown[] } };
@@ -148,6 +178,7 @@ ok(
   "a configured hired stage id is a positional stage_id write",
   staged.ok === true &&
     staged.steps[2]?.skipped !== true &&
+    !executeKw(stagedCalls).some((body) => body.params.args[4] === "search_read") &&
     stageBody.params.args[3] === "hr.applicant" &&
     stageBody.params.args[4] === "write" &&
     JSON.stringify(stageBody.params.args[5]) === JSON.stringify([[22], { stage_id: 15 }]),
@@ -314,14 +345,11 @@ const aheadCalls: Captured[] = [];
 let aheadId = 10;
 const aheadFetch = (async (url: string, init?: RequestInit) => {
   aheadCalls.push({ url, init });
-  const body = JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } };
-  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-  const kw = body.params?.args?.[6];
-  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-  }
-  aheadId += 1;
-  return jsonResponse(200, { result: aheadId });
+  const body = JSON.parse(String(init?.body)) as OdooRpc;
+  return odooFakeResponse(body, () => {
+    aheadId += 1;
+    return aheadId;
+  });
 }) as typeof fetch;
 const odooAhead = await runSourcingThroughHired(
   input,
@@ -340,7 +368,7 @@ const odooAhead = await runSourcingThroughHired(
 );
 ok(
   "configured Odoo stays ahead of the generic api and mcp",
-  odooAhead.ok === true && odooAhead.erp === "odoo" && aheadCalls.length === 6 && aheadCalls.every((entry) => entry.url === "https://odoo.example.test/jsonrpc"),
+  odooAhead.ok === true && odooAhead.erp === "odoo" && aheadCalls.length === 8 && aheadCalls.every((entry) => entry.url === "https://odoo.example.test/jsonrpc"),
 );
 
 const smartAheadCalls: Captured[] = [];
@@ -424,6 +452,60 @@ ok(
     !connectorDemo.HIRE_CONNECTOR &&
     !connectorDemo.ODOO_API_KEY &&
     !connectorDemo.SMART_TOKEN,
+);
+
+resetOdooHiredStageLookup();
+const missCalls: { url: string; init?: RequestInit }[] = [];
+let missId = 30;
+const missed = await runSourcingThroughHired(
+  { ...input, idempotencyKey: "hire-miss" },
+  odooEnv,
+  (async (url: string, init?: RequestInit) => {
+    missCalls.push({ url, init });
+    const body = JSON.parse(String(init?.body)) as OdooRpc;
+    return odooFakeResponse(
+      body,
+      () => {
+        missId += 1;
+        return missId;
+      },
+      [],
+    );
+  }) as typeof fetch,
+);
+const missKw = executeKw(missCalls);
+ok(
+  "a Hired stage lookup that finds nothing skips the stage write",
+  missed.ok === true &&
+    missed.steps[2]?.skipped === true &&
+    missed.steps[2]?.reason === "not written" &&
+    missKw.some((body) => body.params.args[4] === "search_read") &&
+    !missKw.some((body) => body.params.args[3] === "hr.applicant" && body.params.args[4] === "write") &&
+    missKw.some((body) => body.params.args[3] === "hr.job" && body.params.args[4] === "write"),
+);
+missCalls.length = 0;
+const missedAgain = await runSourcingThroughHired(
+  { ...input, idempotencyKey: "hire-miss-2" },
+  odooEnv,
+  (async (url: string, init?: RequestInit) => {
+    missCalls.push({ url, init });
+    const body = JSON.parse(String(init?.body)) as OdooRpc;
+    return odooFakeResponse(
+      body,
+      () => {
+        missId += 1;
+        return missId;
+      },
+      [{ id: 99, name: "Hired" }],
+    );
+  }) as typeof fetch,
+);
+ok(
+  "a missed Hired stage is not looked up again",
+  missedAgain.ok === true &&
+    missedAgain.steps[2]?.skipped === true &&
+    missedAgain.steps[2]?.reason === "not written" &&
+    !executeKw(missCalls).some((body) => body.params.args[4] === "search_read"),
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);

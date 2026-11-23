@@ -1,4 +1,5 @@
 import type { AriaPlan } from "../aria-command";
+import type { HireTrail } from "../hire-trail";
 import type { ConnectionTestResult } from "../integrations";
 import type { ReplyClassification } from "../mock-ai";
 import type { Recommendation } from "../recommendations";
@@ -416,6 +417,8 @@ export interface HermesActions {
 
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
+  /** One commit: Hired stage, the activity trail, and vacancy status when the connector already closed it. */
+  recordHiredCandidate: (candidateId: string, trail: HireTrail) => void;
   setCandidatePhone: (id: string, phone: string) => void;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */

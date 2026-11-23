@@ -9,10 +9,13 @@ import {
   buildHireRequest,
   closeMatchingVacancy,
   hireStatusText,
+  interpretHireBody,
   localHireCompletes,
   postCandidateHire,
   type HireRequest,
 } from "../src/lib/hire-ui";
+import { applyHireTrail, buildHireTrail, hireTrailNotes } from "../src/lib/hire-trail";
+import type { Activity, Campaign, Candidate, HermesState } from "../src/lib/types";
 
 let pass = 0;
 let fail = 0;
@@ -167,17 +170,19 @@ ok(
     !/process\.env|ODOO_URL|ODOO_API_KEY|SMART_URL|SMART_TOKEN|LINKEDIN_RSC|https?:\/\//.test(hireUi),
 );
 const recordStart = drawer.indexOf("const recordHire = async");
-const recordHired = drawer.indexOf('actions.setCandidateStage(candidateIdForHire, "Hired")', recordStart);
+const recordHired = drawer.indexOf("actions.recordHiredCandidate(candidateIdForHire, trail)", recordStart);
 const recordBody = drawer.slice(recordStart, recordHired);
 ok(
-  "Hire calls the route and advances the checklist only after it completes",
+  "Hire calls the route and records one trail only after it completes",
   recordStart > 0 &&
     recordHired > recordStart &&
     recordBody.includes("await postCandidateHire(") &&
     recordBody.includes("if (!localHireCompletes(outcome))") &&
+    recordBody.includes("buildHireTrail(") &&
     !recordBody.includes("setCandidateStage") &&
     drawer.includes("hireStatusText(hireResult)") &&
     drawer.includes("data-hire-outcome={hireResult.outcome}") &&
+    drawer.includes("data-hire-trail") &&
     drawer.includes('void recordHire()'),
 );
 const vacancies = [
@@ -194,12 +199,215 @@ ok(
     vacancies[0]?.status === "Interviewing",
 );
 ok(
-  "the drawer closes the hired vacancy and does not ask to mark it filled",
+  "the drawer closes the hired vacancy in the one trail write",
   !drawer.includes("Consider marking") &&
     drawer.includes("closeMatchingVacancy") &&
-    drawer.includes('status: "Filled"') &&
+    drawer.includes("recordHiredCandidate") &&
+    !drawer.includes("updateCampaign") &&
     drawer.includes('data-vacancy-status="filled"') &&
     drawer.includes("is filled and closed."),
+);
+
+const odooBody = interpretHireBody({
+  ok: true,
+  erp: "odoo",
+  linkedIn: true,
+  steps: [
+    { action: "job", ok: true, id: "11", model: "hr.job" },
+    { action: "applicant", ok: false, id: "99" },
+    { action: "applicant", ok: true, id: "12", model: "hr.applicant" },
+    { action: "stage", ok: true, id: "12" },
+    { action: "hire", ok: true, id: "12" },
+    { action: "close", ok: true, id: "11" },
+  ],
+});
+const odooTrail = odooBody.ok
+  ? buildHireTrail({
+      who: "  Operator  ",
+      when: "2026-11-23T20:00:00.000Z",
+      need: "Senior Backend Engineer",
+      erp: odooBody.erp,
+      stageFrom: "Offer",
+      stageTo: "Hired",
+      steps: odooBody.steps,
+      vacancyClosed: odooBody.vacancyClosed,
+    })
+  : null;
+ok(
+  "an Odoo hire keeps the ids, stage change, and vacancy close already in the response",
+  odooTrail?.who === "Operator" &&
+    odooTrail.when === "2026-11-23T20:00:00.000Z" &&
+    odooTrail.need === "Senior Backend Engineer" &&
+    odooTrail.odooJobId === "11" &&
+    odooTrail.odooApplicantId === "12" &&
+    odooTrail.stageFrom === "Offer" &&
+    odooTrail.stageTo === "Hired" &&
+    odooTrail.vacancyClosed === true &&
+    hireTrailNotes(odooTrail).includes("Odoo job: 11") &&
+    hireTrailNotes(odooTrail).includes("Odoo applicant: 12") &&
+    hireTrailNotes(odooTrail).includes("Stage: Offer → Hired") &&
+    hireTrailNotes(odooTrail).includes("Vacancy: closed"),
+);
+
+const openBody = interpretHireBody({
+  ok: true,
+  erp: "odoo",
+  linkedIn: true,
+  vacancyClosed: false,
+  steps: [
+    { action: "job", ok: true, id: "11" },
+    { action: "applicant", ok: true, id: "12" },
+    { action: "stage", ok: true, id: "12" },
+    { action: "hire", ok: true, id: "12" },
+  ],
+});
+const openTrail = openBody.ok
+  ? buildHireTrail({
+      who: "Operator",
+      when: "2026-11-23T20:00:00.000Z",
+      need: "Senior Backend Engineer",
+      erp: "odoo",
+      stageFrom: "Offer",
+      stageTo: "Hired",
+      steps: openBody.steps,
+      vacancyClosed: openBody.vacancyClosed,
+    })
+  : null;
+ok("a hire write without a close step leaves the vacancy open", openTrail?.vacancyClosed === false && openTrail.odooJobId === "11");
+
+const positional = interpretHireBody({
+  ok: true,
+  erp: "odoo",
+  linkedIn: true,
+  steps: [
+    { action: "job", ok: true, id: "11", model: "hr.job" },
+    { action: "applicant", ok: true, id: "12", model: "hr.applicant" },
+    { action: "stage", ok: true, skipped: true, reason: "Hired stage id is not configured." },
+    { action: "hire", ok: true, id: "11", model: "hr.job" },
+  ],
+});
+const positionalTrail = positional.ok
+  ? buildHireTrail({
+      who: "Operator",
+      when: "2026-11-23T20:00:00.000Z",
+      need: "Senior Backend Engineer",
+      erp: "odoo",
+      stageFrom: "Offer",
+      stageTo: "Hired",
+      steps: positional.steps,
+      vacancyClosed: positional.vacancyClosed,
+    })
+  : null;
+ok(
+  "the Odoo job hire write is the vacancy close and keeps both ids",
+  positional.ok === true &&
+    positional.vacancyClosed === true &&
+    positionalTrail?.odooJobId === "11" &&
+    positionalTrail.odooApplicantId === "12" &&
+    positionalTrail.vacancyClosed === true &&
+    hireTrailNotes(positionalTrail).includes("Odoo stage: not written") &&
+    !hireTrailNotes(positionalTrail).includes("skipped"),
+);
+
+const flagged = interpretHireBody({
+  ok: true,
+  erp: "odoo",
+  linkedIn: true,
+  vacancyClosed: true,
+  steps: [{ action: "hire", ok: true, id: "12" }],
+});
+ok("an explicit vacancyClosed flag is kept without another request", flagged.ok === true && flagged.vacancyClosed === true);
+
+const smartBody = interpretHireBody({
+  ok: true,
+  erp: "smart",
+  linkedIn: true,
+  steps: [{ action: "job", ok: true, id: "smart-job" }],
+});
+const smartTrail = smartBody.ok
+  ? buildHireTrail({
+      who: "",
+      when: "2026-11-23T20:00:00.000Z",
+      need: "  ",
+      erp: "smart",
+      stageFrom: "Offer",
+      stageTo: "Hired",
+      steps: smartBody.steps,
+      vacancyClosed: smartBody.vacancyClosed,
+    })
+  : null;
+ok(
+  "a non-Odoo hire does not label its ids as Odoo",
+  smartTrail?.odooJobId === undefined &&
+    smartTrail?.odooApplicantId === undefined &&
+    smartTrail?.who === "Operator" &&
+    smartTrail.need === "Open role" &&
+    !hireTrailNotes(smartTrail).includes("Odoo"),
+);
+
+function workspace(): HermesState {
+  const candidate = {
+    id: "cand-1",
+    name: "Ada Lovelace",
+    campaignId: "camp-1",
+    stage: "Offer",
+    maxStageRank: 6,
+    recentActivity: "Interview booked.",
+  } as Candidate;
+  const campaign = {
+    id: "camp-1",
+    status: "Interviewing",
+    activities: [] as Activity[],
+  } as Campaign;
+  return { candidates: [candidate], campaigns: [campaign], activities: [] } as unknown as HermesState;
+}
+
+const recorded = applyHireTrail(workspace(), {
+  candidateId: "cand-1",
+  activityId: "act-1",
+  trail: odooTrail!,
+});
+const hireActivity = recorded.activities[0];
+ok(
+  "one hire writes one activity, the stage, and the closed vacancy",
+  recorded.activities.length === 1 &&
+    recorded.campaigns[0]?.activities.length === 1 &&
+    recorded.campaigns[0]?.activities[0] === hireActivity &&
+    hireActivity?.linkedEntityType === "candidate" &&
+    hireActivity.linkedEntityId === "cand-1" &&
+    hireActivity.campaignId === "camp-1" &&
+    hireActivity.createdAt === "2026-11-23T20:00:00.000Z" &&
+    hireActivity.outcome === "Hired, vacancy closed" &&
+    recorded.candidates[0]?.stage === "Hired" &&
+    recorded.candidates[0]?.maxStageRank === 7 &&
+    recorded.candidates[0]?.recentActivity === "Hired by Operator for Senior Backend Engineer." &&
+    recorded.campaigns[0]?.status === "Filled",
+);
+const again = applyHireTrail(recorded, { candidateId: "cand-1", activityId: "act-2", trail: odooTrail! });
+ok("recording the same trail again does not write a second activity", again === recorded);
+
+const leftOpen = applyHireTrail(workspace(), {
+  candidateId: "cand-1",
+  activityId: "act-open",
+  trail: openTrail!,
+});
+ok(
+  "an open vacancy stays on the current campaign status",
+  leftOpen.campaigns[0]?.status === "Interviewing" && leftOpen.activities[0]?.outcome === "Hired",
+);
+ok("a missing candidate does not write a trail", applyHireTrail(workspace(), { candidateId: "missing", activityId: "act-x", trail: openTrail! }).activities.length === 0);
+
+const trailLib = readFileSync(new URL("../src/lib/hire-trail.ts", import.meta.url), "utf8");
+const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const recordAction = store.slice(store.indexOf("const recordHiredCandidate"), store.indexOf("const setCandidatePhone"));
+ok(
+  "the trail is one local commit and does not call a connector",
+  !/fetch\s*\(|execute_kw|ODOO_|SMART_|HIRE_API|HIRE_MCP/.test(trailLib) &&
+    recordAction.includes("commit(") &&
+    recordAction.includes("applyHireTrail") &&
+    !recordAction.includes("logActivity") &&
+    !recordAction.includes("addCandidateNote") &&
+    !recordAction.includes("setCandidateStage"),
 );
 
 console.log(`RESULT hire-ui: ${pass} passed, ${fail} failed`);
