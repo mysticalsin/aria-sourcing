@@ -118,7 +118,7 @@ principal.
     of rules. » (eyebrow « Agent fleet »).
   - « Exec » et « Winlog » sont du jargon.
   - « #Vivier » est en français avec un dièse, dans une interface en anglais.
-- La sidebar affiche « Created by Tony Walteur » et « Agentic sourcing
+- La sidebar affiche « Created by Workspace owner » et « Agentic sourcing
   platform » sous le logo, dans chaque écran.
 
 Proposition à valider (voir Décisions) : regrouper autour du parcours du
@@ -275,6 +275,6 @@ typecheck:tests && npm test`) et une nouvelle capture des 21 routes à 1440 et
    seule « New campaign ». Les anciennes URL redirigent.
 3. **Score /100 seul** pour noter les candidats. Top Gun / A Player / lettres /
    étoiles disparaissent de l'écran.
-4. **Plus de crédit personnel.** « Designed & built by Tony Walteur » et
-   « Created by Tony Walteur » sont retirés et remplacés par une mention de
+4. **Plus de crédit personnel.** « Designed & built by Workspace owner » et
+   « Created by Workspace owner » sont retirés et remplacés par une mention de
    Mantu Group.

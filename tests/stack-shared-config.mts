@@ -175,7 +175,10 @@ test("handoff records the shared config and does not claim the hygiene test", ()
   );
   assert.match(handoff, /process\.kill\(1, 0\)/);
   assert.match(handoff, /interval 5s, timeout 5s, retries 12, start_period 5s/);
-  assert.match(handoff, /`tests\/public-repo-hygiene\.mts` is absent/);
-  assert.match(handoff, /Goal records on this tip still include non-placeholder addresses/);
-  assert.doesNotMatch(handoff, /addresses in relay notes and goal records at this tip are placeholders/);
+  assert.match(
+    handoff,
+    /`tests\/public-repo-hygiene\.mts` rejects a private-key block, a non-sample linkedin\.com\/in\/ URL outside `tests\/`, and a non-placeholder address outside `tests\/`/,
+  );
+  assert.match(handoff, /addresses in relay notes and goal records at this tip are placeholders/);
+  assert.equal(read("tests/public-repo-hygiene.mts").includes("PRIVATE KEY"), true);
 });

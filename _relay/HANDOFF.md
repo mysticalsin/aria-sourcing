@@ -57,6 +57,7 @@ status: stack-shared-config
 - 2026-11-21: the five shared files above are canonical on cursor/aria-stack-shared-config. Later pull requests merge that branch with an ordinary merge and keep this version of those files.
 - 2026-11-21: the agents healthcheck is process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The agents service stays in docker-compose.yml.
 - 2026-11-23: pull request 251 landed on twa-odoo as 70e72d6c. This branch merged that commit and kept process.kill(1, 0). The two wantTokenMAC fingerprints are different digests.
+- 2026-11-23: pull request 272 landed on twa-odoo as 4730a158. This branch merged that commit. The public-repo hygiene test is in this tip, and history was not rewritten.
 - 2026-11-21: pull request 168 deletes LinkedIn bridge routes and strips LinkedIn dispatch. Pull request 167 keeps its approval hash, allowlist, and kill switch on the remaining send path and does not restore the deleted LinkedIn files.
 
 - Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages
@@ -144,7 +145,7 @@ status: stack-shared-config
 
 ## Watch out
 
-- Public-repo hygiene is not on this tip. `tests/public-repo-hygiene.mts` is absent. Goal records on this tip still include non-placeholder addresses. That cleanup stays on pull request 272. History was not rewritten.
+- Public-repo hygiene: addresses in relay notes and goal records at this tip are placeholders. `tests/public-repo-hygiene.mts` rejects a private-key block, a non-sample linkedin.com/in/ URL outside `tests/`, and a non-placeholder address outside `tests/`. History was not rewritten.
 
 - Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
   the app) before any real autopilot use beyond the demo; set but invalid
