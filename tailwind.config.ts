@@ -114,7 +114,7 @@ const config: Config = {
         // this is visually identical to `both` with the bug removed.
         "fade-in": "fade-in 0.18s var(--ease-motion-out) backwards",
         "scale-in": "scale-in 0.2s ease-out backwards",
-        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards",
+        "slide-in-right": "slide-in-right 0.18s var(--ease-motion-out) backwards",
         "spin-slow": "spin-slow 14s linear infinite",
       },
     },

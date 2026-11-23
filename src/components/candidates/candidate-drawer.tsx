@@ -17,7 +17,8 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { bookingCalendarSummary } from "@/lib/booking-status";
-import { useActions, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import { useActions, useCampaign, useCandidate, useIntegrations, useOutreach, useRole, useSettings } from "@/lib/store";
+import { CandidateLinkedInPanel } from "@/components/linkedin/candidate-linkedin-panel";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { experimentalPaidSourcingEnabled, supabaseEnabled } from "@/lib/supabase/config";
 import {
@@ -452,6 +453,7 @@ function OnboardingPanel({ c }: { c: Candidate }) {
     { label: "Referral Champion", done: false, note: "Engage the new hire to drive referrals." },
   ];
   return (
+    <div className="animate-fade-in">
     <Section title="Onboarding" icon={<PartyPopper className="h-4 w-4" />}>
       <div className="rounded-2xl border border-line bg-canvas/60 p-3">
         <p className="mb-2 text-sm text-muted">
@@ -475,6 +477,7 @@ function OnboardingPanel({ c }: { c: Candidate }) {
         </ul>
       </div>
     </Section>
+    </div>
   );
 }
 
@@ -496,6 +499,7 @@ export function CandidateDrawer({
   const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
   const confidentialityMode = Boolean(useSettings().confidentialityMode);
+  const integrations = useIntegrations();
   const [revealed, setRevealed] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -1322,7 +1326,7 @@ export function CandidateDrawer({
       footer={footer}
       width="max-w-2xl"
     >
-      <div className="space-y-8 animate-fade-in">
+      <div className="space-y-8">
         <div className="space-y-3">
           {campaign && (
             <Badge tone="electric" size="sm">
@@ -1475,6 +1479,13 @@ export function CandidateDrawer({
               )}
             </div>
           </div>
+          {(c.linkedinUrl || c.sourcePlatform === "LinkedIn") && (
+            <CandidateLinkedInPanel
+              candidate={c}
+              masked={masked}
+              recruiterConnected={integrations.some((item) => item.id === "int_linkedin_rsc" && item.status === "connected")}
+            />
+          )}
           {hasFlags && (
             <div className="flex flex-wrap gap-1.5">
               {flags.doNotContact && (
@@ -1622,9 +1633,6 @@ export function CandidateDrawer({
         {/* TAnIA — source, star rating, prequal, interviews, #Vivier */}
         {!erasureTombstone && <TaniaPanel c={c} />}
 
-        {/* Onboarding journey (Stages III→IV) — only once at offer/hired */}
-        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
-
         <Section title="Interview stage" icon={<ClipboardCheck className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted">Current:</span>
@@ -1667,6 +1675,9 @@ export function CandidateDrawer({
             </div>
           )}
         </Section>
+
+        {/* Below the stage controls so offer/hired does not shove the buttons. */}
+        {(c.stage === "Offer" || c.stage === "Hired") && <OnboardingPanel c={c} />}
 
         <Section title="Tech stack">
           <Chips items={c.techStack} label="Tech stack" />

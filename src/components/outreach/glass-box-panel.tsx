@@ -61,7 +61,7 @@ function ChecklistRow({
       // this checklist streams in one row at a time.
       initial={reducedMotion ? false : { opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={reducedMotion ? { duration: 0 } : { delay: index * 0.09, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      transition={reducedMotion ? { duration: 0 } : { delay: index * 0.02, duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
       className={cn(
         "flex items-start gap-2.5 rounded-xl border px-3 py-2 text-sm",
         STATUS_ROW_CLASS[check.status],

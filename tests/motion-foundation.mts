@@ -42,5 +42,13 @@ ok("Progress no longer animates width", !progress.includes("transition-[width]")
 ok("Progress uses a transform scale", progress.includes("scaleX(${pct / 100})"));
 ok("Progress has the reduced-motion class", progress.includes("motion-progress-fill"));
 
+const gauge = source("src/components/charts/score-gauge.tsx");
+const radar = source("src/components/charts/fit-radar.tsx");
+const distribution = source("src/components/charts/score-distribution.tsx");
+ok("Drawer slide matches the 180ms fade", tailwind.includes("slide-in-right 0.18s var(--ease-motion-out)"));
+ok("Match gauge uses a short tween and a stable chart size", gauge.includes("animationDuration={180}") && !gauge.includes("ResponsiveContainer"));
+ok("Fit radar draw-in stays within 180ms", radar.includes("stroke-dashoffset 180ms"));
+ok("Hidden score charts do not mount at zero size", distribution.includes("rect.width > 0") && distribution.includes("animationDuration={180}"));
+
 console.log(`RESULT motion-foundation: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

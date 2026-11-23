@@ -13,12 +13,14 @@
 // a candidate or a score; it only chooses which real, already-scored people to
 // draft outreach for.
 
+import { fetchPublicUrl } from "@/lib/api/public-fetch";
 import type { McpTool } from "@/lib/mcp-client";
 import type { Candidate, ScoringWeights, SourcePlatform } from "@/lib/types";
 import type { CandidateDedupeIdentity } from "@/lib/rules";
 import { searchGithubUsers } from "@/lib/sourcing/github";
 import { runWebTool, type WebFetch } from "@/lib/ai/web-tools";
 import { ensureWebQueryScope, extractLead, isWebSearchPlatform } from "@/lib/sourcing/web-leads";
+import { linkedInLeadsForSearch } from "@/lib/sourcing/linkedin-recruiter";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
 import { clearDiscoveryCriteria } from "@/lib/sourcing/provider-egress";
 import {
@@ -143,7 +145,13 @@ export function makeSourcingToolRunner(
       }
       const content = search.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
       const hits = (content?.results ?? []).slice(0, count);
-      const leads = hits.map((h) => extractLead(h, platform));
+      const leads = platform === "LinkedIn"
+        ? (await linkedInLeadsForSearch(
+            { query: scopedQuery, count, publicHits: hits },
+            process.env,
+            (webFetchImpl as typeof fetch | undefined) ?? fetchPublicUrl,
+          )).leads
+        : hits.map((h) => extractLead(h, platform));
       const result = mapWebSearchCandidates(leads, campaign, scopedQuery, platform, alreadySeen, weights);
       accepted = result.accepted;
       skippedCount = result.skipped.length;
