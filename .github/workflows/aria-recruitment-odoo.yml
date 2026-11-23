@@ -1,0 +1,77 @@
+name: Aria recruitment (Odoo 19)
+
+# Same push set as ci.yml. Path filters still limit the job to the addon.
+# ubuntu-latest has stayed queued with no runner.
+
+on:
+  push:
+    branches: [vercel-demo, main, twa-odoo]
+    paths:
+      - 'odoo_addons/aria_recruitment/**'
+      - '.github/workflows/aria-recruitment-odoo.yml'
+      - 'scripts/e2e-odoo-mac.sh'
+  pull_request:
+    branches: ["**"]
+    paths:
+      - 'odoo_addons/aria_recruitment/**'
+      - '.github/workflows/aria-recruitment-odoo.yml'
+      - 'scripts/e2e-odoo-mac.sh'
+
+# One group per workflow and branch. Pull requests cancel a stale run.
+# Pushes to the default branch and twa-odoo do not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}
+
+permissions:
+  contents: read
+
+jobs:
+  odoo-hire-gate:
+    name: Odoo 19 Community hire gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Confirm exact head
+        run: |
+          set -eu
+          echo "suite=odoo-addon-tests"
+          echo "head=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Test aria_recruitment against odoo:19 and postgres:16
+        run: bash odoo_addons/aria_recruitment/ci/run.sh
+
+  odoo-e2e:
+    name: Odoo 19 Playwright hire flow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Confirm exact head
+        run: |
+          set -eu
+          echo "suite=playwright-hire-flow"
+          echo "head=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Node.js 22
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+
+      - name: Playwright hire journey
+        run: bash scripts/e2e-odoo-mac.sh
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts/
+          if-no-files-found: ignore

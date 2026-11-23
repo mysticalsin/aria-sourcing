@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_hr_job_form_aria" model="ir.ui.view">
+        <field name="name">hr.job.form.aria</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr.view_hr_job_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Smart job offer" name="aria_job_offer">
+                    <group>
+                        <group string="Offer">
+                            <field name="aria_smart_need_id"/>
+                            <field name="aria_client_id"/>
+                            <field name="aria_location"/>
+                            <field name="aria_experience_level"/>
+                            <field name="aria_contract_type"/>
+                            <field name="aria_language_ids" widget="many2many_tags"/>
+                            <field name="aria_job_field_ids" widget="many2many_tags"/>
+                        </group>
+                        <group string="Need">
+                            <field name="aria_need_type"/>
+                            <field name="aria_need_segment"/>
+                            <field name="aria_need_category"/>
+                            <field name="aria_need_status"/>
+                            <field name="aria_need_priority"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_hr_job_list_aria" model="ir.ui.view">
+        <field name="name">hr.job.list.aria</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr.view_hr_job_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="inside">
+                <field name="aria_need_type" optional="show"/>
+                <field name="aria_need_segment" optional="hide"/>
+                <field name="aria_need_category" optional="show"/>
+                <field name="aria_need_status" optional="show"/>
+                <field name="aria_need_priority" optional="show"/>
+                <field name="aria_location" optional="hide"/>
+                <field name="aria_contract_type" optional="hide"/>
+                <field name="aria_experience_level" optional="hide"/>
+                <field name="aria_client_id" optional="hide"/>
+                <field name="aria_smart_need_id" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_hr_job_search_aria" model="ir.ui.view">
+        <field name="name">hr.job.search.aria</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr.view_job_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter name="need_consulting" string="Consulting" domain="[('aria_need_type', '=', 'consulting')]"/>
+                <filter name="need_staff" string="Staff" domain="[('aria_need_type', '=', 'staff')]"/>
+                <filter name="need_business" string="Business" domain="[('aria_need_segment', '=', 'business')]"/>
+                <filter name="need_corporate" string="Corporate" domain="[('aria_need_segment', '=', 'corporate')]"/>
+                <separator/>
+                <filter name="need_active" string="Active" domain="[('aria_need_category', '=', 'active')]"/>
+                <filter name="need_strategic" string="Strategic" domain="[('aria_need_category', '=', 'strategic')]"/>
+                <separator/>
+                <filter name="need_anticipated" string="Anticipated" domain="[('aria_need_status', '=', 'anticipated')]"/>
+                <filter name="need_waiting" string="Waiting" domain="[('aria_need_status', '=', 'waiting')]"/>
+                <filter name="need_running" string="Running" domain="[('aria_need_status', '=', 'running')]"/>
+                <filter name="need_closed" string="Closed" domain="[('aria_need_status', '=', 'closed')]"/>
+                <separator/>
+                <filter name="need_p1" string="P1" domain="[('aria_need_priority', '=', 'p1')]"/>
+                <filter name="need_p2" string="P2" domain="[('aria_need_priority', '=', 'p2')]"/>
+                <filter name="need_p3" string="P3" domain="[('aria_need_priority', '=', 'p3')]"/>
+                <filter name="need_p4" string="P4" domain="[('aria_need_priority', '=', 'p4')]"/>
+                <group>
+                    <filter name="group_need_type" string="Need type" context="{'group_by': 'aria_need_type'}"/>
+                    <filter name="group_need_category" string="Need category" context="{'group_by': 'aria_need_category'}"/>
+                    <filter name="group_need_status" string="Need status" context="{'group_by': 'aria_need_status'}"/>
+                    <filter name="group_need_priority" string="Priority" context="{'group_by': 'aria_need_priority'}"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

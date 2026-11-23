@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "description": "Playwright 1.65.1 journey for the Aria hire gate. Browsers are preinstalled on the Mac.",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
