@@ -30,6 +30,7 @@ import { ModelsPanel } from "@/components/settings/models-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
+import { LinkedInAccountPanel } from "@/components/settings/linkedin-account-panel";
 import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
@@ -205,6 +206,16 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [activeTab, setActiveTab] = React.useState("integrations");
+
+  React.useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    if (window.location.hash !== "#linkedin-account") return;
+    setActiveTab("integrations");
+    const timer = window.setTimeout(() => {
+      document.getElementById("linkedin-account")?.scrollIntoView({ block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hydrated]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -537,6 +548,9 @@ export default function SettingsPage() {
             title="Integrations"
             description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
           >
+            <div id="linkedin-account">
+              <LinkedInAccountPanel />
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="success" size="sm" dot>
                 {summary.connected} connected
