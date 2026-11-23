@@ -27,6 +27,13 @@ test("sweep 0 physical journeys", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, sink: "fake" }) });
   });
 
+  function persist() {
+    mkdirSync(artifactDir, { recursive: true });
+    writeFileSync(join(artifactDir, "journey-matrix.json"), JSON.stringify({ steps, sinkCalls: sink.calls }, null, 2));
+  }
+
+  persist();
+
   async function run(id: string, body: () => Promise<string>) {
     try {
       const detail = await body();
@@ -36,6 +43,7 @@ test("sweep 0 physical journeys", async ({ page }) => {
       const screenshot = await shot(page, id).catch(() => "");
       steps.push({ id, status: "fail", detail: error instanceof Error ? error.message : String(error), screenshot });
     }
+    persist();
   }
 
   await run("create-need", async () => {
@@ -176,7 +184,7 @@ test("sweep 0 physical journeys", async ({ page }) => {
     return "GDPR control visible";
   });
 
-  writeFileSync(join(artifactDir, "journey-matrix.json"), JSON.stringify({ steps, sinkCalls: sink.calls }, null, 2));
+  persist();
   const failed = steps.filter((step) => step.status === "fail");
   if (failed.length) {
     throw new Error(failed.map((step) => `${step.id}: ${step.detail}`).join("\n"));

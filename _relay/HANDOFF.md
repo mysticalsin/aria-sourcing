@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 475
 agent: cursor
-updated: 2026-11-21
+updated: 2026-11-23
 status: integration-sweep-2
 ---
 
@@ -16,6 +16,8 @@ status: integration-sweep-2
 - Ingest image is healthy: `ingest serve` on `127.0.0.1:8091`, healthcheck `ingest ready`. The log line has the upload id, byte size, and state.
 - `scripts/sandbox-bridge.sh` prints `apply` only for CI or a VM sandbox. Darwin always prints `skip: host firewall is not changed on macOS`.
 - Draft PRs touched this shift: #210, #212, #284 (stacked on #217), #208. Product heads are in SWEEP-02.
+- Mac harness: `scripts/integration-e2e.sh` no longer uses Bash 4 lowercase expansion. `COMPOSE_PROJECT` is set from `scripts/e2e-compose-project.sh` when unset. Frozen suite head `94164d39921a346fceeefce7b934be10c760732f` is unchanged. Check: `bash tests/integration-e2e-bash32.sh` (no Docker).
+- Mac stress: an existing `go` is taken from `command -v` or the usual Mac install paths. When none is found, A1-channel, A2–A6, and A8 are `SKIP` with a harness reason. The harness does not install Go. Empty Playwright journeys get `journeysNote` in `summary.json`, and each finished step is written to `journey-matrix.json` as it ends. Check: `bash tests/e2e-harness-offline.sh`.
 
 ## Done this shift
 
@@ -24,6 +26,8 @@ status: integration-sweep-2
 - Stopped the demo from requesting sourcing feedback while Supabase is off. The route still returns 503 (#210, red `b733c2ab`).
 - Replaced the ingest sleep image with the real service.
 - Guarded the bridge accept rule (red `dfcebafb`).
+- Bash 3.2 Mac harness: red `tests/integration-e2e-bash32.sh`, then lowercase the compose project with `tr` and default `COMPOSE_PROJECT` when unset. Jarvis's detached-clone workaround stays off this remote.
+- Mac go/journeys: red `tests/e2e-harness-offline.sh`, then discover an existing `go` or record `SKIP`, and explain an empty Playwright journey list. No Go install.
 
 ## Blockers
 

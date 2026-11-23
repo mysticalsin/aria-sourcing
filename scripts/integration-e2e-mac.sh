@@ -32,4 +32,17 @@ if ! find "$PLAYWRIGHT_BROWSERS_PATH" -maxdepth 3 -type d -name 'chromium-1255' 
   exit 1
 fi
 export STRESS_SOAK_SECONDS="${STRESS_SOAK_SECONDS:-1800}"
+# shellcheck source=scripts/e2e-go.sh
+. "$ROOT/scripts/e2e-go.sh"
+if GO_BIN="$(e2e_find_go)"; then
+  case "$GO_BIN" in
+    /*)
+      PATH="$(dirname "$GO_BIN"):${PATH:-}"
+      export PATH
+      ;;
+  esac
+  echo "go=$GO_BIN"
+else
+  printf '%s\n' "harness: $(e2e_go_skip_repro)" >&2
+fi
 bash "$ROOT/scripts/integration-e2e.sh"
