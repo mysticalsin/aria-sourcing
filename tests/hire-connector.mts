@@ -114,6 +114,55 @@ ok("missing odoo env returns ok:false", missingOdoo.ok === false && missingOdoo.
 ok("missing smart env returns ok:false", missingSmart.ok === false && missingSmart.error.includes("SMART_URL"));
 ok("missing env does not call fetch", fetchCalls === 0);
 
+ok("odoo does not follow redirects", odooCalls[0]?.init?.redirect === "error" && odooCalls[1]?.init?.redirect === "error");
+
+let unsafeCalls = 0;
+const unsafeFetch = (async () => {
+  unsafeCalls += 1;
+  return jsonResponse(200, { result: 1 });
+}) as typeof fetch;
+const unsafeUrls: Record<string, string> = {
+  "plain http": "http://odoo.example.test",
+  "embedded credentials": "https://user:secret@odoo.example.test",
+  loopback: "https://127.0.0.1",
+  metadata: "https://169.254.169.254",
+  localhost: "https://localhost",
+  file: "file:///tmp/odoo",
+};
+for (const [label, url] of Object.entries(unsafeUrls)) {
+  const refused = await odooHireConnector(
+    { NODE_ENV: "test", ODOO_URL: url, ODOO_DB: "mantu", ODOO_USERNAME: "api", ODOO_API_KEY: "secret" },
+    unsafeFetch,
+  ).call(call);
+  ok(`odoo refuses ${label}`, refused.ok === false && unsafeCalls === 0);
+}
+const smartUnsafe = await smartHireConnector(
+  { NODE_ENV: "test", SMART_URL: "https://169.254.169.254", SMART_TOKEN: "smart-token" },
+  unsafeFetch,
+).call(call);
+ok("smart refuses a metadata endpoint", smartUnsafe.ok === false && unsafeCalls === 0);
+
+let falseSteps = 0;
+const falseResult = await odooHireConnector(odooEnv, (async () => {
+  falseSteps += 1;
+  if (falseSteps === 1) return jsonResponse(200, { result: 7 });
+  return jsonResponse(200, { result: false });
+}) as typeof fetch).call(call);
+ok("a false execute_kw result is not a hire", falseResult.ok === false && !(falseResult.ok === false && falseResult.error.includes("secret")));
+
+const echoed = await odooHireConnector(odooEnv, (async () => jsonResponse(200, { error: { message: "rejected secret" } })) as typeof fetch).call(call);
+ok("odoo auth errors do not echo the api key", echoed.ok === false && !echoed.error.includes("secret"));
+
+const smartEcho = await smartHireConnector(smartEnv, (async () => jsonResponse(200, { id: "sm-1", error: "bearer smart-token" })) as typeof fetch).call(call);
+ok("smart errors do not echo the bearer token", smartEcho.ok === false && !smartEcho.error.includes("smart-token"));
+
+let foreignModelCalls = 0;
+const foreignModel = await smartHireConnector(smartEnv, (async () => {
+  foreignModelCalls += 1;
+  return jsonResponse(200, { id: "nope" });
+}) as typeof fetch).call({ ...call, model: "../admin" });
+ok("smart refuses a model outside hr.job and hr.applicant", foreignModel.ok === false && foreignModelCalls === 0);
+
 ok("linkedin gating stays true with empty env", linkedInSourcingRunsWithoutErp(emptyEnv) === true);
 ok(
   "linkedin gating stays true when ERP urls are set",
