@@ -110,6 +110,14 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
   }
 
   async function handleConnect() {
+    if (integration.id === "int_linkedin_rsc") {
+      toast({
+        title: "Token stays on the server",
+        description: "Set LINKEDIN_RSC_URL and LINKEDIN_RSC_TOKEN in the server environment. This screen does not store a token.",
+        variant: "warning",
+      });
+      return;
+    }
     if (!apiKey.trim()) {
       toast({ title: "Credentials required", description: "Enter an API key or token to connect.", variant: "error" });
       return;
@@ -277,9 +285,15 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 size="sm"
                 className="flex-1"
                 leftIcon={<Plug className="h-4 w-4" />}
-                onClick={() => setConfigureOpen(true)}
+                onClick={() => {
+                  if (integration.id === "int_linkedin_rsc") {
+                    document.getElementById("linkedin-rsc-connect")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    return;
+                  }
+                  setConfigureOpen(true);
+                }}
               >
-                Configure
+                {integration.id === "int_linkedin_rsc" ? "View connection" : "Configure"}
               </Button>
               {/* Only GitHub has a real, live connection check (testIntegration in
                   store.ts pings /api/source). Other real cards point to their actual
