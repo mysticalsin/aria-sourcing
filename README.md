@@ -13,7 +13,7 @@ Verified from `package.json` on 2026-07-14:
 
 | Area | Current truth |
 |---|---|
-| App | Next.js `^16.2.6` App Router, React `^19.2.7`, TypeScript `^5.6.3` |
+| App | Next.js `^16.4.6` App Router, React `^19.2.7`, TypeScript `^5.6.3` |
 | Data/auth | Supabase Postgres, Supabase Auth, RLS tenancy, service-role server APIs |
 | UI/runtime | Tailwind, Recharts, lucide-react, Framer Motion, Three.js/R3F |
 | Node | `22.x` |
