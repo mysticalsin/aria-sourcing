@@ -33,6 +33,10 @@ ok("two-letter acronyms need capitals", skillsObservedIn("generative ai", ["Gene
 ok("accents do not block a match", skillsObservedIn("Stratégie données", ["strategie donnees"]).length === 1);
 ok("asides in brackets are not required", skillsObservedIn("executive stakeholder management", brief).includes("Executive stakeholder management (C-level)"));
 ok("empty text observes nothing", skillsObservedIn("  ", brief).length === 0);
+ok("a slash does not make either side optional", skillsObservedIn("research", ["design/research"]).length === 0);
+ok("both sides of a slash must appear", skillsObservedIn("design research", ["design/research"]).length === 1);
+ok("one side of a slash acronym is not the whole skill", skillsObservedIn("Head of CI", ["CI/CD"]).length === 0);
+ok("both capitalized sides of a slash acronym match", skillsObservedIn("CI/CD pipelines", ["CI/CD"]).length === 1);
 
 console.log(`RESULT skill-evidence: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

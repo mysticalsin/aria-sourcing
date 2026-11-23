@@ -34,9 +34,10 @@ function words(text: string): Set<string> {
 function alternatives(skill: string): { required: string[]; shortCaps: string[] }[] {
   const withoutAsides = skill.replace(/\([^)]*\)/g, " ");
   return withoutAsides
-    .split(/\s+or\s+|\s+ou\s+|\s*\/\s*/i)
+    .split(/\s+or\s+|\s+ou\s+/i)
     .map((alt) => {
-      const raw = alt.trim().split(/\s+/).filter(Boolean);
+      // "CI/CD" and "design/research" name both sides, so a slash joins words.
+      const raw = alt.trim().split(/[\s/]+/).filter(Boolean);
       const shortCaps = raw.filter((w) => /^[A-Z]{2}$/.test(w)).map((w) => w.toLowerCase());
       const required = normalize(alt)
         .split(" ")
