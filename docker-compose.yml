@@ -281,16 +281,14 @@ services:
       ARIA_APP_URL: http://app:3000
       AGENT_RUNNER_SECRET: *agent_runner_secret
       AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
-    # Compose --wait fails a long-running service with no healthcheck. The image
-    # HEALTHCHECK probes the web server, which this process does not run.
-    # PID 1 is the runner (the image entrypoint execs it); confirm that.
+    # The image HEALTHCHECK probes the web server. This process is the
+    # agents runner, so compose up --wait checks that pid 1 is alive.
     healthcheck:
-      test: ["CMD", "node", "-e", "const c=require('fs').readFileSync('/proc/1/cmdline').toString();process.exit(c.includes('agents-runner.mjs')?0:1)"]
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 12
-      start_period: 10s
-      start_interval: 2s
+      start_period: 5s
     restart: unless-stopped
     logging: *logging
 

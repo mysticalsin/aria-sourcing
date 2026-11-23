@@ -34,14 +34,16 @@ function reasonPrecedes(text: string, fingerprint: string, reason: string): bool
 
 /* Local Docker demo: compose --wait rejects a long-running service with no
    healthcheck. The image probe hits the web server, which the runner does
-   not serve, so the service check has to confirm the runner process. */
+   not serve. The shared probe signals pid 1 with process.kill(1,0). A cmdline
+   check for agents-runner.mjs is the other accepted form. */
 const agents = agentsBlock(compose);
 const health = agents.includes("\n    healthcheck:\n") ? agents.slice(agents.indexOf("\n    healthcheck:\n")) : "";
 ok("the agents service declares a healthcheck", health.length > 0);
 ok("the agents healthcheck is enabled", !/^\s*disable:\s*true\s*$/m.test(health));
 ok(
   "the agents healthcheck confirms the runner is PID 1",
-  health.includes("/proc/1/cmdline") && health.includes("agents-runner.mjs"),
+  health.includes("process.kill(1,0)") ||
+    (health.includes("/proc/1/cmdline") && health.includes("agents-runner.mjs")),
 );
 /* The add-candidate dialog keeps a Name field on the LinkedIn tab. That
    panel stays mounted and hidden, so getByLabel("Name") fills the hidden
@@ -95,9 +97,14 @@ ok("gitleaks keeps the default rules", /useDefault\s*=\s*true/.test(gitleaks));
 ok("gitleaks [[allowlists]] entries are not a path allowlist", /\[\[allowlists\]\]/.test(gitleaks) && !/^\s*paths\s*=/m.test(gitleaks) && !/useDefault\s*=\s*false/.test(gitleaks));
 
 /* Release gate: it has no check of its own. It fails when secret scan or
-   the local demo is not success. */
+   the local demo is not success. The shared workflow also needs
+   channel-adapters, and the original jobs stay on that list. */
 const gate = workflow.slice(workflow.indexOf("\n  release-gate:\n"));
-ok("the release gate always runs", gate.includes("if: always()") && gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo]"));
+ok(
+  "the release gate always runs",
+  gate.includes("if: always()") &&
+    gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters]"),
+);
 ok(
   "the release gate fails unless secret scan and the local demo succeed",
   gate.includes('[ "$SECRET_SCAN_RESULT" != success ]') && gate.includes('[ "$LOCAL_DEMO_RESULT" != success ]'),
