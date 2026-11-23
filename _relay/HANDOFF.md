@@ -50,6 +50,7 @@ Also fixed this shift (pre-dating the commits above): OneDrive File Provider jam
 - **Confirmed 2026-07-09: this project is worked concurrently by Codex CLI in the same worktree** (identified from live uncommitted file drift during shift 2, confirmed by Tony). Division of labor now formalized in `AGENTS.md`: Claude Code builds/integrates/tests/commits/deploys; Codex audits and may also write code — findings go to `_relay/codex-findings.md`. Full autopilot both sides, no permission-asking for normal iteration.
 
 ## Watch out
+- A13 coverage (journey asks, sweeps 0–2, integration e2e, stress A1–A8) was copied from `integration/aria-all` at `7b063722` onto `cursor/a13-sweep-e2e-stress-2aad`. It is not part of `npm test`. `e2e` is excluded from `tsconfig.json` so `tsc` does not require `@playwright/test`. Do not merge `integration/aria-all`.
 - OneDrive eviction can break ANY local tooling mid-run; `killall OneDrive` + reopen fixed it once tonight, may recur.
 - **A concurrent writer touched this worktree throughout this shift.** Re-run `git status` and `npm test` fresh before trusting any stale plan — including the one in this file — the instant you suspect drift.
 - `claim_and_record` RPC: dispatcher passes spec_id as `p_campaign_id` — intentional.
