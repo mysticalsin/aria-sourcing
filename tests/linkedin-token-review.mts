@@ -12,6 +12,7 @@ import test from "node:test";
 
 /// <reference path="../src/channels/linkedin-token/node-sqlite.d.ts" />
 import { LinkedInTokenChannel, type Env, type Transport } from "../src/channels/linkedin-token/channel.ts";
+import { classifyAnswer } from "../src/channels/linkedin-token/ported.ts";
 import { handleLinkedInTokenRequest, type HandlerInput } from "../src/channels/linkedin-token/handlers.ts";
 import { RISK_NOTICE } from "../src/channels/linkedin-token/notice.ts";
 
@@ -200,7 +201,7 @@ test("only the pinned host is accepted, and only at a public address", async () 
   } finally {
     allowed.close();
   }
-  for (const ip of ["10.1.2.3", "169.254.169.254", "127.0.0.1"]) {
+  for (const ip of ["10.1.2.3", "169.254.169.254", "127.0.0.1", "::ffff:10.1.2.3", "::ffff:169.254.169.254"]) {
     const blocked = harness("https://www.linkedin.com", {}, { resolver: async () => [ip] });
     try {
       await arm(blocked.channel, "ws-home");
@@ -213,6 +214,37 @@ test("only the pinned host is accepted, and only at a public address", async () 
       blocked.close();
     }
   }
+});
+
+test("a pinned address keeps the certificate name", async () => {
+  let seen: { servername?: string; rejectUnauthorized?: boolean } = {};
+  const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const extra = init as RequestInit & { servername?: string; rejectUnauthorized?: boolean };
+    seen = { servername: extra.servername, rejectUnauthorized: extra.rejectUnauthorized };
+    return new Response('{"id":"fake-msg"}', { status: 200 });
+  }) as typeof fetch;
+  const env = memEnv({
+    ARIA_LINKEDIN_TOKEN_KEY: randomBytes(32).toString("base64"),
+    ARIA_LINKEDIN_TOKEN_DAILY_CAP: "5",
+    ARIA_LINKEDIN_TOKEN_MIN_GAP_MS: "0",
+    ARIA_LINKEDIN_TOKEN_BASE_URL: "https://www.linkedin.com",
+    NODE_ENV: "test",
+    ARIA_LINKEDIN_TOKEN_TEST_SESSION: "1",
+  });
+  const channel = new LinkedInTokenChannel({
+    env,
+    auditor: { async postChatter() {} },
+    fetchImpl,
+    clock: { now: () => NOW },
+    resolver: async () => ["203.0.113.10"],
+  } as ConstructorParameters<typeof LinkedInTokenChannel>[0]);
+  await arm(channel, "ws-home");
+  const item = spec("n-tls", "ws-home");
+  assert.equal((await channel.approve(item)).ok, true);
+  const sent = await channel.send({ ...item, actorId: "ada-admin" });
+  assert.equal(sent.ok, true);
+  assert.equal(seen.servername, "www.linkedin.com");
+  assert.equal(seen.rejectUnauthorized, true);
 });
 
 test("plain http loopback is limited to a test build", async () => {
@@ -345,6 +377,34 @@ test("kill and recent sends survive a second instance", async () => {
   }
 });
 
+test("a timed out send is not delivered again", async () => {
+  let calls = 0;
+  const transport: Transport = {
+    async deliver() {
+      calls += 1;
+      return { status: 0, body: "", timeout: true, error: "timeout" };
+    },
+  };
+  const { channel, close } = harness("http://127.0.0.1:9", { ARIA_LINKEDIN_TOKEN_DAILY_CAP: "1" }, { transport });
+  try {
+    await arm(channel, "ws-home");
+    const item = spec("n-once", "ws-home");
+    assert.equal((await channel.approve(item)).ok, true);
+    const result = await channel.send({ ...item, actorId: "ada-admin" });
+    assert.equal(calls, 1);
+    assert.equal(result.reason, "infrastructure-timeout");
+    const again = await channel.send({ ...item, actorId: "ada-admin" });
+    assert.equal(again.reason, "token-used");
+    assert.equal(calls, 1);
+    const next = spec("n-once-2", "ws-home", "Second synthetic note.");
+    assert.equal((await channel.approve(next)).ok, true);
+    assert.equal((await channel.send({ ...next, actorId: "ada-admin" })).reason, "daily-cap");
+    assert.equal(calls, 1);
+  } finally {
+    close();
+  }
+});
+
 test("a timeout is a single attempt", async () => {
   let calls = 0;
   const transport: Transport = {
@@ -388,20 +448,18 @@ test("an unknown outcome stays on the cap", async () => {
   }
 });
 
-test("a queued send returns without waiting", async () => {
-  let release: () => void = () => undefined;
-  const started = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+test("a queued send is delivered when the current one finishes", async () => {
+  let release: (() => void) | undefined;
+  let calls = 0;
   const transport: Transport = {
-    async deliver(request) {
-      release();
-      await new Promise((_resolve, reject) => {
-        const fail = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
-        if (request.signal.aborted) fail();
-        else request.signal.addEventListener("abort", fail, { once: true });
-      });
-      return { status: 200, body: "{}", finalUrl: null };
+    async deliver() {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return { status: 200, body: '{"id":"fake-msg"}', finalUrl: null };
     },
   };
   const { channel, close } = harness("http://127.0.0.1:9", {}, { transport });
@@ -410,7 +468,7 @@ test("a queued send returns without waiting", async () => {
     const first = spec("n-q1", "ws-home");
     assert.equal((await channel.approve(first)).ok, true);
     const inflight = channel.send({ ...first, actorId: "ada-admin" });
-    await started;
+    await new Promise((resolve) => setTimeout(resolve, 30));
     const second = spec("n-q2", "ws-home", "Queued synthetic note.");
     assert.equal((await channel.approve(second)).ok, true);
     const queued = await Promise.race([
@@ -418,9 +476,11 @@ test("a queued send returns without waiting", async () => {
       new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("hung")), 400)),
     ]);
     assert.equal(queued.reason, "queued");
-    await channel.engageKill({ workspaceId: "ws-home" });
-    assert.equal((await inflight).reason, "cancelled");
-    assert.equal(channel.view("ws-home").queue.every((row) => row.state === "cancelled"), true);
+    assert.equal(calls, 1);
+    release?.();
+    assert.equal((await inflight).ok, true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(calls, 2);
   } finally {
     close();
   }
@@ -460,6 +520,10 @@ test("the queue has a bound", async () => {
   } finally {
     close();
   }
+});
+
+test("a json login message stays an accepted answer", () => {
+  assert.equal(classifyAnswer({ status: 200, body: '{"message":"login"}', finalUrl: "https://www.linkedin.com/voyager" }), "ok");
 });
 
 test("a redirect is a challenge", async () => {

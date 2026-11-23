@@ -1,6 +1,8 @@
 /// <reference path="./node-sqlite.d.ts" />
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { lookup } from "node:dns/promises";
+import type { OutgoingHttpHeaders } from "node:http";
+import https from "node:https";
 import { DatabaseSync } from "node:sqlite";
 
 import { approvalHash } from "@/lib/outreach-content";
@@ -284,7 +286,7 @@ export class LinkedInTokenChannel {
     this.transport = options.transport;
     this.clock = options.clock ?? { now: () => Date.now() };
     this.logger = options.logger;
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = options.fetchImpl ?? fetchPinned;
     this.resolver = options.resolver ?? defaultResolver;
     this.db = options.dbPath ? new DatabaseSync(options.dbPath) : null;
     if (this.db) {
@@ -690,13 +692,16 @@ export class LinkedInTokenChannel {
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = AbortSignal.any([request.signal, timeout]);
     try {
+      const servername = request.headers.host;
       const response = await this.fetchImpl(request.url, {
         method: request.method,
         headers: request.headers,
         body: request.body,
         signal,
         redirect: "manual",
-      });
+        servername,
+        rejectUnauthorized: true,
+      } as RequestInit);
       const body = await response.text();
       return { status: response.status, body: this.scrub(body), finalUrl: response.url };
     } catch (err) {
@@ -716,9 +721,8 @@ export class LinkedInTokenChannel {
       return { ok: false, reason: "cancelled" };
     }
     if (delivered.timeout) {
-      this.rollback(input);
-      this.markQueue(input, "failed");
-      await this.audit(input.workspaceId, "refusal", "infrastructure-timeout");
+      this.markQueue(input, "unknown");
+      await this.audit(input.workspaceId, "unknown", "infrastructure-timeout");
       return { ok: false, reason: "infrastructure-timeout", infrastructure: true };
     }
     const kind: AnswerKind = classifyAnswer(delivered);
@@ -1019,6 +1023,37 @@ export class LinkedInTokenChannel {
   }
 }
 
+function fetchPinned(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const extra = init as RequestInit & { servername?: string; rejectUnauthorized?: boolean };
+  if (!extra?.servername || extra.rejectUnauthorized === false) return globalThis.fetch(input, init);
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname.replace(/^\[|\]$/g, ""),
+        port: url.port || 443,
+        path: `${url.pathname}${url.search}`,
+        method: extra.method,
+        headers: extra.headers as OutgoingHttpHeaders,
+        servername: extra.servername,
+        rejectUnauthorized: true,
+        signal: extra.signal ?? undefined,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 0 }));
+        });
+      },
+    );
+    req.on("error", reject);
+    if (typeof extra.body === "string") req.write(extra.body);
+    req.end();
+  });
+}
+
 async function defaultResolver(host: string): Promise<string[]> {
   const records = await lookup(host, { all: true, verbatim: true });
   return records.map((record) => record.address);
@@ -1029,10 +1064,23 @@ function ensureColumn(db: DatabaseSync, table: string, column: string, statement
   if (!columns.some((item) => item.name === column)) db.exec(statement);
 }
 
+function mappedIpv4(address: string): number[] | null {
+  const dotted = address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (dotted) return ipv4Parts(dotted[1]);
+  const hex = address.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (!hex) return null;
+  const hi = Number.parseInt(hex[1], 16);
+  const lo = Number.parseInt(hex[2], 16);
+  if (!Number.isInteger(hi) || !Number.isInteger(lo)) return null;
+  return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255];
+}
+
 function publicAddress(address: string): boolean {
-  const host = address.toLowerCase();
+  const host = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const mapped = mappedIpv4(host);
+  if (mapped) return !blockedIpv4(mapped);
   if (host.includes(":")) {
-    if (host === "::1" || host.startsWith("fe80") || host.startsWith("fc") || host.startsWith("fd")) return false;
+    if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
     return true;
   }
   const parts = ipv4Parts(host);
