@@ -1,12 +1,12 @@
 ---
 project: MSourcing / ARIA
-shift: 472
+shift: 473
 agent: cursor
-updated: 2026-11-23 14:08 America/Sao_Paulo
+updated: 2026-11-23 16:04 America/Sao_Paulo
 status: linkedin-token-devin-followup
 ---
 
-# Handoff - Shift 472
+# Handoff - Shift 473
 
 ## Current state
 
@@ -17,11 +17,9 @@ status: linkedin-token-devin-followup
 
 ## Done this shift
 
-- Expanded, compatible, and NAT64 IPv4 embeddings are refused, along with unspecified, multicast, and CGNAT answers. A public mapped address is still allowed.
-- Dedupe no longer retries a timeout. A timeout still keeps the approval and the cap slot.
-- `probePinnedTls` shares the pinned certificate name with the production HTTPS request. A test certificate for another name fails the handshake.
-- A pumped send that is still queued or sending is marked failed when the result is a refusal.
-- `.gitleaks.toml` allowlists one historical line: the SHA-256 of a retired sample HMAC. `gitleaks git --log-opts=--all` on this tree exits 0 (1754 commits, no leaks). History was not rewritten.
+- The token panel no longer sends a fixed workspace id. It uses the workspace from the session, and the settings workspace only when the session has none. Settings links "Your LinkedIn" to `/channels/linkedin-token`.
+- A resolved `2002::/16` address is refused when the embedded IPv4 is non-public. `fec0::/10` and `240.0.0.0/4` are refused before any fetch. A public 6to4 embedding is still allowed.
+- A pumped refusal writes the queue row as `failed`, including the sqlite copy, so it does not stay `queued`.
 
 ## Blockers
 
@@ -43,3 +41,4 @@ status: linkedin-token-devin-followup
 
 - `@playwright/test` is pinned to 1.65.1. `scripts/e2e-mac.sh` refuses Node versions other than 22.x.
 - The gitleaks exception is one exact digest line, not a path.
+- The test-session workspace id stays on the server. The panel reads it from the session response.

@@ -14,6 +14,7 @@ import test from "node:test";
 
 /// <reference path="../src/channels/linkedin-token/node-sqlite.d.ts" />
 import { LinkedInTokenChannel, type Env, type Transport } from "../src/channels/linkedin-token/channel.ts";
+import { linkedInTokenWorkspaceId } from "../src/channels/linkedin-token/workspace.ts";
 import { classifyAnswer } from "../src/channels/linkedin-token/ported.ts";
 import { handleLinkedInTokenRequest, type HandlerInput } from "../src/channels/linkedin-token/handlers.ts";
 import { RISK_NOTICE } from "../src/channels/linkedin-token/notice.ts";
@@ -599,6 +600,14 @@ test("other non-public address encodings are refused before any fetch", async ()
     "ff00::1",
     "224.0.0.1",
     "100.64.0.1",
+    "2002:a9fe:a9fe::",
+    "2002:0a01:0203::",
+    "2002:7f00:1::",
+    "2002:f000:1::",
+    "fec0::1",
+    "FEC0:0:0:0:0:0:0:1",
+    "240.0.0.1",
+    "::ffff:240.0.0.1",
   ];
   for (const address of blocked) {
     const harnessed = harness("https://www.linkedin.com", {}, { resolver: async () => [address] });
@@ -613,6 +622,88 @@ test("other non-public address encodings are refused before any fetch", async ()
       harnessed.close();
     }
   }
+});
+
+test("a public 6to4 embedding is still fetched", async () => {
+  const harnessed = harness("https://www.linkedin.com", {}, { resolver: async () => ["2002:cb00:710a::"] });
+  try {
+    await arm(harnessed.channel, "ws-home");
+    const item = spec("n-6to4-public", "ws-home");
+    assert.equal((await harnessed.channel.approve(item)).ok, true);
+    const result = await harnessed.channel.send({ ...item, actorId: "ada-admin" });
+    assert.equal(result.ok, true);
+    assert.equal(harnessed.calls.length, 1);
+    assert.match(harnessed.calls[0].url, /2002:cb00:710a::/);
+  } finally {
+    harnessed.close();
+  }
+});
+
+test("a pumped refusal is stored as failed instead of staying queued", async () => {
+  let release: (() => void) | undefined;
+  let calls = 0;
+  const transport: Transport = {
+    async deliver() {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return { status: 200, body: '{"id":"fake-msg"}', finalUrl: null };
+    },
+  };
+  const { channel, dbPath, close } = harness("http://127.0.0.1:9", { ARIA_LINKEDIN_TOKEN_DAILY_CAP: "1" }, { transport });
+  try {
+    await arm(channel, "ws-home");
+    const first = spec("n-pump-refuse", "ws-home");
+    const second = spec("n-pump-refuse-2", "ws-home", "Queued synthetic note.");
+    assert.equal((await channel.approve(first)).ok, true);
+    assert.equal((await channel.approve(second)).ok, true);
+    const inflight = channel.send({ ...first, actorId: "ada-admin" });
+    const started = Date.now();
+    while (!release && Date.now() - started < 1000) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(typeof release, "function");
+    const queued = await channel.enqueue({ ...second, actorId: "ada-admin" });
+    assert.equal(queued.reason, "queued");
+    release?.();
+    assert.equal((await inflight).ok, true);
+    const deadline = Date.now() + 1000;
+    let failed = false;
+    while (Date.now() < deadline) {
+      failed = channel.view("ws-home").queue.some((item) => item.state === "failed");
+      if (failed) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(failed, true);
+    assert.equal(calls, 1);
+    const db = new DatabaseSync(dbPath);
+    const row = db.prepare("select status from linkedin_token_queue where nonce = ?").get("n-pump-refuse-2") as
+      | { status: string }
+      | undefined;
+    db.close();
+    assert.equal(row?.status, "failed");
+  } finally {
+    close();
+  }
+});
+
+test("the panel uses the session workspace and settings links to the channel", () => {
+  const panel = readFileSync(new URL("../src/channels/linkedin-token/panel.tsx", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
+  const session = readFileSync(new URL("../src/app/api/channels/linkedin-token/session/route.ts", import.meta.url), "utf8");
+  assert.equal(panel.includes("synthetic-workspace"), false);
+  assert.match(panel, /session\.workspaceId/);
+  assert.match(panel, /linkedInTokenWorkspaceId\(session/);
+  assert.equal(linkedInTokenWorkspaceId({ workspaceId: "ws-session" }, "ws-settings"), "ws-session");
+  assert.equal(linkedInTokenWorkspaceId({ workspaceId: "  " }, "ws-settings"), "ws-settings");
+  assert.equal(linkedInTokenWorkspaceId(null, ""), null);
+  assert.match(session, /workspaceId/);
+  const links = settings.match(/<Link\b[^>]*>[\s\S]*?<\/Link>/g) ?? [];
+  assert.equal(
+    links.some((item) => item.includes('href="/channels/linkedin-token"') && item.includes("Your LinkedIn")),
+    true,
+  );
 });
 
 test("dedupe does not deliver a timed out send twice", async () => {

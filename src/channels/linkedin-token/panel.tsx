@@ -3,9 +3,9 @@
 import * as React from "react";
 
 import { RISK_NOTICE } from "@/channels/linkedin-token/notice";
+import { linkedInTokenWorkspaceId } from "@/channels/linkedin-token/workspace";
 import { Button, Field, Input, Textarea } from "@/components/ui";
-
-const WORKSPACE = "synthetic-workspace";
+import { loadRemoteState } from "@/lib/supabase/workspace";
 
 interface View {
   ok?: boolean;
@@ -22,17 +22,9 @@ interface View {
   infrastructure?: boolean;
 }
 
-async function post(action: string, extra: Record<string, unknown> = {}): Promise<View> {
-  const response = await fetch("/api/channels/linkedin-token", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action, workspaceId: WORKSPACE, ...extra }),
-  });
-  return (await response.json()) as View;
-}
-
 export function LinkedInTokenPanel() {
   const [role, setRole] = React.useState("member");
+  const [workspaceId, setWorkspaceId] = React.useState("");
   const [demo, setDemo] = React.useState(false);
   const [view, setView] = React.useState<View | null>(null);
   const [notice, setNotice] = React.useState("");
@@ -48,23 +40,50 @@ export function LinkedInTokenPanel() {
   const [busy, setBusy] = React.useState("");
   const generation = React.useRef(0);
 
+  async function post(action: string, extra: Record<string, unknown> = {}): Promise<View> {
+    if (!workspaceId) return { ok: false, reason: "workspace" };
+    const response = await fetch("/api/channels/linkedin-token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, workspaceId, ...extra }),
+    });
+    return (await response.json()) as View;
+  }
+
   const refresh = React.useCallback(async () => {
-    const response = await fetch(`/api/channels/linkedin-token?workspaceId=${WORKSPACE}`, { cache: "no-store" });
+    if (!workspaceId) return;
+    const response = await fetch(`/api/channels/linkedin-token?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
     const payload = (await response.json()) as View;
     setView(payload);
-  }, []);
+  }, [workspaceId]);
 
   React.useEffect(() => {
+    let cancelled = false;
     void (async () => {
       const session = (await (await fetch("/api/channels/linkedin-token/session", { cache: "no-store" })).json()) as {
         role?: string;
         e2e?: boolean;
+        workspaceId?: string;
       };
+      if (cancelled) return;
+      let settingsWorkspaceId: string | undefined;
+      if (typeof session.workspaceId !== "string" || session.workspaceId.trim() === "") {
+        const remote = await loadRemoteState();
+        if (!cancelled && remote.status === "ready") settingsWorkspaceId = remote.workspaceId;
+      }
+      if (cancelled) return;
       setRole(session.role ?? "member");
       setDemo(session.e2e === true);
-      await refresh();
+      setWorkspaceId(linkedInTokenWorkspaceId(session, settingsWorkspaceId) ?? "");
     })();
-  }, [refresh]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (workspaceId) void refresh();
+  }, [workspaceId, refresh]);
 
   async function chooseRole(next: string) {
     await fetch("/api/channels/linkedin-token/session", {

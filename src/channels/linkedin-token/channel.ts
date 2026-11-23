@@ -252,8 +252,7 @@ function blockedIpv4(parts: number[]): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
-  if (a >= 224 && a <= 239) return true;
-  if (parts.every((part) => part === 255)) return true;
+  if (a >= 224) return true;
   return false;
 }
 
@@ -556,7 +555,10 @@ export class LinkedInTokenChannel {
           resolve: (result) => {
             if (result.ok) return;
             const row = this.memory(input.workspaceId).queue.find((item) => item.id === id);
-            if (row && (row.state === "queued" || row.state === "sending")) row.state = "failed";
+            if (row && (row.state === "queued" || row.state === "sending")) {
+              row.state = "failed";
+              this.persist(input.workspaceId);
+            }
           },
         });
         this.persist(input.workspaceId);
@@ -1111,7 +1113,12 @@ function publicAddress(address: string): boolean {
     if (groups.slice(0, 7).every((part) => part === 0) && groups[7] === 1) return false;
     if ((groups[0] & 0xffc0) === 0xfe80) return false;
     if ((groups[0] & 0xfe00) === 0xfc00) return false;
+    if ((groups[0] & 0xffc0) === 0xfec0) return false;
     if ((groups[0] & 0xff00) === 0xff00) return false;
+    if (groups[0] === 0x2002) {
+      const embedded = [(groups[1] >> 8) & 255, groups[1] & 255, (groups[2] >> 8) & 255, groups[2] & 255];
+      return !blockedIpv4(embedded);
+    }
     return true;
   }
   const parts = ipv4Parts(host);
