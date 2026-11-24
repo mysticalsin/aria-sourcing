@@ -96,6 +96,9 @@ function odooPositional(input: HireCall): { ok: true; args: unknown[] } | { ok: 
   }
   const vals = { ...input.values };
   delete vals.id;
+  // hr.job has no state field on Odoo 16, 18, or 19. A vacancy close is
+  // no_of_recruitment only, on this Odoo path and on any caller of it.
+  if (input.model === "hr.job") delete vals.state;
   if (input.method === "create") return { ok: true, args: [[vals]] };
   if (input.method === "write") {
     const id = odooRecordRef(input.values.id);

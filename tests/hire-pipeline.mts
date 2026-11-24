@@ -124,10 +124,12 @@ ok(
       JSON.stringify([[{ name: "Ada Lovelace", partner_name: "Ada Lovelace", email_from: "ada@example.test", job_id: 11 }]]),
 );
 ok(
-  "hire write closes that job instead of sending hired true",
+  "hire write closes that job with no_of_recruitment and empty kwargs",
   hireWrite.params.args[3] === "hr.job" &&
     hireWrite.params.args[4] === "write" &&
-    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(hireWrite.params.args[6]) === "{}" &&
+    !JSON.stringify(positional(hireWrite)).includes('"state"'),
 );
 
 calls.length = 0;
@@ -155,8 +157,11 @@ ok(
     closedJobs.length === 2 &&
     JSON.stringify(createdJobs[0]?.params.args[5]) === JSON.stringify([[{ name: "Need Alpha" }]]) &&
     JSON.stringify(createdJobs[1]?.params.args[5]) === JSON.stringify([[{ name: "Need Beta" }]]) &&
-    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]) &&
-    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[15], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(closedJobs[0]?.params.args[6]) === "{}" &&
+    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[15], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(closedJobs[1]?.params.args[6]) === "{}" &&
+    !JSON.stringify(closedJobs.map((body) => body.params.args[5])).includes('"state"'),
 );
 
 const stagedCalls: { url: string; init?: RequestInit }[] = [];

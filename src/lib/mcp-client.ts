@@ -585,11 +585,12 @@ function odooRef(id: string): number | string {
 }
 
 /**
- * Odoo hr.job / hr.applicant fields only. `state: "open"` with
- * `no_of_recruitment: 0` is the standard set_open write that stops recruiting.
- * A hired stage write sends numeric stage_id. ODOO_HIRED_STAGE_ID is that id
- * when set. Otherwise the Hired stage is looked up once per process.
- * An empty lookup skips the write. No stage name and no hired flag is sent.
+ * Odoo hr.job / hr.applicant fields only. Closing a vacancy is the positional
+ * write `[[id], { no_of_recruitment: 0 }]` with kwargs `{}`. Odoo 16, 18, and
+ * 19 have no `hr.job.state`, so the close never sends `state`. A hired stage
+ * write sends numeric stage_id. ODOO_HIRED_STAGE_ID is that id when set.
+ * Otherwise the Hired stage is looked up once per process. An empty lookup
+ * skips the write. No stage name and no hired flag is sent.
  */
 async function runOdooHire(
   connector: HireConnector,
@@ -673,7 +674,7 @@ async function runOdooHire(
     idempotencyKey: `${input.idempotencyKey}:hire`,
     model: "hr.job",
     method: "write",
-    values: { id: odooRef(job.id), state: "open", no_of_recruitment: 0 },
+    values: { id: odooRef(job.id), no_of_recruitment: 0 },
   });
   steps.push({
     erp: "odoo",
