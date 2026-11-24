@@ -52,6 +52,26 @@ export interface SaveResult {
   latest?: RemoteStateVersion;
 }
 
+/**
+ * Only the workspace_state version (`updated_at`): a cheap "did the server
+ * change it?" probe for the background refresh. `undefined` = unavailable.
+ */
+export async function loadRemoteVersion(workspaceId: string): Promise<string | null | undefined> {
+  const supabase = getBrowserSupabase();
+  if (!supabase || !workspaceId) return undefined;
+  try {
+    const { data, error } = await supabase
+      .from("workspace_state")
+      .select("updated_at")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (error) return undefined;
+    return (data?.updated_at as string | undefined) ?? null;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface CurrentUser {
   id: string;
   email: string;

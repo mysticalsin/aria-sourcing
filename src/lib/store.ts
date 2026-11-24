@@ -148,6 +148,7 @@ import { supabaseEnabled } from "./supabase/config";
 import {
   loadRemoteAgentSeats,
   loadRemoteState,
+  loadRemoteVersion,
   saveRemoteState,
   type RemoteStateVersion,
 } from "./supabase/workspace";
@@ -439,6 +440,10 @@ async function attemptLiveFollowUpGen(opts: {
   return { gen: mockGen, live: false };
 }
 
+/** Dispatch on window to ask the store for the server's newer workspace version
+ *  now (e.g. right after a server route changed it). See pullRemoteWorkspace. */
+export const WORKSPACE_PULL_EVENT = "aria:workspace-pull";
+
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<WorkspaceState | null>(null);
   const stateRef = useRef<WorkspaceState | null>(null);
@@ -643,6 +648,66 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setState(prepared.next);
     setWorkspaceStatus({ phase: "ready", mode: "live" });
   }, [setWorkspaceStatus]);
+
+  // Background refresh. The server writes the workspace too (the agents, the
+  // Odoo webhook): every 15 s while the tab is visible, on focus, and on the
+  // "aria:workspace-pull" window event, load a newer server version. Only when
+  // nothing local is waiting to be saved and nothing changed while it loaded,
+  // so an edit is never dropped (a busy client gets the newer version on its
+  // next save conflict, as before).
+  const pullRemoteWorkspace = useCallback(async () => {
+    if (!supabaseEnabled) return;
+    const idle = () =>
+      workspaceStatusRef.current.phase === "ready" &&
+      !saveTimer.current &&
+      !queuedRemoteSnapshot.current &&
+      !pendingRemoteSave.current &&
+      !remoteSaveInFlight.current &&
+      !remoteSaveOperation.current &&
+      !authoritativeCommitInFlight.current;
+    const workspaceId = workspaceIdRef.current;
+    const known = remoteUpdatedAtRef.current;
+    if (!idle() || !workspaceId || !known) return;
+    const generation = hydrationGeneration.current;
+    const before = stateRef.current;
+    const unchanged = () =>
+      generation === hydrationGeneration.current &&
+      stateRef.current === before &&
+      remoteUpdatedAtRef.current === known &&
+      idle();
+    const version = await loadRemoteVersion(workspaceId);
+    if (!version || version === known || !unchanged()) return;
+    const remote = await loadRemoteState();
+    if (remote.status !== "ready" || !remote.state || !remote.updatedAt || remote.workspaceId !== workspaceId) return;
+    const serverSeats = await loadRemoteAgentSeats();
+    if (serverSeats.status === "unavailable" || !unchanged()) return;
+    const base = normalizeWorkspaceState(remote.state);
+    const next = applyAuthoritativeRole(
+      { ...base, seats: mergeAgentSeatRows(base.seats, serverSeats.seats) },
+      remote.role,
+    );
+    liveRoleRef.current = remote.role;
+    remoteUpdatedAtRef.current = remote.updatedAt;
+    skipNextPersist.current = true;
+    skipPersistSnapshot.current = next;
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    const pull = () => {
+      if (document.visibilityState === "visible") void pullRemoteWorkspace().catch(() => undefined);
+    };
+    const timer = setInterval(pull, 15_000);
+    window.addEventListener("focus", pull);
+    window.addEventListener(WORKSPACE_PULL_EVENT, pull);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", pull);
+      window.removeEventListener(WORKSPACE_PULL_EVENT, pull);
+    };
+  }, [pullRemoteWorkspace]);
 
   const persistPendingSave = useCallback(async (
     pending: PendingWorkspaceSave<WorkspaceState>,
