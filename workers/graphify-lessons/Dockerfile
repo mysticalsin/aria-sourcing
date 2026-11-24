@@ -24,6 +24,12 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     GRAPHIFY_QUERY_LOG_DISABLE=1
 
+# Apply released Debian security fixes before the runtime image is scanned.
+# The digest pin stays; only packages with a published fix move.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 10001 graphify \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin graphify
 

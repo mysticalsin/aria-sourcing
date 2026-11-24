@@ -17,7 +17,7 @@ status: draft-pr
 - Odoo `execute_kw` uses positional args: create `[[vals]]`, write `[[id], vals]`, kwargs `{}`. Authenticate stays on `common` and is not logged. Job create sends `name` only. Applicant create sends `name`, `partner_name`, `email_from`, and numeric `job_id`. A hired stage write sends numeric `stage_id`. `ODOO_HIRED_STAGE_ID` is that id when it is a positive integer. When it is unset, `hr.recruitment.stage` is looked up by name `Hired` once per process and that id is reused. An empty lookup skips the write with reason "not written". No stage string and no `hired: true` is sent. The hire step writes the created `hr.job` to `{ state: "open", no_of_recruitment: 0 }`, which is Odoo's stop-recruiting write, and does not close a different job.
 - A successful hire sets that candidate's campaign to `Filled`. The drawer says the vacancy is filled and closed. It does not ask anyone to mark it filled.
 - `npx tsc --noEmit` and `npm test` are the gate for this branch, with flyctl 0.5.15 on `PATH` and `FLY_API_TOKEN=local-validate-only`.
-- `workers/graphify-lessons/Dockerfile` no longer runs `apt-get`. `workers/graphify-lessons/test_worker.py` rejects `apt-get` in that file. The upgrade line came from base commit `b27c0682` and failed exact-head supply chain on this tip, so this branch removes it.
+- `workers/graphify-lessons/Dockerfile` runs one `apt-get upgrade` in the runtime stage. `test_worker.py` requires that upgrade and rejects `apt-get install`. Exact-head supply chain on `0e8b0fe0` failed on 62 fixable HIGH and CRITICAL OS findings in the graphify image.
 
 ## Done this shift
 
@@ -27,12 +27,12 @@ status: draft-pr
 
 ## Blockers
 
-- None for this slice. The graphify `apt-get` line is removed on this branch so the supply-chain contract can pass at this tip.
+- None for this slice. The graphify image upgrade is restored so the supply-chain vulnerability scan can pass.
 
 ## Next steps
 
 1. Open the draft PR onto `cursor/hire-action-ui-defa`. Do not push that branch and do not move PR #308.
-2. Do not put `apt-get` back into `workers/graphify-lessons/Dockerfile`. The worker test rejects it.
+2. Keep the single graphify `apt-get upgrade` and do not add `apt-get install`.
 
 ## Decisions made (don't relitigate)
 
@@ -42,7 +42,7 @@ status: draft-pr
 - `linkedInSourcingRunsWithoutErp` returns true. Connector sync is gated separately
 - Unset `HIRE_CONNECTOR` prefers Odoo, then SMART, then the generic API, then MCP
 - Demo hire requests strip Odoo, SMART, generic API, and MCP credentials
-- `workers/graphify-lessons/Dockerfile` stays free of `apt-get` so the supply-chain contract passes on this tip
+- The graphify runtime image keeps one `apt-get upgrade` and no `apt-get install`
 - #49 closed permanently; #51 was the Europe successor
 - Slim Fly deploy preserves live 0079 migration identity
 
