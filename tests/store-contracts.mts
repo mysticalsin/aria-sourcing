@@ -7,16 +7,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
-import type { HermesActions as PublicHermesActions } from "../src/lib/store";
+import type { WorkspaceActions as PublicWorkspaceActions } from "../src/lib/store";
 import {
-  HermesProvider,
+  WorkspaceProvider,
   useActions,
-  useHermes,
+  useWorkspace,
   useHydrated,
 } from "../src/lib/store";
 import type {
-  HermesActions as ContractHermesActions,
-  HermesContextValue,
+  WorkspaceActions as ContractWorkspaceActions,
+  WorkspaceContextValue,
 } from "../src/lib/store/contracts";
 import { buildImportGraph, graphCycles } from "./helpers/import-graph.mjs";
 
@@ -29,9 +29,9 @@ type Equal<Left, Right> =
       : false
     : false;
 
-const publicContractMatches: Equal<PublicHermesActions, ContractHermesActions> = true;
-const contextContractIncludesActions: ContractHermesActions =
-  null as unknown as HermesContextValue["actions"];
+const publicContractMatches: Equal<PublicWorkspaceActions, ContractWorkspaceActions> = true;
+const contextContractIncludesActions: ContractWorkspaceActions =
+  null as unknown as WorkspaceContextValue["actions"];
 void publicContractMatches;
 void contextContractIncludesActions;
 
@@ -90,12 +90,12 @@ function findInterface(name: string): ts.InterfaceDeclaration {
   return declaration;
 }
 
-test("store keeps HermesActions as a compatibility type export", () => {
+test("store keeps WorkspaceActions as a compatibility type export", () => {
   assert.match(
     storeSource,
-    /export type \{ HermesActions \} from ["']\.\/store\/contracts["'];/,
+    /export type \{ WorkspaceActions \} from ["']\.\/store\/contracts["'];/,
   );
-  assert.doesNotMatch(storeSource, /export interface HermesActions\s*\{/);
+  assert.doesNotMatch(storeSource, /export interface WorkspaceActions\s*\{/);
 });
 
 test("store contracts stay React-free and type-only", () => {
@@ -112,7 +112,7 @@ test("context contract preserves workspace recovery and recommendations", () => 
 });
 
 test("action contract, implementation object, and memo dependencies stay in parity", () => {
-  const contractNames = findInterface("HermesActions").members
+  const contractNames = findInterface("WorkspaceActions").members
     .map(declaredName)
     .filter((name): name is string => name !== null);
 
@@ -144,18 +144,19 @@ test("action contract, implementation object, and memo dependencies stay in pari
     .filter((name): name is string => name !== null);
   const dependencyNames = dependencyList.elements.map((element) => element.getText());
 
-  assert.equal(contractNames.length, 127);
+  assert.equal(contractNames.length, 119); // startApifyRun and checkApifyRun retired 2026-11-06; recordHiredCandidate added
   assert.deepEqual([...implementationNames].sort(), [...contractNames].sort());
   assert.deepEqual([...dependencyNames].sort(), [...contractNames].sort());
 });
 
 test("context contract keeps its exact public shape", () => {
-  const contextNames = findInterface("HermesContextValue").members
+  const contextNames = findInterface("WorkspaceContextValue").members
     .map(declaredName)
     .filter((name): name is string => name !== null)
     .sort();
   assert.deepEqual(contextNames, [
     "actions",
+    "flushWorkspace",
     "hydrated",
     "recommendations",
     "retrySave",
@@ -166,7 +167,7 @@ test("context contract keeps its exact public shape", () => {
 });
 
 function StoreHookProbe() {
-  const context = useHermes();
+  const context = useWorkspace();
   const actions = useActions();
   const hydrated = useHydrated();
 
@@ -189,15 +190,15 @@ function StoreHookProbe() {
 
 test("public hooks preserve their provider-bound initial behavior", () => {
   const markup = renderToStaticMarkup(
-    createElement(HermesProvider, null, createElement(StoreHookProbe)),
+    createElement(WorkspaceProvider, null, createElement(StoreHookProbe)),
   );
-  assert.equal(markup, "<output>loading:false:127</output>");
+  assert.equal(markup, "<output>loading:false:119</output>");
 });
 
-test("useHermes still rejects consumers outside HermesProvider", () => {
+test("useWorkspace still rejects consumers outside WorkspaceProvider", () => {
   assert.throws(
     () => renderToStaticMarkup(createElement(StoreHookProbe)),
-    /useHermes must be used within <HermesProvider>\./,
+    /useWorkspace must be used within <WorkspaceProvider>\./,
   );
 });
 

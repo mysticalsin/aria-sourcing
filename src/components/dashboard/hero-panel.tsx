@@ -8,7 +8,7 @@ import {
   type CommandCenterMode,
   type CommandCenterNextStep,
 } from "@/lib/command-center-firstrun";
-import { FilePlus2, MailCheck, Sparkles, Zap } from "lucide-react";
+import { FilePlus2, MailCheck, Sparkles } from "lucide-react";
 
 type HeroPanelProps = {
   mode?: CommandCenterMode;
@@ -27,10 +27,11 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
   const reason =
     nextStep?.reason ??
     "Aria will find people and draft messages — you approve before anything sends.";
-  const href = nextStep?.href ?? "/intake";
+  const href = nextStep?.href ?? "/campaigns/new";
 
   return (
     <section
+      data-tour="home-hero"
       className="relative isolate overflow-hidden rounded-3xl border border-line bg-surface px-7 py-12 shadow-soft animate-fade-in sm:px-12 sm:py-16"
       data-testid="cc-hero-first-run"
       aria-labelledby="cc-first-run-title"
@@ -64,7 +65,7 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
           </Link>
         </div>
 
-        <ol className="mt-10 grid gap-4 sm:grid-cols-3">
+        <ol className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {FIRST_RUN_GUIDE_STEPS.map((step, index) => (
             <li key={step.id} className="rounded-2xl border border-line/70 bg-canvas/40 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -81,15 +82,16 @@ function FirstRunHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
 }
 
 function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
-  const primaryHref = nextStep?.href ?? "/intake";
-  const primaryLabel = nextStep?.cta ?? "New intake";
-  const showOutreach =
-    nextStep?.href !== "/outreach" && nextStep?.href !== "/replies";
+  // One header, one primary action: the next step. Secondary actions live in
+  // the command bar below the hero.
+  const primaryHref = nextStep?.href ?? "/campaigns/new";
+  const primaryLabel = nextStep?.cta ?? "New campaign";
 
   return (
     <section
-      className="relative isolate overflow-hidden rounded-3xl border border-line bg-surface px-7 py-12 shadow-soft animate-fade-in sm:px-12 sm:py-16"
+      className="relative isolate overflow-hidden rounded-3xl border border-line bg-surface px-7 py-10 shadow-soft animate-fade-in sm:px-12 sm:py-12"
       data-testid="cc-hero-returning"
+      data-tour="home-hero"
       aria-labelledby="cc-returning-title"
     >
       <div className="pointer-events-none absolute inset-0 bg-dot-grid opacity-50" aria-hidden />
@@ -132,21 +134,6 @@ function ReturningHero({ nextStep }: { nextStep?: CommandCenterNextStep }) {
             )}
             {primaryLabel}
           </Link>
-
-          {showOutreach && (
-            <Link
-              href="/outreach"
-              className="inline-flex h-12 items-center gap-2 rounded-full border border-ink/15 bg-surface px-7 text-base font-semibold text-ink transition-all duration-150 hover:bg-canvas active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-            >
-              <MailCheck className="h-5 w-5" aria-hidden />
-              Review outreach
-            </Link>
-          )}
-
-          <span className="inline-flex h-12 items-center gap-1.5 rounded-full bg-tangerine-soft px-4 text-sm font-semibold text-tangerine ring-1 ring-inset ring-tangerine/20">
-            <Zap className="h-4 w-4" aria-hidden />
-            Always sourcing.
-          </span>
         </div>
 
         <p className="mt-6 inline-flex items-center gap-1.5 text-xs font-medium text-muted">

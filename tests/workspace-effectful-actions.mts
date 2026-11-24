@@ -86,6 +86,13 @@ ok(
 );
 
 const approveOutreach = actionBody("approveOutreach", "confirmManualSend");
+// A LinkedIn message is never "sent" by approval, dry-run included: it waits
+// for the person's click (copy-paste or "Send with my LinkedIn").
+ok(
+  "LinkedIn approval always waits for a manual send, even in dry-run",
+  /const isLinkedInManual = msg\.channel === "LinkedIn";/.test(approveOutreach) &&
+    /const finalStatus: OutreachStatus = isLinkedInManual\s*\? "Pending Manual Send"/.test(approveOutreach),
+);
 const compensationStart = approveOutreach.indexOf("const revokeStaleApproval");
 const revalidationStart = approveOutreach.indexOf("s = current()", compensationStart);
 const staleApprovalCompensation = compensationStart >= 0 && revalidationStart > compensationStart
@@ -106,7 +113,7 @@ ok(
     "/api/dust/test",
     "/api/integrations/dust/config",
     "/api/dust/run",
-    "/api/hermes/chat",
+    "/api/ai/chat",
     "/api/keys/test",
   ].every((path) => source.includes(`workspaceFetch("${path}`) || source.includes(`workspaceFetch(\`${path}`)),
 );
@@ -125,15 +132,15 @@ ok(
 
 const sendChat = actionBody("sendChat", "cancelChat");
 const toolLoopStart = sendChat.indexOf("if (chatAiCfg");
-const streamingStart = sendChat.indexOf("// 4. Live mode", toolLoopStart);
-const toolLoop = toolLoopStart >= 0 && streamingStart > toolLoopStart
-  ? sendChat.slice(toolLoopStart, streamingStart)
+const failureStart = sendChat.indexOf("// 4. A live model was configured", toolLoopStart);
+const toolLoop = toolLoopStart >= 0 && failureStart > toolLoopStart
+  ? sendChat.slice(toolLoopStart, failureStart)
   : "";
 ok(
   "non-streaming cloud and MCP chat is registered and abortable when availability leaves ready",
   /const toolLoopController = new AbortController\(\)/.test(toolLoop) &&
     /chatAbortControllers\.current\.set\(threadId, toolLoopController\)/.test(toolLoop) &&
-    /workspaceFetch\("\/api\/hermes\/chat",[\s\S]*signal: toolLoopController\.signal/.test(toolLoop) &&
+    /workspaceFetch\("\/api\/ai\/chat",[\s\S]*signal: toolLoopController\.signal/.test(toolLoop) &&
     /chatAbortControllers\.current\.get\(threadId\) === toolLoopController[\s\S]*\.delete\(threadId\)/.test(toolLoop),
 );
 

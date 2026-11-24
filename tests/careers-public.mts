@@ -129,17 +129,19 @@ ok("career chatbox does not import the authenticated workspace store", !chatbox.
 ok("career route remains outside the authenticated workspace provider", providers.includes('pathname.startsWith("/careers")'));
 ok(
   "careers chatbox has an explicit retry path when /api/careers is unavailable",
-  chatbox.includes("retryCareers") && chatbox.includes("Retry loading roles"),
+  chatbox.includes("retryCareers") && chatbox.includes("Try again"),
 );
 ok(
   "careers fetch failure or 503 renders offline/unavailable, never online",
   chatbox.includes("careersAvailability === \"unavailable\"") &&
-    chatbox.includes("Careers offline") &&
+    chatbox.includes("Applications closed") &&
+    // Written for a candidate, not for the operator.
+    !chatbox.includes("Careers offline") && !chatbox.includes("before treating this as no open roles") &&
     !chatbox.includes("> online"),
 );
 ok(
   "careers header avoids always-on hiring claims while availability is unknown",
-  !careersShell.includes("Now hiring across our teams") && careersShell.includes("Applications open when careers is online"),
+  !careersShell.includes("Now hiring across our teams") && careersShell.includes("Apply in a short conversation"),
 );
 ok(
   "careers loading, unavailable, empty, and ready states are distinct",

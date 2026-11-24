@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Eyebrow,
-  SectionNumeral,
   Field,
   Input,
   Select,
@@ -26,17 +25,17 @@ import { ApiKeysPanel } from "@/components/settings/api-keys-panel";
 import { RolesPanel } from "@/components/settings/roles-panel";
 import { GuardrailsPanel } from "@/components/settings/guardrails-panel";
 import { ProvidersPanel } from "@/components/settings/providers-panel";
+import { SetupStatusPanel } from "@/components/settings/setup-status-panel";
 import { ModelsPanel } from "@/components/settings/models-panel";
+import { AiUsagePanel } from "@/components/settings/ai-usage-panel";
 import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
-import { DatabricksPanel } from "@/components/settings/databricks-panel";
-import { HermesRuntimePanel } from "@/components/settings/hermes-runtime-panel";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
-import { HermesSchedulesPanel } from "@/components/settings/hermes-schedules-panel";
-import { useHydrated, useSettings, useIntegrations, useActions } from "@/lib/store";
+import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
+import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
 import type { SystemSettings } from "@/lib/types";
-import { integrationHealthSummary } from "@/lib/integrations";
+import { integrationCounts, integrationStateLabel } from "@/lib/integrations";
 import { supabaseEnabled } from "@/lib/supabase/config";
 import { LANGUAGES } from "@/lib/i18n";
 import {
@@ -54,8 +53,6 @@ import {
   Clock,
   Shuffle,
   Cpu,
-  BrainCircuit,
-  Wrench,
   Info,
   ChevronDown,
 } from "lucide-react";
@@ -156,7 +153,6 @@ function Section({
         className="scroll-mt-20 border-t border-line py-4 first:border-t-0 first:pt-0"
       >
         <div className="mb-3 flex items-start gap-3">
-          <SectionNumeral n={n} />
           <div className="min-w-0">
             <Eyebrow>{eyebrow}</Eyebrow>
             <h2 className="display text-lg text-ink sm:text-xl">{title}</h2>
@@ -187,7 +183,6 @@ function Section({
             isOpen ? "bg-ink/[0.02]" : "",
           )}
         >
-          <SectionNumeral n={n} />
           <div className="min-w-0 flex-1">
             <Eyebrow>{eyebrow}</Eyebrow>
             <span className="display block text-base text-ink sm:text-lg">{title}</span>
@@ -308,6 +303,7 @@ const BANNED_AI_ISMS = [
 /* ---- page --------------------------------------------------------------- */
 
 export default function SettingsPage() {
+  const isAdmin = useRole() === "admin";
   const hydrated = useHydrated();
   const settings = useSettings();
   const storedIntegrations = useIntegrations();
@@ -325,7 +321,6 @@ export default function SettingsPage() {
               ...i,
               status: supabaseEnabled ? ("connected" as const) : ("not_configured" as const),
               mode: supabaseEnabled ? ("live" as const) : ("mock" as const),
-              real: true,
               errors: supabaseEnabled ? [] : ["No project URL configured: demo runs on localStorage."],
             }
           : i,
@@ -492,7 +487,7 @@ export default function SettingsPage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [activeTab, queueHashScroll]);
 
-  const summary = integrationHealthSummary(integrations);
+  const summary = integrationCounts(integrations);
 
   function savedToast() {
     toast({ title: "Settings saved", variant: "success" });
@@ -552,7 +547,7 @@ export default function SettingsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Control"
+        eyebrow="System"
         title="Settings"
         description="Operating identity, the human-approval gate, rate limits, integrations, and compliance. Everything Aria runs against lives here."
         actions={
@@ -579,7 +574,7 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[220px_1fr]">
           {/* Tab rail — jump straight to a section, no scrolling */}
           <div className="lg:sticky lg:top-4 lg:self-start lg:border-r lg:border-line lg:pr-5">
             <div
@@ -623,6 +618,7 @@ export default function SettingsPage() {
               tabIndex={0}
             >
           {/* 01 — System identity */}
+          {activeTab === "workspace" && isAdmin && <div className="mb-6"><SetupStatusPanel /></div>}
           <Section
             n="01"
             eyebrow="Identity"
@@ -630,7 +626,7 @@ export default function SettingsPage() {
             description="How Aria signs its work and who it acts on behalf of."
           >
             <Card>
-              <CardContent className="grid gap-5 sm:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <Field
                   label="Operator name"
                   htmlFor="operatorName"
@@ -693,7 +689,7 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
@@ -744,7 +740,7 @@ export default function SettingsPage() {
             description="Daily ceilings and cool-downs that keep outreach human-paced and deliverable."
           >
             <Card>
-              <CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <Field
                   label="Emails / day"
                   htmlFor="emailsPerDay"
@@ -811,6 +807,21 @@ export default function SettingsPage() {
             </Card>
           </Section>
 
+          {/* 20 — LinkedIn (personal bridge): the integration the live POC runs on, so it comes first */}
+          <Section
+            n="20"
+            eyebrow="Your LinkedIn"
+            title="LinkedIn"
+            description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
+          >
+            <p className="text-sm">
+              <Link href="/channels/linkedin-token">Your LinkedIn</Link>
+            </p>
+            <div id="linkedin">
+              <LinkedInSettingsPanel />
+            </div>
+          </Section>
+
           {/* 04 — Integrations */}
           <Section
             n="04"
@@ -819,9 +830,14 @@ export default function SettingsPage() {
             description="The inbox, sourcing, enrichment, calendar, and comms tools Aria orchestrates."
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="success" size="sm" dot>
-                {summary.connected} connected
+              <Badge tone={summary.live > 0 ? "success" : "neutral"} size="sm" dot>
+                {summary.live} live
               </Badge>
+              {summary.simulated > 0 && (
+                <Badge tone="aqua" size="sm" dot>
+                  {summary.simulated} simulated
+                </Badge>
+              )}
               {summary.degraded > 0 && (
                 <Badge tone="warning" size="sm" dot>
                   {summary.degraded} degraded
@@ -837,7 +853,9 @@ export default function SettingsPage() {
                   {summary.notConfigured} not configured
                 </Badge>
               )}
-              <span className="text-xs text-muted">of {summary.total} total · mock is the safe default</span>
+              <span className="text-xs text-muted">
+                of {summary.total} integrations · simulated (mock) is the safe default
+              </span>
             </div>
 
             {integrations.length === 0 ? (
@@ -848,12 +866,20 @@ export default function SettingsPage() {
               />
             ) : (
               <>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {integrations.map((i) => (
-                    <IntegrationCard key={i.id} integration={i} />
-                  ))}
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                  {integrations
+                    .filter((i) => integrationStateLabel(i) !== "Not configured")
+                    .map((i) => (
+                      <IntegrationCard key={i.id} integration={i} />
+                    ))}
                 </div>
-                <DatabricksPanel />
+                {/* Live POC: tools without credentials are listed, not shown as cards with live switches. */}
+                {summary.notConfigured > 0 && (
+                  <p className="mt-4 text-sm text-muted">
+                    Not used in this proof of concept:{" "}
+                    {integrations.filter((i) => integrationStateLabel(i) === "Not configured").map((i) => i.name).join(", ")}.
+                  </p>
+                )}
               </>
             )}
           </Section>
@@ -997,7 +1023,7 @@ export default function SettingsPage() {
           >
             <Card>
               <CardContent className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                   <Field
                     label="Re-contact window (days)"
                     htmlFor="recontactWindowDays"
@@ -1112,7 +1138,7 @@ export default function SettingsPage() {
           >
             <Card>
               <CardContent className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <Field
                     label="Outreach language (default)"
                     htmlFor="defaultLanguage"
@@ -1152,14 +1178,14 @@ export default function SettingsPage() {
                   within its provider's official limits. Scale, not rate-limit evasion.
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Link
                     href="/fleet"
                     className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-ink/25"
                   >
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-ink">Deploy agents</span>
-                      <span className="block text-xs text-muted">Spin up coordinated sourcing + outreach agents.</span>
+                      <span className="block text-sm font-semibold text-ink">Manage mailboxes</span>
+                      <span className="block text-xs text-muted">Connect sender mailboxes and manage suppression.</span>
                     </span>
                     <ArrowUpRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
                   </Link>
@@ -1223,9 +1249,12 @@ export default function SettingsPage() {
             n="15"
             eyebrow="Models"
             title="Saved models"
-            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, classification, and chat. Admin only."
+            description="Register the specific models your fleet uses and set which model handles each task type: sourcing, outreach, reply classification, brief extraction and chat. Admin only."
           >
             <ModelsPanel />
+            <div className="mt-6 border-t border-line pt-5">
+              <AiUsagePanel />
+            </div>
           </Section>
 
           {/* 16 — Tools */}
@@ -1246,15 +1275,6 @@ export default function SettingsPage() {
             </div>
           </Section>
 
-          {/* 17 — Aria runtime */}
-          <Section
-            n="17"
-            eyebrow="Runtime"
-            title="Aria agent runtime"
-            description="Connect the live NousResearch Aria agent for real LLM-backed outreach drafting. Text generation only. The approval gate still applies. Falls back to the built-in mock when off or misconfigured. Admin only."
-          >
-            <HermesRuntimePanel />
-          </Section>
 
           {/* 19 — Dust agent platform */}
           <Section
@@ -1274,9 +1294,6 @@ export default function SettingsPage() {
             description="Recurring fleet jobs: sourcing sweeps, outreach batches, and reports on a cadence. Each run still passes through the approval gate. Admin only."
           >
             <SchedulesPanel />
-            <div className="mt-6">
-              <HermesSchedulesPanel />
-            </div>
           </Section>
             </div>
             </SettingsAccordionContext.Provider>

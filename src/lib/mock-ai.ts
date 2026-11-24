@@ -50,9 +50,7 @@ import {
 
 export type { SourceResult } from "./sourcing/candidate-mappers";
 export {
-  mapApolloCandidates,
   mapGithubCandidates,
-  mapSeamlessCandidates,
   mapWebSearchCandidates,
 } from "./sourcing/candidate-mappers";
 
@@ -158,6 +156,8 @@ VP People, Northwind Labs`;
 
 export const SAMPLE_INTAKE_JD = `Senior Backend Engineer (Remote, EU)
 
+Employment type: Full-time.
+
 About the role:
 - Design and operate Go services on Kubernetes handling high-throughput traffic.
 - Own PostgreSQL data models and gRPC service contracts across the platform.
@@ -172,7 +172,7 @@ We offer €90k–€120k, meaningful equity, and a fully remote EU setup (CET).
 
 /** A real Mantu/Amaris "need is now ACTIVE" recruitment email (structured format). */
 export const SAMPLE_MANTU_EMAIL = `From: Noreply (Mantu) <noreply@mantu.example>
-To: Amaris_RCM_PRO@amaris.com
+To: owner@example.com
 Cc: AMACAN_Managers; AMACAN_Recruitment
 Importance: High
 
@@ -847,8 +847,8 @@ function synthCandidate(
     campaignId: campaign.id,
     name,
     email: `${handle}@${slugify(company)}.example`,
-    // Synthetic demo phone so the WhatsApp/SMS channels are demonstrable; real sourced
-    // candidates (e.g. GitHub) have no phone until enriched.
+    // Synthetic demo phone; real sourced candidates (e.g. GitHub) have no phone
+    // until enriched.
     phone: `+1415${Math.floor(rng() * 9_000_000 + 1_000_000)}`,
     avatarInitials: initialsFrom(name),
     currentTitle,
@@ -937,17 +937,7 @@ export function generateOutreach(
     ...(voice?.signature && voice.signature.trim() ? ["", voice.signature.trim()] : []),
   ].join("\n");
 
-  // WhatsApp / SMS are short-form: one tight message, no long role/why blocks and no
-  // subject line in the body (the channel adapters deliver the body only).
-  const phoneBody = [
-    greeting,
-    sequenceStep > 1 ? L.ctaFollow : L.cta,
-    ...(voice?.signature && voice.signature.trim() ? [voice.signature.trim()] : []),
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const body = channel === "WhatsApp" || channel === "SMS" ? phoneBody : emailBody;
+  const body = emailBody;
 
   // ALWAYS humanize — no AI slop ever.
   return {
@@ -1262,8 +1252,7 @@ export function generateWeeklyReport(
 }
 
 /** Real per-channel reply rate from actual outreach messages, instead of a fixed
- *  Email/LinkedIn split on the overall reply rate that could never surface
- *  WhatsApp or SMS even when they genuinely outperform. Each candidate's
+ *  Email/LinkedIn split on the overall reply rate. Each candidate's
  *  earliest outreach message decides which channel "gets credit" for a later
  *  reply; a channel only competes once it has actually been used. */
 function computeBestChannel(inCampaign: Candidate[], campaignMessages: OutreachMessage[]): OutreachChannel {
@@ -1394,6 +1383,6 @@ export function exportMarkdownReport(report: WeeklyReport): string {
     lines.push("");
   });
   lines.push("---");
-  lines.push("_Hermes Sourcing · dry-run mode · synthetic data._");
+  lines.push("_Aria Sourcing · dry-run mode · synthetic data._");
   return lines.join("\n");
 }

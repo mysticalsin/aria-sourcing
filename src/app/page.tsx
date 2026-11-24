@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import {
   Button,
   Card,
@@ -20,7 +21,6 @@ import { HydrationGate } from "@/components/app/page-header";
 import { HeroPanel } from "@/components/dashboard/hero-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AttentionPanel } from "@/components/dashboard/attention-panel";
-import { IntegrationStrip } from "@/components/dashboard/integration-strip";
 import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
@@ -45,8 +45,6 @@ import { formatNumber, formatPercent, pluralize, scoreTone, type Tone } from "@/
 import {
   CalendarCheck,
   FilePlus2,
-  FileText,
-  GitBranch,
   Megaphone,
   PlayCircle,
   Radar,
@@ -114,6 +112,12 @@ export default function DashboardPage() {
     setRunToken((k) => k + 1);
   }
 
+  // Contact KPIs count real sends only; in a dry run every send is simulated.
+  const noRealSend =
+    kpis.simulatedContacted > 0
+      ? `No real send yet · ${pluralize(kpis.simulatedContacted, "simulated contact")} in the demo`
+      : "No real send yet";
+
   const kpiCards: {
     label: string;
     value: string | number;
@@ -131,21 +135,25 @@ export default function DashboardPage() {
     {
       label: "Candidates sourced",
       value: formatNumber(kpis.candidatesSourced),
-      hint: `${pluralize(kpis.contacted, "candidate")} contacted so far`,
+      hint: kpis.contacted > 0 ? `${pluralize(kpis.contacted, "candidate")} contacted by real send` : noRealSend,
       icon: <Users aria-hidden />,
       tone: "electric",
     },
     {
+      // Real sends only: a 0% before any real send would read as "nobody answers".
       label: "Reply rate",
-      value: formatPercent(kpis.replyRate),
-      hint: `Across ${pluralize(kpis.contacted, "contact")} reached`,
+      value: kpis.contacted > 0 ? formatPercent(kpis.replyRate) : "—",
+      hint: kpis.contacted > 0 ? `Real sends only, across ${pluralize(kpis.contacted, "contact")}` : noRealSend,
       icon: <Reply aria-hidden />,
       tone: "aqua",
     },
     {
       label: "Interviews booked",
       value: kpis.interviewsBooked,
-      hint: `${pluralize(kpis.interested, "candidate")} interested in flight`,
+      hint:
+        kpis.interviewsBooked > 0 || kpis.simulatedBooked === 0
+          ? `From real sends · ${pluralize(kpis.interested, "candidate")} interested in flight`
+          : `None from real sends yet · ${kpis.simulatedBooked} in the demo data`,
       icon: <CalendarCheck aria-hidden />,
       tone: "violet",
     },
@@ -159,8 +167,8 @@ export default function DashboardPage() {
     {
       label: "Time to first interview",
       value:
-        kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
-      hint: "Mean across active campaigns",
+        kpis.interviewsBooked > 0 && kpis.timeToFirstInterviewHours != null ? `${kpis.timeToFirstInterviewHours}h` : "—",
+      hint: kpis.interviewsBooked > 0 ? "Mean across active campaigns" : "Shown once a real interview is booked",
       icon: <Timer aria-hidden />,
       tone: "neutral",
     },
@@ -175,6 +183,7 @@ export default function DashboardPage() {
       });
       return;
     }
+    if (supabaseEnabled) { router.push(`/campaigns/${activeCampaign.id}#campaign-sourcing`); return; }
     const result = await actions.sourceNextBatch(activeCampaign.id);
     if (!result.ok) {
       toast({
@@ -189,25 +198,6 @@ export default function DashboardPage() {
       title: `Sourced ${pluralize(result.accepted.length, "candidate")}${isLive ? " (live)" : ""}`,
       description: `${activeCampaign.title} · ${result.skipped.length} skipped by dedupe & exclusions.`,
       variant: result.accepted.length > 0 ? "success" : "info",
-    });
-  }
-
-  function handleGenerateReport() {
-    if (!activeCampaign) {
-      toast({
-        title: "No active campaign",
-        description: "Create a campaign before generating a weekly report.",
-        variant: "warning",
-      });
-      return;
-    }
-    const report = actions.generateReport(activeCampaign.id);
-    toast({
-      title: report ? "Weekly report generated" : "Could not generate report",
-      description: report
-        ? `${activeCampaign.title} · ${pluralize(report.skillUpdates.length, "skill update")} proposed.`
-        : "The campaign could not be found.",
-      variant: report ? "success" : "error",
     });
   }
 
@@ -237,51 +227,23 @@ export default function DashboardPage() {
           </Card>
         ) : (
           <>
-            {/* Command bar — every action navigates or runs */}
-            <Card className="p-5 animate-fade-in" data-testid="cc-returning-body">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <Eyebrow>Command center</Eyebrow>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
-                    <Sparkles className="h-3.5 w-3.5 text-electric" aria-hidden />
-                    {nextStep.reason}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/intake")}>
-                    New intake
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    leftIcon={<Radar aria-hidden />}
-                    onClick={handleSourceBatch}
-                  >
-                    Source next batch
-                  </Button>
-                  <Button
-                    variant="primary"
-                    leftIcon={<PlayCircle aria-hidden />}
-                    onClick={handleOpenRun}
-                  >
-                    Run Aria
-                  </Button>
-                  <Button
-                    variant="outline"
-                    leftIcon={<GitBranch aria-hidden />}
-                    onClick={() => router.push("/outreach")}
-                  >
-                    Review outreach
-                  </Button>
-                  <Button
-                    variant="subtle"
-                    leftIcon={<FileText aria-hidden />}
-                    onClick={handleGenerateReport}
-                  >
-                    Generate weekly report
-                  </Button>
-                </div>
-              </div>
-            </Card>
+            {/* Secondary actions. The hero above holds the one primary action. */}
+            <div className="flex flex-wrap items-center gap-2 animate-fade-in" data-testid="cc-returning-body" role="toolbar" aria-label="Quick actions">
+              <Button variant="outline" size="sm" leftIcon={<FilePlus2 aria-hidden />} onClick={() => router.push("/campaigns/new")}>
+                New campaign
+              </Button>
+              <Button variant="outline" size="sm" leftIcon={<Radar aria-hidden />} onClick={handleSourceBatch}>
+                Source next batch
+              </Button>
+              {/* Live workspaces source from the campaign's own panel (Claude web
+                  search, durable runs), reached by "Source next batch" above. The
+                  browser mission's LinkedIn search has no live engine there. */}
+              {!supabaseEnabled && (
+                <Button variant="outline" size="sm" leftIcon={<PlayCircle aria-hidden />} onClick={handleOpenRun}>
+                  Run Aria
+                </Button>
+              )}
+            </div>
 
             {runOpen && activeCampaign && (
               <AgentRunStream
@@ -306,8 +268,6 @@ export default function DashboardPage() {
                 />
               ))}
             </section>
-
-            <IntegrationStrip />
 
             {/* Main two-column layout */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -345,7 +305,7 @@ export default function DashboardPage() {
                       action={
                         <Button
                           leftIcon={<FilePlus2 aria-hidden />}
-                          onClick={() => router.push("/intake")}
+                          onClick={() => router.push("/campaigns/new")}
                         >
                           Paste a job brief
                         </Button>

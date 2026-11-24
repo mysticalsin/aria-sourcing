@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import {
   Card,
   CardContent,
@@ -10,7 +11,6 @@ import {
   Badge,
   useToast,
 } from "@/components/ui";
-import { FunnelChart } from "@/components/charts/funnel-chart";
 import type { WeeklyReport } from "@/lib/types";
 import { exportMarkdownReport } from "@/lib/mock-ai";
 import {
@@ -30,15 +30,20 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+const FunnelChart = dynamic(() => import("@/components/charts/funnel-chart").then((mod) => mod.FunnelChart), {
+  ssr: false,
+  loading: () => <div className="h-[260px] w-full" aria-hidden />,
+});
+
 export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
   const { toast } = useToast();
   const p = report.performance;
 
   function handleExport() {
-    downloadText("hermes-report.md", exportMarkdownReport(report));
+    downloadText("aria-report.md", exportMarkdownReport(report));
     toast({
       title: "Report exported",
-      description: "hermes-report.md downloaded as Markdown.",
+      description: "aria-report.md downloaded as Markdown.",
       variant: "success",
     });
   }
@@ -135,7 +140,7 @@ export function WeeklyReportCard({ report }: { report: WeeklyReport }) {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <InsightList
             icon={<Lightbulb className="h-4 w-4 text-electric" aria-hidden />}
             title="Insights"

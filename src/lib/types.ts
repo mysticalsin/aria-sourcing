@@ -71,7 +71,7 @@ export const INTAKE_INTENTS = [
 ] as const;
 export type IntakeIntent = (typeof INTAKE_INTENTS)[number];
 
-export const OUTREACH_CHANNELS = ["Email", "LinkedIn", "WhatsApp", "SMS"] as const;
+export const OUTREACH_CHANNELS = ["Email", "LinkedIn"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
 export const OUTREACH_TONES = [
@@ -144,11 +144,7 @@ export const SOURCE_PLATFORMS = [
   "Stack Overflow",
   "Dribbble",
   "Behance",
-  "Sillage",
-  "Apollo",
-  "Seamless",
   "Manual",
-  "Apify",
   "Referral",
   "Talent Pool",
 ] as const;
@@ -345,10 +341,15 @@ export interface Candidate {
   campaignId: string;
   name: string;
   email: string;
-  /** E.164 phone (e.g. +14155552671) for WhatsApp / SMS outreach. Often empty
+  /** E.164 phone (e.g. +14155552671). Often empty
    *  until enriched; sourced profiles rarely expose one. */
   phone?: string;
   avatarInitials: string;
+  /** Provider profile photo (LinkedIn CDN only, see candidatePhotoUrl). Masked
+   *  with the name under confidentiality mode and cleared on anonymization.
+   *  LinkedIn photo URLs are signed and expire, so callers fall back to the
+   *  initials when the image fails to load. */
+  avatarUrl?: string;
   currentTitle: string;
   currentCompany: string;
   location: string;
@@ -361,12 +362,14 @@ export interface Candidate {
   /** External record id on a source platform whose later API still accepts a
    *  raw result id. Never use this field as paid-provider authority. */
   sourceExternalId?: string;
+  /** Durable discovery run that persisted this candidate (when available). */
+  sourceRunId?: string;
   /** Opaque server-issued authority for a paid provider action. The browser
    *  never receives the underlying provider person id. */
   sourceAuthorityId?: string;
   /** Per-provider external record ids, keyed by SourcePlatform, so a candidate
    *  discovered by one provider can still be precisely re-identified by every
-   *  OTHER configured provider (Apollo person id, Seamless searchResultId, …)
+   *  OTHER configured provider (e.g. a provider-side person id)
    *  instead of colliding on the single legacy `sourceExternalId` slot. Mapping
    *  helpers seed `externalIds[sourcePlatform] = sourceExternalId` on migration. */
   externalIds?: Partial<Record<SourcePlatform, string>>;
@@ -376,7 +379,7 @@ export interface Candidate {
   matchBreakdown: MatchBreakdownItem[];
   techStack: string[];
   /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
-   *  first. Provider free-text (Apify/dev_fusion) — displayed to recruiters but
+   *  first. Provider free-text from an enrichment provider — displayed to recruiters but
    *  deliberately NOT parsed into `yearsExperience` (dates are unstructured; see
    *  the fabrication contract on that field). Absent until enriched. */
   experience?: string[];
@@ -611,6 +614,13 @@ export interface OutreachMessage {
   body: string;
   tone: OutreachTone;
   personalizationEvidence: string[];
+  /** Who wrote the copy: the configured model, or the deterministic template
+   *  (no provider, budget reached, failed or unparseable reply). Absent on
+   *  drafts created before this field existed. */
+  draftedBy?: "ai" | "template";
+  /** ClassifiedReply.id this message answers, set by draftReplyResponse so a
+   *  reply never gets two response drafts. */
+  inReplyTo?: string;
   status: OutreachStatus;
   sequenceStep: number;
   scheduledFor: string | null;
@@ -692,7 +702,7 @@ export interface Booking {
 
 /* ---- Wins ----------------------------------------------------------------
    Structured conversion records captured when a booking is accepted. These
-   stay inside HermesState because they can contain candidate PII. */
+   stay inside WorkspaceState because they can contain candidate PII. */
 
 export interface WinRecord {
   id: string;
@@ -897,11 +907,6 @@ export interface IntegrationStatus {
   errors: string[];
   /** Email or identifier of the linked mailbox account (OAuth or SMTP). Empty = not set. */
   connectedAccount?: string;
-  /** True when this card has actual backend wiring in this codebase (a real API
-   *  route, OAuth flow, or send path) rather than being a roadmap placeholder.
-   *  Concept cards render an honest "Concept" badge and hide the Test-connection /
-   *  Live-mode controls, which would otherwise be theater with nothing behind them. */
-  real: boolean;
   /** For a real integration with no live connection check (see testIntegration in
    *  store.ts, which only probes GitHub): where to send the operator to actually
    *  configure it (e.g. the Agent Fleet mailbox connect flow). Absent = no in-app
@@ -987,18 +992,8 @@ export interface SystemSettings {
   webResearch?: boolean;
   /** Default model per task type (SavedModel.id). */
   defaultModels?: Partial<Record<ModelTask, string>>;
-  /** When on, outreach drafting routes through the live Aria agent runtime
-   *  (with a mock fallback). Off by default — the safe default for this build. */
-  hermesLiveMode: boolean;
-  /** Base URL of the hermes-agent aiohttp server (e.g. http://127.0.0.1:8642). */
-  hermesApiUrl?: string;
-  /** References an ApiKey.id (provider "Aria Agent") holding the bearer token. */
-  hermesApiKeyId?: string;
   /** Maximum number of memory entries stored across all agents. */
   memoryCapacity?: number;
-  /** Base URL of the hermes-agent web_server / management API (e.g. http://127.0.0.1:8643).
-   *  Distinct from hermesApiUrl which is the OpenAI-compat generation endpoint. */
-  hermesWebUrl?: string;
   /** Dust (dust.tt) agent-platform connection: workspace id, vault key reference,
    *  and which agent is locked to each DustTask. Optional — absent means Dust is
    *  not configured for this workspace. */
@@ -1012,8 +1007,6 @@ export const SEAT_PROVIDERS = [
   "Gmail API",
   "SendGrid",
   "Resend",
-  "WhatsApp Cloud",
-  "Twilio SMS",
   "LinkedIn Assisted Manual",
   "LinkedIn Vendor API",
 ] as const;
@@ -1170,12 +1163,7 @@ export const API_KEY_PROVIDERS = [
   "SendGrid",
   "Aria Agent",
   "Dust",
-  "Sillage",
-  "Apollo",
-  "Seamless",
-  "Apify",
   "Tavily",
-  "Databricks",
   "Custom",
 ] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
@@ -1202,13 +1190,15 @@ export interface LlmProvider {
   label: string;
   /** Override the provider's default base URL (e.g. proxy or local endpoint). */
   baseUrl?: string;
+  /** Explicit model name for a local/OpenAI-compatible endpoint. */
+  modelName?: string;
   /** References an ApiKey.id — the raw secret never lives in provider state. */
   apiKeyId?: string;
   enabled: boolean;
   isDefault?: boolean;
 }
 
-export type ModelTask = "sourcing" | "outreach" | "classification" | "chat";
+export type ModelTask = "sourcing" | "outreach" | "classification" | "extraction" | "chat";
 
 export interface SavedModel {
   id: string;
@@ -1314,15 +1304,6 @@ export interface DustSettings {
   agents?: DustAgentSummary[];
 }
 
-export interface DatabricksSettings {
-  host: string;
-  warehouseId: string;
-  authMode: "pat" | "m2m";
-  clientId?: string;
-  apiKeyId: string;
-  needsQuery: string;
-}
-
 /** Stored metadata only — the secret value never lives in client state. */
 export interface ApiKey {
   id: string;
@@ -1409,7 +1390,7 @@ export interface CronJob {
 
 /* ---- Root persisted state ------------------------------------------------ */
 
-export interface HermesState {
+export interface WorkspaceState {
   version: number;
   campaigns: Campaign[];
   candidates: Candidate[];

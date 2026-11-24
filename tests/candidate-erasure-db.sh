@@ -53,9 +53,6 @@ done
 
 psql_stdin -q < tests/db/candidate-erasure-authority.sql
 
-# Ledger retries must not duplicate guards, receipts, or public routines.
-psql_stdin -q < supabase/migrations/0033_candidate_erasure_authority.sql
-
 # Two real PostgreSQL sessions reproduce the stale-writer race without sleeps:
 # session 1 passes the reimport trigger and stays idle in its transaction;
 # session 2 requests erasure and must wait for session 1's identity lock. Once

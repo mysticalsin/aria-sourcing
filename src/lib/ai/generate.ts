@@ -1,0 +1,142 @@
+import type { OutreachChannel } from "@/lib/types";
+import { hasTemplatePlaceholder } from "@/lib/agent-disclosure-policy";
+import type { AiActivity } from "@/lib/ai/activities";
+
+/* ============================================================================
+   AI text generation — client helper.
+
+   Thin wrapper around the server route at /api/ai/chat, which resolves the
+   provider key server-side (the secret never reaches the browser) and calls
+   Claude (or another configured provider). This is TEXT GENERATION ONLY — it
+   never triggers any send. Callers fall back to the deterministic mock when
+   this returns { ok: false }.
+   ========================================================================== */
+
+export type AiTask = "outreach" | "classify" | "extract" | "sourcing" | "chat";
+
+export interface AiGenerateInput {
+  task: AiTask;
+  /** What the call is for, so its cost lands on the right line of the AI costs page. */
+  activity?: AiActivity;
+  system?: string;
+  prompt: string;
+  /** Cloud provider slug (e.g. "anthropic"). Absent → no provider, the caller keeps its mock. */
+  provider?: string;
+  /** ApiKey.id for the cloud provider. Raw secret resolved server-side only. */
+  apiKeyId?: string;
+  /** Model name/slug to request. Absent → route uses its own default. */
+  model?: string;
+  baseUrl?: string;
+}
+
+export interface AiGenerateResult {
+  ok: boolean;
+  text?: string;
+  reason?: string;
+}
+
+/**
+ * POST to the server route. The input carries the provider and vault key id so
+ * the server can resolve the secret without the client ever holding it. Always
+ * resolves to a AiGenerateResult — network errors become { ok: false, reason }.
+ */
+export async function aiGenerate(input: AiGenerateInput): Promise<AiGenerateResult> {
+  try {
+    const res = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, stream: false }),
+    });
+    const json = (await res.json().catch(() => ({ ok: false, reason: "Bad JSON from the AI route." }))) as AiGenerateResult;
+    return json;
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
+  }
+}
+
+/**
+ * Build a self-contained outreach prompt from the same inputs the mock uses, so
+ * the live model produces a comparable, on-brand draft. The system prompt is
+ * injected server-side; this is the user message.
+ */
+export function buildOutreachPrompt(opts: {
+  candidateName: string;
+  candidateTitle: string;
+  candidateCompany: string;
+  techStack: string[];
+  recentActivity: string;
+  yearsExperience: number | null;
+  roleTitle: string;
+  locationType: string;
+  regions: string[];
+  requiredSkills: string[];
+  roleContext?: string;
+  tone: string;
+  channel: string;
+  language: string;
+  persona?: string;
+  signature?: string;
+}): string {
+  const lines = [
+    `Draft a first-touch ${opts.channel} recruiting message in this language (ISO code): ${opts.language}.`,
+    `Tone: ${opts.tone}.`,
+    opts.persona ? `Voice / persona: ${opts.persona}` : "",
+    "",
+    "Candidate:",
+    `- Name: ${opts.candidateName}`,
+    opts.candidateTitle || opts.candidateCompany
+      ? `- Current: ${[opts.candidateTitle, opts.candidateCompany].filter(Boolean).join(" at ")}`
+      : "- Current role: not provided",
+    opts.yearsExperience == null
+      ? "- Experience: not provided"
+      : `- Experience: ${opts.yearsExperience} years`,
+    `- Tech stack: ${opts.techStack.join(", ") || "n/a"}`,
+    `- Recent activity: ${
+      opts.recentActivity && !/no activity signal/i.test(opts.recentActivity)
+        ? opts.recentActivity
+        : "n/a"
+    }`,
+    "",
+    "Role:",
+    opts.roleContext ??
+      [
+        `- Title: ${opts.roleTitle}`,
+        `- Setup: ${opts.locationType}${opts.regions.length ? ` (${opts.regions.join("/")})` : ""}`,
+        `- Core skills: ${opts.requiredSkills.join(", ") || "n/a"}`,
+      ].join("\n"),
+    "",
+    "Rules: lead with the candidate's specific recent work; one genuine reason you're reaching out; a soft, low-pressure ask. Under 120 words. No AI slop, no corporate filler.",
+    opts.signature ? `Sign off with: ${opts.signature}` : "",
+    "",
+    "Reply with exactly: a line 'Subject: <subject>' then a blank line then the message body. No preamble, no commentary.",
+  ];
+  return lines.filter((l) => l !== "").join("\n");
+}
+
+/**
+ * Parse a Aria text reply into the GeneratedOutreach shape. Tolerant: extracts
+ * the `Subject:` line if present, otherwise synthesizes a subject from the first
+ * body line. Returns null when there is no usable body, or when the text still
+ * has an unfilled slot like "[Name]" (not sendable); the caller then falls back
+ * to the mock.
+ */
+export function parseOutreachDraft(
+  text: string,
+  channel: OutreachChannel,
+  fallbackSubject: string,
+): { subject: string; body: string } | null {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return null;
+
+  const subjectMatch = trimmed.match(/^\s*subject\s*:\s*(.+)$/im);
+  let subject = subjectMatch ? subjectMatch[1].trim() : "";
+  let body = subjectMatch ? trimmed.replace(subjectMatch[0], "").trim() : trimmed;
+
+  if (!subject) {
+    const firstLine = body.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
+    subject = firstLine.slice(0, 80) || fallbackSubject;
+  }
+  if (!body) return null;
+  if (hasTemplatePlaceholder(`${subject}\n${body}`)) return null;
+  return { subject, body };
+}

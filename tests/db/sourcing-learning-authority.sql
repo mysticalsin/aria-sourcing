@@ -176,103 +176,15 @@ begin
     raise exception 'Graphify image authority was not pinned: %', config_result;
   end if;
 
-  export_result := public.export_graphify_sourcing_lessons(
-    '11111111-1111-4111-8111-111111111111',
-    'a3000000-0000-4000-8000-000000000003', 10
-  );
-  if export_result ->> 'status' <> 'exported'
-     or export_result #>> '{payload,schemaVersion}' <> '1'
-     or export_result #>> '{payload,workspaceFingerprint}' !~ '^[0-9a-f]{64}$'
-     or export_result ->> 'exportId' !~ '^[0-9a-f-]{36}$'
-     or jsonb_array_length(export_result #> '{payload,lessons}') <> 1
-     or export_result #> '{payload,lessons,0}' ? 'query'
-     or export_result #>> '{payload,lessons,0,queryFingerprint}' !~ '^[0-9a-f]{64}$'
-     or export_result #>> '{payload,lessons,0,sourcePlatform}' <> 'github'
-     or export_result #>> '{payload,lessons,0,promotionStatus}' <> 'draft'
-     or (export_result #>> '{payload,lessons,0,authorityVersion}')::bigint <> lesson_version
-     or export_result #>> '{payload,lessons,0,evidence,independentRuns}' <> '2'
-     or export_result #>> '{payload,lessons,0,evidence,independentReviewerCount}' <> '2' then
-    raise exception 'Graphify export did not match the redacted worker contract: %', export_result;
-  end if;
-  export_id := (export_result ->> 'exportId')::uuid;
-  graph_result := public.attach_graphify_sourcing_lesson(
-    '11111111-1111-4111-8111-111111111111',
-    'a3000000-0000-4000-8000-000000000003', lesson_id, lesson_version, export_id
-  );
-  if graph_result ->> 'status' <> 'artifact_not_found' then
-    raise exception 'uncompleted Graphify export was attachable: %', graph_result;
-  end if;
-  artifact_input := (export_result -> 'payload')::text;
-  artifact_graph := jsonb_build_object(
-    'built_at_commit', '94d3099540550d58dd121ec3e67cf93e80364079',
-    'directed', true,
-    'nodes', jsonb_build_array(jsonb_build_object('id', 'lesson_' || replace(lesson_id::text, '-', ''))),
-    'links', '[]'::jsonb
-  )::text;
-  artifact_manifest := jsonb_build_object(
-    'status', 'ok',
-    'schemaVersion', 1,
-    'inputSchemaVersion', 1,
-    'workspaceFingerprint', export_result #>> '{payload,workspaceFingerprint}',
-    'inputSha256', encode(digest(convert_to(artifact_input, 'UTF8'), 'sha256'), 'hex'),
-    'graphSha256', encode(digest(convert_to(artifact_graph, 'UTF8'), 'sha256'), 'hex'),
-    'lessonCount', 1,
-    'attachments', jsonb_build_array(jsonb_build_object(
-      'lessonId', lesson_id,
-      'expectedVersion', lesson_version,
-      'clusterRef', 'community:0'
-    )),
-    'graphify', jsonb_build_object(
-      'commit', '94d3099540550d58dd121ec3e67cf93e80364079',
-      'semanticLlmUsed', false,
-      'queryLoggingDisabled', true
-    )
-  );
-  artifact_result := public.complete_graphify_sourcing_export(
-    '11111111-1111-4111-8111-111111111111',
-    'a3000000-0000-4000-8000-000000000003', export_id,
-    artifact_input, artifact_graph, artifact_manifest, graphify_image
-  );
-  if artifact_result ->> 'status' <> 'completed'
-     or not exists (
-       select 1 from public.sourcing_graphify_exports
-       where id = export_id and graph_text = artifact_graph and manifest = artifact_manifest
-     ) then
-    raise exception 'Graphify artifact was not durably completed: %', artifact_result;
-  end if;
-
-  graph_result := public.attach_graphify_sourcing_lesson(
-    '11111111-1111-4111-8111-111111111111',
-    'a3000000-0000-4000-8000-000000000003', lesson_id, lesson_version, export_id
-  );
-  if graph_result ->> 'status' <> 'attached' then raise exception 'Graphify attach failed: %', graph_result; end if;
-  lesson_version := (graph_result ->> 'version')::bigint;
-
-  review_result := public.review_sourcing_lesson(
-    '11111111-1111-4111-8111-111111111111',
-    'a1000000-0000-4000-8000-000000000001', lesson_id, lesson_version,
-    'promoted', 'reviewed_useful', 'review-conflicted-author'
-  );
-  if review_result ->> 'status' <> 'reviewer_conflict' then
-    raise exception 'run author promoted their own lesson: %', review_result;
-  end if;
-  review_result := public.review_sourcing_lesson(
-    '11111111-1111-4111-8111-111111111111',
-    'a3000000-0000-4000-8000-000000000003', lesson_id, lesson_version,
-    'promoted', 'reviewed_useful', 'review-independent'
-  );
-  if review_result ->> 'status' <> 'reviewed' then raise exception 'independent promotion failed: %', review_result; end if;
-
+  -- Lesson promotion needs a Graphify artifact produced by the retired worker,
+  -- so no lesson is promotable and retrieval stays empty.
   list_result := public.list_promoted_sourcing_lessons(
     '11111111-1111-4111-8111-111111111111',
     'a2000000-0000-4000-8000-000000000002', role_basis, 5
   );
   if list_result ->> 'status' <> 'ready'
-     or jsonb_array_length(list_result -> 'lessons') <> 1
-     or list_result #>> '{lessons,0,graphifyClusterRef}' <> 'community:0'
-     or list_result #>> '{lessons,0,graphifyClusterRank}' <> '1'
-     or list_result::text ~* '(email|linkedin\.com/in/|candidate_id|profile_url)' then
-    raise exception 'promoted lesson retrieval is unsafe or empty: %', list_result;
+     or jsonb_array_length(list_result -> 'lessons') <> 0 then
+    raise exception 'unpromoted lessons were returned: %', list_result;
   end if;
 
   invalid_run := (public.begin_sourcing_run(
@@ -306,8 +218,7 @@ begin
     'a3000000-0000-4000-8000-000000000003', false, 100, 25, 2, 90,
     graphify_image, 2, 'disable-learning'
   );
-  if config_result ->> 'status' <> 'configured'
-     or (select status from public.sourcing_lessons where id=lesson_id) <> 'suspended' then
+  if config_result ->> 'status' <> 'configured' then
     raise exception 'kill switch did not suspend learning: %', config_result;
   end if;
   list_result := public.list_promoted_sourcing_lessons(
@@ -354,9 +265,6 @@ begin
       ('public.fail_sourcing_run(uuid,uuid,uuid,text)', true),
       ('public.record_sourcing_query_feedback(uuid,uuid,uuid,text,text)', true),
       ('public.list_pending_sourcing_feedback(uuid,uuid,text,integer)', true),
-      ('public.export_graphify_sourcing_lessons(uuid,uuid,integer)', true),
-      ('public.complete_graphify_sourcing_export(uuid,uuid,uuid,text,text,jsonb,text)', true),
-      ('public.attach_graphify_sourcing_lesson(uuid,uuid,uuid,bigint,uuid)', true),
       ('public.review_sourcing_lesson(uuid,uuid,uuid,bigint,text,text,text)', true),
       ('public.list_promoted_sourcing_lessons(uuid,uuid,jsonb,integer)', true),
       ('public.configure_sourcing_learning(uuid,uuid,boolean,integer,integer,integer,integer,text,bigint,text)', true),

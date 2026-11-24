@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { requestReviewedSourcing } from "../src/lib/sourcing/sourcing-agent-client";
 
 import { buildSeedState } from "../src/lib/seed";
 import {
@@ -12,6 +13,18 @@ import {
 
 const campaignId = "campaign-1";
 const seed = buildSeedState();
+
+test("invalid model drafts surface recovery guidance without trusting provider error text", async () => {
+  const result = await requestReviewedSourcing(async () => new Response(JSON.stringify({
+    code: "SOURCING_AGENT_RESPONSE_INVALID", message: "untrusted-provider-detail",
+  }), { status: 502, headers: { "content-type": "application/json" } }), "campaign-1", 1);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.error, /tool-capable model/);
+    assert.match(result.error, /deterministic sourcing/);
+    assert.doesNotMatch(result.error, /untrusted-provider-detail/);
+  }
+});
 const campaign = { ...seed.campaigns[0], id: campaignId, status: "Sourcing" as const };
 
 function dto(overrides: Record<string, unknown> = {}) {
@@ -91,6 +104,19 @@ test("campaign fingerprint changes when the persisted need or search strategy ch
   });
   assert.notEqual(initial, changedRole);
   assert.notEqual(initial, changedQuery);
+});
+
+test("browser and server fingerprints agree when a brief edit appended an optional field", () => {
+  // `{ ...jobAnalysis, ...patch }` appends a newly filled optional field after
+  // validationWarnings; the server re-parses keys in schema order.
+  const { location: _location, ...withoutLocation } = campaign.jobAnalysis;
+  const edited = { ...campaign, jobAnalysis: { ...withoutLocation, location: "Paris" } };
+  const state = JSON.parse(JSON.stringify({ ...seed, campaigns: [edited] }));
+  const projected = projectSourcingAgentWorkspace(state, campaign.id);
+  assert.equal(projected.status, "ok");
+  if (projected.status === "ok") {
+    assert.equal(projected.value.fingerprint, sourcingAgentCampaignFingerprint(edited));
+  }
 });
 
 test("strict candidate DTO rejects foreign, duplicate, unsafe, or authority-bearing payloads", () => {

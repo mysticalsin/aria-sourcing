@@ -1,13 +1,13 @@
 # =============================================================================
-# Aria Sourcing — fully self-contained stack: the app + Supabase (db, auth, rest,
-# kong) all in Docker. No host `supabase start`, no external identity provider.
+# Aria Sourcing — fully self-contained stack: the app + Supabase (db, auth, rest)
+# behind a Caddy gateway, all in Docker. No host `supabase start`, no external identity provider.
 #
 #   Start:  docker compose up --build        (first run builds images + migrates/seeds)
 #   Stop:   docker compose down              (keeps the database in the db_data volume)
 #   Reset:  docker compose down -v           (wipes the database; next up re-seeds)
 #
 # Log in at http://localhost:3000 with the one-click "admin / admin" shortcut, or the
-# email form: admin@hermes.local / admindemo123.
+# email form: admin@aria.local / admindemo123.
 #
 # The keys below are the PUBLIC supabase sample keys — fine for a local stack only.
 # For any non-local use, regenerate JWT_SECRET + the anon/service JWTs and override them.
@@ -25,8 +25,17 @@ x-keys:
   auth_db_url: &auth_db_url "postgres://supabase_auth_admin:local_auth_database_password_0000000000000000000@db:5432/postgres"
   rest_db_url: &rest_db_url "postgres://authenticator:local_rest_database_password_0000000000000000000@db:5432/postgres"
   demo_admin_pw: &demo_admin_pw "admindemo123"
+  # Shared by app and agents only (ADR 0002). Local sample; override for any non-local use.
+  agent_runner_secret: &agent_runner_secret "local_agent_runner_secret_00000000000000000000"
   anon_key: &anon_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE" # gitleaks:allow -- public Supabase local-demo JWT
   service_key: &service_key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q" # gitleaks:allow -- public Supabase local-demo JWT
+
+# Bounded logs for the long-running services (json-file grows forever otherwise).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # ---- Postgres (Supabase image: roles, auth schema, auth.uid(), extensions) --------
@@ -46,12 +55,17 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
-      - "${DB_HOST_PORT:-54322}:5432"   # host access for psql / Studio parity
+      - "127.0.0.1:${DB_HOST_PORT:-54322}:5432"
+    logging: *logging
+    # Probe every 2 s while starting (first boot runs the image's own init),
+    # then every 30 s instead of every 5 s for the life of the stack.
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 12
+      retries: 3
+      start_period: 120s
+      start_interval: 2s
 
   # ---- One-shot owner reconciliation BEFORE GoTrue and PostgREST start --------------
   db-init:
@@ -72,10 +86,13 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - 'owner_password="";
+         attempt=0;
          until [ -n "$$owner_password" ]; do
            if PGPASSWORD="$$SUPABASE_ADMIN_CURRENT_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_CURRENT_PASSWORD";
            elif PGPASSWORD="$$SUPABASE_ADMIN_TARGET_PASSWORD" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qc "select 1" >/dev/null 2>&1; then owner_password="$$SUPABASE_ADMIN_TARGET_PASSWORD";
-           else sleep 2; fi;
+           else attempt=$$((attempt + 1));
+             if [ "$$attempt" -ge 60 ]; then echo "[db-init] No configured owner credential works; preserve the database volume and check its credentials." >&2; exit 1; fi;
+             sleep 2; fi;
          done;
          PGPASSWORD="$$owner_password" psql -X -w -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q -f /opt/aria/supabase-admin-reconciliation.sql'
     restart: "no"
@@ -92,11 +109,11 @@ services:
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
-      API_EXTERNAL_URL: http://localhost:54321
+      API_EXTERNAL_URL: "http://localhost:${API_PORT:-54321}"
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: *auth_db_url
-      GOTRUE_SITE_URL: http://localhost:3000
-      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_SITE_URL: "http://localhost:${APP_PORT:-3000}"
+      GOTRUE_URI_ALLOW_LIST: "http://localhost:${APP_PORT:-3000}/**,http://127.0.0.1:${APP_PORT:-3000}/**"
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
@@ -105,11 +122,14 @@ services:
       GOTRUE_JWT_SECRET: *jwt_secret
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_MAILER_AUTOCONFIRM: "true"
+    logging: *logging
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   # ---- PostgREST (RLS-enforced CRUD + RPC over /rest/v1) ----------------------------
   rest:
@@ -131,45 +151,41 @@ services:
       # Health endpoints (/ready, /live) live on the admin server; without this
       # port the healthcheck errors forever while the API itself serves fine.
       PGRST_ADMIN_SERVER_PORT: "3001"
-    # `postgrest --ready` refuses the default server-host (!4), and the image
-    # ships no curl/wget — probe /ready with bash's /dev/tcp instead.
+      PGRST_SERVER_HOST: "0.0.0.0"
+    logging: *logging
+    # The amd64 image has no shell. A concrete host enables its native probe.
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/3001 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q 200"]
-      interval: 5s
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 30s
       timeout: 5s
-      retries: 10
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
-  # ---- Kong (single API gateway; routes /auth/v1 + /rest/v1 like supabase-js wants) --
-  kong:
-    image: kong/kong:3.9.1
+  # ---- API gateway (Caddy): the one origin supabase-js wants for /auth/v1 + /rest/v1 --
+  gateway:
+    image: caddy:2.11.7-alpine
     restart: unless-stopped
     depends_on:
       auth:
-        condition: service_started
+        condition: service_healthy
       rest:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "${KONG_PORT:-54321}:8000"
+      - "127.0.0.1:${API_PORT:-54321}:8000"
     environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: *anon_key
       SUPABASE_SERVICE_KEY: *service_key
-      DASHBOARD_USERNAME: supabase
-      DASHBOARD_PASSWORD: supabase
     volumes:
-      - ./docker/kong.yml:/home/kong/temp.yml:ro,z
-      - ./docker/kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z
-    entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+    logging: *logging
     healthcheck:
-      test: ["CMD", "kong", "health"]
-      interval: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8000/gateway-health"]
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
 
   # ---- One-shot: apply every numbered app migration (after GoTrue) + seed/promote admin ------
   supabase-bootstrap:
@@ -179,80 +195,103 @@ services:
       db:
         condition: service_healthy
       auth:
-        condition: service_started
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+      # The job ends by proving the gateway contract (docker/bootstrap/gateway-check.sh).
+      gateway:
+        condition: service_healthy
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       DB_NAME: postgres
-      SUPABASE_ADMIN_CURRENT_PASSWORD: *owner_current_password
-      SUPABASE_ADMIN_TARGET_PASSWORD: *owner_password
       POSTGRES_TARGET_PASSWORD: *postgres_password
-      SUPABASE_AUTH_ADMIN_TARGET_PASSWORD: *auth_password
-      AUTHENTICATOR_TARGET_PASSWORD: *rest_password
-      JWT_SECRET: *jwt_secret
-      JWT_EXP: *jwt_exp
       SERVICE_ROLE_KEY: *service_key
+      SUPABASE_ANON_KEY: *anon_key
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
     volumes:
       - ./supabase/migrations:/migrations:ro
     restart: "no"
 
-  # ---- Obscura sidecar: read-only multi-step browser tool for Aria (§11) ------------
-  # Built from source, pinned commit, default cargo features only -- see
-  # docker/obscura/Dockerfile for the full non-stealth rationale. No `ports:` entry:
-  # this is deliberately unreachable from the host, only from sibling containers on
-  # this compose network (obscura-adapter.js reaches it at http://obscura:9222).
-  obscura:
-    build:
-      context: ./docker/obscura
-      args:
-        # Non-secret owner-controlled Rusty V8 mirror for restricted builders.
-        # Leave blank to use the pinned upstream release and BuildKit cache.
-        RUSTY_V8_MIRROR: ${RUSTY_V8_MIRROR:-}
-    restart: unless-stopped
-
-  # ---- The Next.js app (dev server; .next on an anon volume to dodge OneDrive corruption) --
+  # ---- Built application: no dev compiler, source mount, or dependency volume --------
   app:
+    image: aria-sourcing-app:local
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: "http://localhost:${API_PORT:-54321}"
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon_key
+        NEXT_PUBLIC_APP_URL: "http://localhost:${APP_PORT:-3000}"
+        ARIA_RELEASE_SHA: "${ARIA_RELEASE_SHA:-}"
     depends_on:
       supabase-bootstrap:
         condition: service_completed_successfully
-      kong:
-        condition: service_started
-      obscura:
-        condition: service_started
+      gateway:
+        condition: service_healthy
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     env_file:
       - path: .env.local
         required: false
     environment:
-      NODE_ENV: development
-      # Server (in-container) reaches Supabase via Kong by service name; the browser
-      # uses the host-mapped localhost URL. config.ts prefers SUPABASE_URL on the server.
-      SUPABASE_URL: http://kong:8000
-      NEXT_PUBLIC_SUPABASE_URL: "http://localhost:${KONG_PORT:-54321}"
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      ARIA_LOCAL_DEMO: "true"
+      NEXT_PUBLIC_APP_URL: "http://localhost:${APP_PORT:-3000}"
+      # Server (in-container) reaches Supabase via the gateway by service name; the
+      # browser uses the host-mapped localhost URL. config.ts prefers SUPABASE_URL on the server.
+      SUPABASE_URL: http://gateway:8000
+      NEXT_PUBLIC_SUPABASE_URL: "http://localhost:${API_PORT:-54321}"
       NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon_key
       SUPABASE_SERVICE_ROLE_KEY: *service_key
       NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN: ""
       DEMO_ADMIN_PASSWORD: *demo_admin_pw
-      OBSCURA_URL: http://obscura:9222
-      WATCHPACK_POLLING: "true"
-      CHOKIDAR_USEPOLLING: "true"
+      # Public /careers board reads jobs published by the seeded workspace
+      # (fixed id set in docker/bootstrap/run.sh).
+      CAREERS_WORKSPACE_ID: "00000000-0000-4000-8000-000000000001"
+      # Agents runner (ADR 0002): off unless AGENTS_ENABLED=true (.env.local).
+      AGENT_RUNNER_SECRET: *agent_runner_secret
     volumes:
-      - .:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+      - app_config:/app/config
     restart: unless-stopped
+    logging: *logging
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+      start_interval: 5s
+
+  # ---- Agents runner (ADR 0002): a clock that calls the app's /api/agent/tick -------
+  # Same image as app, no database credential, no model key. Idle (one log line
+  # every 5 minutes) until the app runs with AGENTS_ENABLED=true.
+  agents:
+    image: aria-sourcing-app:local
+    pull_policy: never
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["node", "scripts/agents-runner.mjs"]
+    environment:
+      NODE_ENV: production
+      ARIA_APP_URL: http://app:3000
+      AGENT_RUNNER_SECRET: *agent_runner_secret
+      AGENT_TICK_SECONDS: "${AGENT_TICK_SECONDS:-60}"
+    # The image HEALTHCHECK probes the web server. This process is the
+    # agents runner, so compose up --wait checks that pid 1 is alive.
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    logging: *logging
 
 volumes:
   db_data:
+  app_config:

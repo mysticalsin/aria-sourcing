@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -61,7 +62,7 @@ function ChecklistRow({
       // this checklist streams in one row at a time.
       initial={reducedMotion ? false : { opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={reducedMotion ? { duration: 0 } : { delay: index * 0.02, duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+      transition={reducedMotion ? { duration: 0 } : { delay: index * 0.09, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         "flex items-start gap-2.5 rounded-xl border px-3 py-2 text-sm",
         STATUS_ROW_CLASS[check.status],
@@ -212,6 +213,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [approving, setApproving] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
 
   if (!candidate || !campaign) {
     return (
@@ -249,6 +251,11 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
     }
     if (res.dryRun) {
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
+    if (message.channel === "LinkedIn") {
+      // Approving the exact LinkedIn message is the decision to send it.
+      await deliverOnLinkedIn(message);
       return;
     }
     toast({
@@ -290,7 +297,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
           ))}
         </ul>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col items-center rounded-2xl border border-line bg-surface p-4">
             <Eyebrow className="flex w-full items-center gap-1.5">
               <RadarIcon className="h-3 w-3" aria-hidden /> Fit radar
@@ -315,7 +322,7 @@ export function GlassBoxPanel({ message }: GlassBoxPanelProps) {
               disabled={hasBlock || approving || rejecting}
               title={hasBlock ? "Blocked by a failing guardrail check above" : undefined}
             >
-              {approving ? "Recording approval…" : "Approve"}
+              {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
             </Button>
             <Button size="sm" variant="ghost" leftIcon={<X className="h-4 w-4" />} onClick={handleReject} disabled={approving || rejecting}>
               {rejecting ? "Revoking…" : "Reject"}

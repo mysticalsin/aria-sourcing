@@ -28,6 +28,7 @@
             blocking the slot).
    ========================================================================== */
 
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
 import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
@@ -56,43 +57,44 @@ for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", 
 
 try {
   /* =========================================================================
-     1. Migration 0034 source pins.
+     1. Baseline schema pins.
      ======================================================================= */
-  const migration = readFileSync(new URL("../supabase/migrations/0034_calendar_booking_authority.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/0001_baseline.sql", import.meta.url), "utf8");
+  const schema = loadBaselineSchema();
 
   ok(
     "migration defines the calendar booking ledger table",
-    migration.includes("create table if not exists public.calendar_booking_ledger ("),
+    schema.table("calendar_booking_ledger").startsWith("CREATE TABLE public.calendar_booking_ledger ("),
   );
   ok(
     "status is constrained to the exact four-value enum",
-    migration.includes("check (status in ('claimed', 'confirmed', 'failed', 'released'))"),
+    migration.includes(
+      "CONSTRAINT calendar_booking_ledger_status_check CHECK ((status = ANY (ARRAY['claimed'::text, 'confirmed'::text, 'failed'::text, 'released'::text])))",
+    ),
   );
   ok(
     "retry idempotency on (workspace_id, request_id) is a real unique constraint",
-    migration.includes("constraint calendar_booking_ledger_workspace_request_uniq unique (workspace_id, request_id)"),
+    migration.includes("ADD CONSTRAINT calendar_booking_ledger_workspace_request_uniq UNIQUE (workspace_id, request_id);"),
   );
   ok(
     "the double-book guard is a partial unique index over the two active statuses",
     migration.includes(
-      "create unique index if not exists calendar_booking_ledger_active_slot_uniq\n  on public.calendar_booking_ledger (workspace_id, candidate_id, start_time)\n  where status in ('claimed', 'confirmed');",
+      "CREATE UNIQUE INDEX calendar_booking_ledger_active_slot_uniq ON public.calendar_booking_ledger USING btree (workspace_id, candidate_id, start_time) WHERE (status = ANY (ARRAY['claimed'::text, 'confirmed'::text]));",
     ),
   );
   ok(
     "table RLS is enabled and forced",
-    migration.includes("alter table public.calendar_booking_ledger enable row level security;") &&
-      migration.includes("alter table public.calendar_booking_ledger force row level security;"),
+    schema.rls("calendar_booking_ledger").enabled && schema.rls("calendar_booking_ledger").forced,
   );
   ok(
     "every role — including service_role — loses direct table grants; only the RPCs mediate access",
-    migration.includes(
-      "revoke all on public.calendar_booking_ledger\n  from public, anon, authenticated, service_role, authenticator;",
-    ),
+    Object.keys(schema.tableGrants("calendar_booking_ledger")).length === 0,
   );
   ok(
-    "claim_calendar_booking is SECURITY DEFINER with the 0021-style saved search_path",
-    migration.includes("create or replace function public.claim_calendar_booking(") &&
-      migration.includes("language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$"),
+    "claim_calendar_booking is SECURITY DEFINER with a saved search_path",
+    /^CREATE FUNCTION public\.claim_calendar_booking\([^\n]*\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'pg_catalog', 'public', 'pg_temp'\n/.test(
+      schema.fn("claim_calendar_booking"),
+    ),
   );
   ok(
     "claim locks and returns an existing request_id row BEFORE ever attempting an insert (idempotent retry, no pre-check TOCTOU)",
@@ -107,16 +109,14 @@ try {
   );
   ok(
     "a request_id reused for a different candidate/start_time/provider is an idempotency_conflict, never silently treated as a replay",
-    (migration.match(/return jsonb_build_object\('status', 'idempotency_conflict'\);/g) ?? []).length === 2 &&
-      migration.includes(
+    (schema.fn("claim_calendar_booking").match(/return jsonb_build_object\('status', 'idempotency_conflict'\);/g) ?? []).length === 2 &&
+      schema.fn("claim_calendar_booking").includes(
         "if existing_row.candidate_id <> p_candidate_id\n       or existing_row.start_time <> p_start_time\n       or existing_row.provider <> p_provider then\n      return jsonb_build_object('status', 'idempotency_conflict');",
       ),
   );
   ok(
-    "claim_calendar_booking ACL is service-role only (0021 pattern)",
-    migration.includes(
-      "revoke all on function public.claim_calendar_booking(uuid, text, timestamptz, text, text)\n  from public, anon, authenticated, service_role, authenticator;\ngrant execute on function public.claim_calendar_booking(uuid, text, timestamptz, text, text)\n  to service_role;",
-    ),
+    "claim_calendar_booking ACL is service-role only",
+    JSON.stringify(schema.functionGrantees("claim_calendar_booking")) === JSON.stringify(["service_role"]),
   );
   ok(
     "reconcile_calendar_booking only transitions a row that is still 'claimed' (one-shot terminal reconciliation)",
@@ -124,9 +124,7 @@ try {
   );
   ok(
     "reconcile_calendar_booking ACL is service-role only",
-    migration.includes(
-      "revoke all on function public.reconcile_calendar_booking(uuid, uuid, text, text, text)\n  from public, anon, authenticated, service_role, authenticator;\ngrant execute on function public.reconcile_calendar_booking(uuid, uuid, text, text, text)\n  to service_role;",
-    ),
+    JSON.stringify(schema.functionGrantees("reconcile_calendar_booking")) === JSON.stringify(["service_role"]),
   );
   ok(
     "no standalone transaction statements (bootstrap owns the transaction)",

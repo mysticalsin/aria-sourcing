@@ -7,8 +7,7 @@ worktree. Read this file before touching anything.
 
 - **Claude Code = builder + integrator.** Implements features, runs the full
   test gate (`npm run typecheck` + `npm run typecheck:tests` + `npm test`), commits in small reviewable
-  chunks, pushes, verifies deploys, keeps the goal state
-  (`_agent_state/mantu-goal/*.json`) and this project's baton honest.
+  chunks, pushes, verifies deploys, keeps this project's baton honest.
 - **Codex = adversarial auditor.** Reviews the code Claude (or Codex itself)
   writes for correctness bugs, security gaps, spec-compliance mismatches, and
   missing edge cases. Write findings to `_relay/codex-findings.md` (create it
@@ -60,6 +59,20 @@ npm run typecheck && npm run typecheck:tests && npm test
 The command list is owned by `package.json`; do not copy a suite count into
 this contract. If either tool's change breaks the gate, fix it before
 committing. Never commit red.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/` (committed, shared across tools). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

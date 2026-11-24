@@ -180,7 +180,7 @@ export function FlowMatrix() {
   return (
     <Card className="animate-fade-in">
       <CardHeader>
-        <Eyebrow>TAnIA §7 · Stage × Source</Eyebrow>
+        <Eyebrow>Stage × source</Eyebrow>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <CardTitle>Flow matrix</CardTitle>
           <Badge tone="tangerine" size="sm">
@@ -195,7 +195,7 @@ export function FlowMatrix() {
       </CardHeader>
       <CardBody className="pt-0">
         <Table
-          caption="TAnIA stage-by-source flow matrix with the human decision gate at every step"
+          caption="Stage-by-source flow with the human decision at every step"
           className="min-w-[64rem]"
         >
           <THead>

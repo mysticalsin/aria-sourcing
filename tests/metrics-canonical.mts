@@ -14,7 +14,7 @@ import type {
   Booking,
   Campaign,
   Candidate,
-  HermesState,
+  WorkspaceState,
   OutreachLedgerEntry,
   OutreachMessage,
 } from "../src/lib/types";
@@ -193,7 +193,7 @@ const state = {
       handled: false,
       receivedAt: sentAt,
     },
-  ] as HermesState["replies"],
+  ] as WorkspaceState["replies"],
   bookings: [
     booking("booking-real", "real-completed"),
     booking("booking-demo", "demo-dryrun"),
@@ -205,9 +205,9 @@ const state = {
     ledger("led-approved", "approved-unsent", "claimed"),
     ledger("led-synthetic", "synthetic-real", "sent"),
   ],
-  settings: { dryRunMode: false } as HermesState["settings"],
+  settings: { dryRunMode: false } as WorkspaceState["settings"],
 } satisfies Pick<
-  HermesState,
+  WorkspaceState,
   "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "ledger" | "settings"
 >;
 
@@ -235,6 +235,11 @@ ok("live canonical bookings are tied to real contacted candidates", facts.booked
 ok("globalKpis contacted agrees with canonical facts", kpis.contacted === facts.contacted);
 ok("globalKpis replyRate agrees with canonical facts", kpis.replyRate === facts.replyRate);
 ok("globalKpis interviewsBooked agrees with canonical facts", kpis.interviewsBooked === facts.booked);
+// Demo labels say "0 real, N simulated": the simulated count never leaks into the real one.
+const withSimulatedFacts = realFunnelFacts(state, { live: true, includeSimulatedSends: true });
+ok("globalKpis counts simulated contacts apart from real ones", kpis.simulatedContacted === withSimulatedFacts.contacted - facts.contacted && kpis.simulatedContacted >= 0);
+ok("globalKpis counts simulated bookings apart from real ones", kpis.simulatedBooked === withSimulatedFacts.booked - facts.booked);
+ok("simulated contacts never change the real contact count", kpis.contacted === facts.contacted);
 ok("computeCampaignMetrics contacted agrees with canonical facts", campaignMetrics.contacted === facts.contacted);
 ok("computeCampaignMetrics replyRate agrees with canonical facts", campaignMetrics.replyRate === facts.replyRate);
 ok("computeCampaignMetrics booked agrees with canonical facts", campaignMetrics.booked === facts.booked);

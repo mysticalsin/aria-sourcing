@@ -77,7 +77,7 @@ export default function SessionsPage() {
     <HydrationGate hydrated={hydrated} fallback={<div className="space-y-4"><SkeletonCard /><SkeletonCard /></div>}>
       <PageHeader
         eyebrow="System"
-        title="Sessions"
+        title="History"
         description="Browse and search every agent conversation and the full activity history across the workspace. Open any candidate's Decision Replay to see the full sourced-to-booked chain."
       />
 
@@ -96,7 +96,7 @@ export default function SessionsPage() {
           with a row in the activity log below (e.g. a freshly sourced
           candidate has no candidate-linked activity yet, but still has a
           coherent sourced+scored replay). */}
-      <Card className="mb-6">
+      <Card className="mb-6" data-tour="decision-replay">
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
             <Radar className="h-4 w-4 text-aqua" aria-hidden />

@@ -290,6 +290,25 @@ try {
   }
 
   {
+    // A truncated or declined final answer is a failure, never partial text.
+    const server: ResolvedMcpServer = {
+      url: "builtin:test",
+      token: "",
+      tools: [{ name: "probe", description: "Fixture", inputSchema: { type: "object" } }],
+      run: async () => ({ ok: true, content: {} }),
+    };
+    for (const [stop, reason] of [
+      ["max_tokens", "Response truncated at the output limit."],
+      ["refusal", "The model declined this request."],
+    ] as const) {
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ stop_reason: stop, content: [{ type: "text", text: "half a dra" }] }), { status: 200 })) as typeof fetch;
+      const result = await runAnthropicWithTools({ model: "m", system: "s", prompt: "p", key: "k", servers: [server] });
+      ok(`Anthropic loop treats stop_reason ${stop} as a failure`, !result.ok && result.reason === reason && result.text === undefined);
+    }
+  }
+
+  {
     let executions = 0;
     const server: ResolvedMcpServer = {
       url: "builtin:test",
@@ -398,9 +417,9 @@ try {
     ok("the loop returns at its overall deadline", elapsed < 70);
   }
 
-  const routeSource = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
+  const routeSource = readFileSync("src/app/api/ai/chat/route.ts", "utf8");
   ok(
-    "Hermes only gathers remote MCP servers when the runtime policy allows execution",
+    "The AI route only gathers remote MCP servers when the runtime policy allows execution",
     /remoteMcpExecutionEnabled\(\)[\s\S]{0,300}mcpServers/.test(routeSource),
   );
 } finally {

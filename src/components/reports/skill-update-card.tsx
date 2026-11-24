@@ -69,7 +69,7 @@ export function SkillUpdateCard({
 
         <p className="text-sm leading-relaxed text-ink-soft">{skillUpdate.rationale}</p>
 
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
           <div className="rounded-2xl bg-ink/[0.04] px-3.5 py-3">
             <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted">
               Before

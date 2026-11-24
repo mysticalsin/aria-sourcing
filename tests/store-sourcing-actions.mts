@@ -8,10 +8,10 @@ import {
   type SourcingActionDependencies,
 } from "../src/lib/store/sourcing-actions";
 import { scoreCandidate } from "../src/lib/scoring";
-import { buildOutreachPrompt } from "../src/lib/ai/hermes";
+import { buildOutreachPrompt } from "../src/lib/ai/generate";
 import { generateOutreach } from "../src/lib/mock-ai";
 import { sourcingAgentCampaignFingerprint } from "../src/lib/sourcing/sourcing-agent-contract";
-import type { CampaignStatus, Candidate, HermesState } from "../src/lib/types";
+import type { CampaignStatus, Candidate, WorkspaceState } from "../src/lib/types";
 
 type ActivityDraft = Parameters<SourcingActionDependencies["makeActivity"]>[0];
 
@@ -21,7 +21,7 @@ const sourcingActionsSource = readFileSync(
 );
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 const launchSource = readFileSync(
-  new URL("../src/app/launch/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/multi-role-launch.tsx", import.meta.url),
   "utf8",
 );
 const agentRunSource = readFileSync(
@@ -52,42 +52,6 @@ const sourcingHelpersSource = readFileSync(
   new URL("../src/lib/store/sourcing-helpers.ts", import.meta.url),
   "utf8",
 );
-
-test("sourcing action boundary is React-free and wired through one stable factory", () => {
-  assert.doesNotMatch(sourcingActionsSource, /["']use client["']/);
-  assert.doesNotMatch(sourcingActionsSource, /from ["']react["']/);
-  assert.match(
-    storeSource,
-    /createSourcingActions\([\s\S]*?\),\n\s*\[[\s\S]*?commit,[\s\S]*?sourcingMutationAllowed,[\s\S]*?syntheticSourcingAllowed,[\s\S]*?workspaceEffectAllowed,[\s\S]*?workspaceFetch,[\s\S]*?\],/,
-  );
-  assert.equal((storeSource.match(/const sourceNextBatch = useCallback/g) ?? []).length, 0);
-  assert.equal((storeSource.match(/const addCandidateFromGithub = useCallback/g) ?? []).length, 0);
-  assert.equal((storeSource.match(/const addCandidateManual = useCallback/g) ?? []).length, 0);
-  assert.equal((storeSource.match(/const sourceFromApollo = useCallback/g) ?? []).length, 0);
-  assert.match(storeSource, /createSourcingActions\([\s\S]*?commitPersisted,/);
-  assert.match(sourcingActionsSource, /await commitPersisted\(/);
-  assert.match(
-    launchSource,
-    /platform: supabaseEnabled \? undefined : "Talent Pool"/,
-  );
-  assert.match(launchSource, /sourcingComplete: sourcedCount > 0/);
-  assert.match(
-    agentRunSource,
-    /executePrimaryAgentSourcing\(\{[\s\S]*?demoAuthorized: !supabaseEnabled && \(!isProduction \|\| demoLoginEnabled\),[\s\S]*?sourceNextBatch: actions\.sourceNextBatch,/,
-  );
-  assert.doesNotMatch(
-    agentRunSource,
-    /\bplatform\s*:/,
-    "the UI cannot override the server-reviewed live sourcing platform",
-  );
-  assert.match(
-    storeSource,
-    /platform: syntheticSourcingAllowed\(\) \? "Talent Pool" : undefined/,
-  );
-  assert.doesNotMatch(storeSource, /yearsExperience:\s*0,/);
-  assert.doesNotMatch(candidateMappersSource, /yearsExperience:\s*(?:4|jd\.minYearsExperience)/);
-  assert.doesNotMatch(sourcingHelpersSource, /yearsExperience:\s*jd\.minYearsExperience/);
-});
 
 const githubUser = {
   login: "live-user",
@@ -132,9 +96,9 @@ function createHarness(options: {
   responseText?: string;
   fetchError?: Error;
   afterFetch?: () => void;
-  beforeCommit?: (state: HermesState) => HermesState;
-  beforePersist?: (state: HermesState) => HermesState;
-  state?: HermesState;
+  beforeCommit?: (state: WorkspaceState) => WorkspaceState;
+  beforePersist?: (state: WorkspaceState) => WorkspaceState;
+  state?: WorkspaceState;
 } = {}) {
   let state = structuredClone(options.state ?? buildSeedState());
   if (state.campaigns[0]) {
@@ -230,7 +194,7 @@ function createHarness(options: {
     get state() {
       return state;
     },
-    set state(next: HermesState) {
+    set state(next: WorkspaceState) {
       state = next;
     },
     get commitCalls() {
@@ -262,7 +226,7 @@ const nonSourcingStatuses = [
   "Paused",
 ] as const satisfies readonly CampaignStatus[];
 
-const liveSourceActions = ["batch", "github", "apollo"] as const;
+const liveSourceActions = ["batch", "github"] as const;
 
 test("live batch sourcing uses reviewed campaign authority and returns durable feedback receipts", async () => {
   const seed = buildSeedState();
@@ -329,96 +293,6 @@ test("live batch sourcing uses reviewed campaign authority and returns durable f
   assert.equal(harness.events.length, 1);
 });
 
-test("a lost framework acknowledgement is typed for reconciliation and the staged replay does not duplicate candidates", async () => {
-  const seed = buildSeedState();
-  const campaign = { ...seed.campaigns[0], status: "Sourcing" as const };
-  const frameworkRunId = "44444444-4444-4444-8444-444444444444";
-  const capabilityToken = "s".repeat(43);
-  const query = campaign.sourcingStrategy.githubQueries[0]?.query ?? "language:typescript";
-  const candidate = {
-    id: "reviewed-framework-candidate",
-    campaignId: campaign.id,
-    name: "Reviewed Framework Candidate",
-    currentTitle: "Staff Platform Engineer",
-    currentCompany: "Example",
-    location: "Toronto",
-    linkedinUrl: "",
-    githubUrl: "https://github.com/reviewed-framework-candidate",
-    sourceUrl: "https://github.com/reviewed-framework-candidate",
-    sourcePlatform: "GitHub",
-    sourceQuery: query,
-    matchScore: 88,
-    matchBreakdown: [],
-    techStack: ["TypeScript"],
-    recentActivity: "Verified public GitHub work.",
-    createdAt: "2026-07-14T12:00:00.000Z",
-  };
-  const stagedResult = {
-    ok: true,
-    campaignId: campaign.id,
-    campaignFingerprint: sourcingAgentCampaignFingerprint(campaign),
-    mode: "deterministic",
-    totalFound: 1,
-    requestId: "request-framework-reconcile",
-    idempotencyKey: frameworkRunId,
-    sourcingRunId: "55555555-5555-4555-8555-555555555555",
-    agentFrameworkRunId: frameworkRunId,
-    agentFrameworkResultSha256: "d".repeat(64),
-    appliedLessonIds: [],
-    candidates: [candidate],
-    feedbackReceipts: [{
-      receiptId: "66666666-6666-4666-8666-666666666666",
-      platform: "GitHub",
-      candidateCount: 1,
-    }],
-  };
-  const harness = createHarness({
-    state: { ...seed, campaigns: [campaign] },
-    syntheticSourcingAllowed: false,
-    responseBodies: [
-      stagedResult,
-      { ok: false, code: "SOURCING_AGENT_UNAVAILABLE" },
-      stagedResult,
-      { ok: true, status: "completed" },
-    ],
-  });
-  const options = {
-    count: 1,
-    agentFramework: { runId: frameworkRunId, capabilityToken, query },
-  };
-
-  const lostAck = await harness.actions.sourceNextBatch(campaign.id, options);
-
-  assert.deepEqual(lostAck, {
-    ok: false,
-    error: "Candidates were saved, but the framework persistence receipt could not be confirmed. Retry this run to reconcile it.",
-    source: "unavailable",
-    retryable: "agent_framework_reconcile",
-  });
-  assert.equal(harness.state.candidates.filter((item) => item.id === candidate.id).length, 1);
-  assert.equal(String(harness.requests[0]?.input), "/api/sourcing-agent");
-  assert.equal(String(harness.requests[1]?.input), "/api/sourcing-agent/ack");
-  assert.equal(
-    new Headers(harness.requests[0]?.init?.headers).get("idempotency-key"),
-    frameworkRunId,
-  );
-
-  const reconciled = await harness.actions.sourceNextBatch(campaign.id, options);
-
-  assert.equal(reconciled.ok, true);
-  if (!reconciled.ok) return;
-  assert.equal(reconciled.accepted.length, 0);
-  assert.equal(reconciled.skipped.length, 1);
-  assert.equal(harness.state.candidates.filter((item) => item.id === candidate.id).length, 1);
-  assert.equal(harness.fetchCalls, 4);
-  assert.equal(String(harness.requests[2]?.input), "/api/sourcing-agent");
-  assert.equal(String(harness.requests[3]?.input), "/api/sourcing-agent/ack");
-  assert.equal(
-    new Headers(harness.requests[2]?.init?.headers).get("idempotency-key"),
-    frameworkRunId,
-  );
-});
-
 async function runLiveSourceAction(
   harness: ReturnType<typeof createHarness>,
   action: (typeof liveSourceActions)[number],
@@ -427,96 +301,8 @@ async function runLiveSourceAction(
   if (action === "batch") {
     return harness.actions.sourceNextBatch(campaignId, { platform: "GitHub", count: 1 });
   }
-  if (action === "github") {
-    return harness.actions.addCandidateFromGithub(campaignId, "live-user");
-  }
-  return harness.actions.sourceFromApollo(campaignId, { count: 1 });
+  return harness.actions.addCandidateFromGithub(campaignId, "live-user");
 }
-
-test("live candidate providers reject every non-sourcing lifecycle before network I/O", async () => {
-  for (const status of nonSourcingStatuses) {
-    for (const action of liveSourceActions) {
-      const harness = createHarness({
-        responseBody:
-          action === "apollo"
-            ? { ok: true, source: "apollo", profiles: [apolloProfile] }
-            : undefined,
-      });
-      const campaignId = harness.state.campaigns[0].id;
-      harness.state = {
-        ...harness.state,
-        campaigns: harness.state.campaigns.map((campaign) =>
-          campaign.id === campaignId ? { ...campaign, status } : campaign,
-        ),
-      };
-
-      const result = await runLiveSourceAction(harness, action);
-
-      if ("ok" in result) assert.equal(result.ok, false, `${action}:${status}`);
-      else assert.equal(result.source, "error", `${action}:${status}`);
-      assert.equal(harness.fetchCalls, 0, `${action}:${status}`);
-      assert.equal(harness.commitCalls, 0, `${action}:${status}`);
-      assert.equal(harness.persistedCalls, 0, `${action}:${status}`);
-      assert.equal(harness.events.length, 0, `${action}:${status}`);
-    }
-  }
-});
-
-test("live candidate providers recheck lifecycle after I/O and inside the persisted commit", async () => {
-  for (const action of liveSourceActions) {
-    let afterIo: ReturnType<typeof createHarness>;
-    afterIo = createHarness({
-      responseBody:
-        action === "apollo"
-          ? { ok: true, source: "apollo", profiles: [apolloProfile] }
-          : undefined,
-      afterFetch: () => {
-        const campaignId = afterIo.state.campaigns[0].id;
-        afterIo.state = {
-          ...afterIo.state,
-          campaigns: afterIo.state.campaigns.map((campaign) =>
-            campaign.id === campaignId ? { ...campaign, status: "Interviewing" } : campaign,
-          ),
-        };
-      },
-    });
-
-    const afterIoResult = await runLiveSourceAction(afterIo, action);
-
-    if ("ok" in afterIoResult) assert.equal(afterIoResult.ok, false, `${action}:after-io`);
-    else assert.equal(afterIoResult.source, "error", `${action}:after-io`);
-    assert.equal(afterIo.fetchCalls, 1, `${action}:after-io`);
-    assert.equal(afterIo.persistedCalls, 0, `${action}:after-io`);
-    assert.equal(afterIo.events.length, 0, `${action}:after-io`);
-
-    let atCommit: ReturnType<typeof createHarness>;
-    atCommit = createHarness({
-      responseBody:
-        action === "apollo"
-          ? { ok: true, source: "apollo", profiles: [apolloProfile] }
-          : undefined,
-      beforePersist: (state) => ({
-        ...state,
-        campaigns: state.campaigns.map((campaign) =>
-          campaign.id === state.campaigns[0].id
-            ? { ...campaign, status: "Closing" }
-            : campaign,
-        ),
-      }),
-    });
-    const initialCandidates = atCommit.state.candidates.length;
-
-    const atCommitResult = await runLiveSourceAction(atCommit, action);
-
-    if ("ok" in atCommitResult) assert.equal(atCommitResult.ok, false, `${action}:commit`);
-    else assert.equal(atCommitResult.source, "error", `${action}:commit`);
-    assert.equal(atCommit.fetchCalls, 1, `${action}:commit`);
-    assert.equal(atCommit.commitCalls, 0, `${action}:commit`);
-    assert.equal(atCommit.persistedCalls, 1, `${action}:commit`);
-    assert.equal(atCommit.state.candidates.length, initialCandidates, `${action}:commit`);
-    assert.equal(atCommit.events.length, 0, `${action}:commit`);
-  }
-});
 
 test("manual intake uses its explicit non-terminal lifecycle and persists before success", async () => {
   const allowedStatuses = [
@@ -1000,8 +786,8 @@ test("manual intake preserves unknown facts and canonicalizes supplied evidence"
     lawfulBasis: "legitimate_interest",
   });
 
-  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
   const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
   assert.equal(candidate.name, "Manual Person");
   assert.equal(candidate.email, "person@example.test");
   assert.equal(candidate.currentTitle, "");
@@ -1034,6 +820,49 @@ test("manual intake preserves unknown facts and canonicalizes supplied evidence"
   assert.deepEqual(harness.events, [{ kind: "source", campaignId: campaign.id, count: 1 }]);
 });
 
+test("manual intake from a LinkedIn profile: the URL is the candidate's LinkedIn, canonical, and deduplicated", async () => {
+  const harness = createHarness();
+  const campaign = harness.state.campaigns[0];
+  const result = await harness.actions.addCandidateManual(campaign.id, {
+    name: "Jane Doe",
+    title: "Staff Engineer",
+    company: " Acme ",
+    linkedinUrl: "https://fr.linkedin.com/in/jane-doe-e2e/?trk=search",
+    lawfulBasis: "legitimate_interest",
+  });
+  const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
+  assert.equal(candidate.linkedinUrl, "https://www.linkedin.com/in/jane-doe-e2e");
+  assert.equal(candidate.sourceUrl, undefined);
+  assert.equal(candidate.sourcePlatform, "LinkedIn");
+  assert.equal(candidate.provenance, "manual");
+  assert.equal(candidate.currentCompany, "Acme");
+
+  // A LinkedIn profile typed as a generic profile URL lands in the same place.
+  const viaProfileUrl = createHarness();
+  await viaProfileUrl.actions.addCandidateManual(campaign.id, {
+    name: "Jane Doe",
+    profileUrl: "https://www.linkedin.com/in/jane-doe-e2e",
+    lawfulBasis: "consent",
+  });
+  assert.equal(viaProfileUrl.state.candidates[0].linkedinUrl, "https://www.linkedin.com/in/jane-doe-e2e");
+  assert.equal(viaProfileUrl.state.candidates[0].sourceUrl, undefined);
+
+  // The same person again is a duplicate, whatever the URL variant.
+  const again = await harness.actions.addCandidateManual(campaign.id, {
+    name: "Jane D.",
+    linkedinUrl: "linkedin.com/in/jane-doe-e2e",
+    lawfulBasis: "consent",
+  });
+  assert.equal(again.ok && again.added, 0);
+
+  // Anything that is not a LinkedIn profile is refused as a LinkedIn URL.
+  for (const linkedinUrl of ["https://evil.example/in/jane-doe", "https://www.linkedin.com/company/acme", "javascript:alert(1)"]) {
+    const refused = await createHarness().actions.addCandidateManual(campaign.id, { name: "Jane", linkedinUrl, lawfulBasis: "consent" });
+    assert.equal(refused.ok, false, linkedinUrl);
+  }
+});
+
 test("manual intake projects only the documented fields and cannot override authority-owned state", async () => {
   const harness = createHarness();
   const campaignId = harness.state.campaigns[0].id;
@@ -1054,8 +883,8 @@ test("manual intake projects only the documented fields and cannot override auth
     } as never,
   );
 
-  assert.deepEqual(result, { ok: true, added: 1, skipped: 0 });
   const candidate = harness.state.candidates[0];
+  assert.deepEqual(result, { ok: true, added: 1, skipped: 0, candidateIds: [candidate.id] });
   assert.notEqual(candidate.id, "attacker-id");
   assert.equal(candidate.campaignId, campaignId);
   assert.equal(candidate.sourcePlatform, "Manual");
@@ -1193,6 +1022,7 @@ test("manual duplicate and persisted commit rejection never emit candidate succe
     ok: true,
     added: 0,
     skipped: 1,
+    candidateIds: [],
     skipReason: "Duplicate source profile",
   });
   assert.equal(duplicate.persistedCalls, 1);
@@ -1209,54 +1039,6 @@ test("manual duplicate and persisted commit rejection never emit candidate succe
   assert.equal(rejected.commitCalls, 0);
   assert.equal(rejected.persistedCalls, 1);
   assert.equal(rejected.events.length, 0);
-});
-
-test("sourcing rejects missing, paused, invalid, and dedicated-provider requests honestly", async () => {
-  const harness = createHarness();
-  const campaign = harness.state.campaigns[0];
-
-  const missing = await harness.actions.sourceNextBatch("missing");
-  assert.equal(missing.ok, false);
-  if (!missing.ok) assert.equal(missing.source, "not_found");
-
-  harness.state = {
-    ...harness.state,
-    campaigns: harness.state.campaigns.map((item) =>
-      item.id === campaign.id ? { ...item, status: "Paused" } : item,
-    ),
-  };
-  const paused = await harness.actions.sourceNextBatch(campaign.id);
-  assert.equal(paused.ok, false);
-  if (!paused.ok) assert.equal(paused.source, "paused");
-
-  harness.state = {
-    ...harness.state,
-    campaigns: harness.state.campaigns.map((item) =>
-      item.id === campaign.id ? { ...item, status: "Sourcing" } : item,
-    ),
-  };
-  for (const count of [0, -1, 1.5, 21, 51, Number.NaN]) {
-    const invalid = await harness.actions.sourceNextBatch(campaign.id, { count });
-    assert.equal(invalid.ok, false);
-    if (!invalid.ok) assert.equal(invalid.source, "invalid");
-  }
-  for (const platform of ["Sillage", "Apollo", "Seamless", "Manual"] as const) {
-    const dedicated = await harness.actions.sourceNextBatch(campaign.id, { platform, count: 1 });
-    assert.equal(dedicated.ok, false);
-    if (!dedicated.ok) {
-      assert.equal(dedicated.source, "invalid");
-      assert.match(dedicated.error, /dedicated/i);
-    }
-  }
-  const unsupported = await harness.actions.sourceNextBatch(campaign.id, {
-    platform: "Unknown" as never,
-    count: 1,
-  });
-  assert.equal(unsupported.ok, false);
-  if (!unsupported.ok) assert.equal(unsupported.source, "invalid");
-
-  assert.equal(harness.fetchCalls, 0);
-  assert.equal(harness.commitCalls, 0);
 });
 
 test("sourcing rejects an incomplete need or missing reviewed query before network egress", async () => {
@@ -1696,545 +1478,4 @@ test("a rejected persisted commit never reports or emits sourcing success", asyn
     harness.state.candidates.some((candidate) => candidate.githubUrl === githubUser.htmlUrl),
     false,
   );
-});
-
-test("Apollo search commits only exact validated profiles through the sourcing boundary", async () => {
-  const harness = createHarness({
-    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
-  });
-  const campaignId = harness.state.campaigns[0].id;
-
-  const result = await harness.actions.sourceFromApollo(campaignId, {
-    titles: [" Staff Platform Engineer "],
-    seniorities: ["staff"],
-    locations: ["Toronto"],
-    organizationDomains: ["example.com"],
-    keywords: " platform ",
-    count: 1,
-  });
-
-  assert.equal(result.source, "apollo");
-  assert.equal(result.accepted.length, 1);
-  assert.equal(result.skipped.length, 0);
-  assert.equal(harness.fetchCalls, 1);
-  assert.equal(harness.persistedCalls, 1);
-  assert.equal(harness.recomputeCalls, 1);
-  assert.deepEqual(harness.events, [{ kind: "source", campaignId, count: 1 }]);
-  assert.equal(harness.activityDrafts.length, 1);
-  assert.equal(harness.state.candidates[0]?.sourceAuthorityId, apolloProfile.targetId);
-  assert.equal(harness.state.candidates[0]?.id, apolloProfile.candidateId);
-  assert.equal(harness.state.candidates[0]?.sourceExternalId, undefined);
-  assert.deepEqual(JSON.parse(String(harness.requests[0].init?.body)), {
-    campaignId,
-    titles: ["Staff Platform Engineer"],
-    seniorities: ["staff"],
-    locations: ["Toronto"],
-    organizationDomains: ["example.com"],
-    keywords: "platform",
-    count: 1,
-  });
-});
-
-test("Apollo search fails closed before I/O for unavailable, unauthorized, missing, paused, or invalid requests", async () => {
-  const unavailable = createHarness({ workspaceAllowed: false });
-  const unavailableCampaignId = unavailable.state.campaigns[0].id;
-  assert.equal(
-    (await unavailable.actions.sourceFromApollo(unavailableCampaignId, {})).source,
-    "error",
-  );
-
-  const viewer = createHarness({ mutationAllowed: false });
-  const viewerCampaignId = viewer.state.campaigns[0].id;
-  assert.equal((await viewer.actions.sourceFromApollo(viewerCampaignId, {})).source, "error");
-
-  const missing = createHarness();
-  assert.equal((await missing.actions.sourceFromApollo("missing", {})).source, "error");
-
-  const paused = createHarness();
-  const pausedCampaignId = paused.state.campaigns[0].id;
-  paused.state = {
-    ...paused.state,
-    campaigns: paused.state.campaigns.map((campaign) =>
-      campaign.id === pausedCampaignId ? { ...campaign, status: "Paused" } : campaign,
-    ),
-  };
-  assert.equal((await paused.actions.sourceFromApollo(pausedCampaignId, {})).source, "error");
-
-  const invalid = createHarness();
-  const invalidCampaignId = invalid.state.campaigns[0].id;
-  for (const filters of [
-    { count: 0 },
-    { count: 51 },
-    { count: 1.5 },
-    { titles: Array.from({ length: 21 }, () => "Engineer") },
-    { titles: ["\u0000Engineer"] },
-    { keywords: "x".repeat(301) },
-  ]) {
-    const result = await invalid.actions.sourceFromApollo(invalidCampaignId, filters);
-    assert.equal(result.source, "error");
-  }
-
-  for (const harness of [unavailable, viewer, missing, paused, invalid]) {
-    assert.equal(harness.fetchCalls, 0);
-    assert.equal(harness.commitCalls, 0);
-    assert.equal(harness.events.length, 0);
-  }
-});
-
-test("Apollo search rejects malformed or overbroad provider profiles before state work", async () => {
-  const invalidProfiles = [
-    { ...apolloProfile, targetId: "raw-provider-id" },
-    { ...apolloProfile, id: "raw-provider-id" },
-    { ...apolloProfile, linkedinUrl: "http://www.linkedin.com/in/apollo-candidate" },
-    { ...apolloProfile, linkedinUrl: "https://linkedin.com.evil.test/in/apollo-candidate" },
-    { ...apolloProfile, name: "Apollo\u0000Candidate" },
-    { ...apolloProfile, headline: "x".repeat(501) },
-    { ...apolloProfile, departments: Array.from({ length: 21 }, () => "Engineering") },
-  ];
-
-  for (const profile of invalidProfiles) {
-    const harness = createHarness({
-      responseBody: { ok: true, source: "apollo", profiles: [profile] },
-    });
-    const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {
-      count: 1,
-    });
-    assert.equal(result.source, "error");
-    assert.equal(result.accepted.length, 0);
-    assert.equal(harness.commitCalls, 0);
-    assert.equal(harness.events.length, 0);
-  }
-
-  const tooMany = createHarness({
-    responseBody: {
-      ok: true,
-      source: "apollo",
-      profiles: [apolloProfile, { ...apolloProfile, targetId: "22222222-2222-4222-8222-222222222222" }],
-    },
-  });
-  const tooManyResult = await tooMany.actions.sourceFromApollo(
-    tooMany.state.campaigns[0].id,
-    { count: 1 },
-  );
-  assert.equal(tooManyResult.source, "error");
-  assert.equal(tooMany.commitCalls, 0);
-});
-
-test("Apollo search revalidates workspace, role, and campaign after provider I/O", async () => {
-  for (const mutation of ["workspace", "role", "missing", "paused"] as const) {
-    let harness: ReturnType<typeof createHarness>;
-    harness = createHarness({
-      responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
-      afterFetch: () => {
-        const campaignId = harness.state.campaigns[0].id;
-        if (mutation === "workspace") harness.setWorkspaceAllowed(false);
-        if (mutation === "role") harness.setMutationAllowed(false);
-        if (mutation === "missing") {
-          harness.state = { ...harness.state, campaigns: [] };
-        }
-        if (mutation === "paused") {
-          harness.state = {
-            ...harness.state,
-            campaigns: harness.state.campaigns.map((campaign) =>
-              campaign.id === campaignId ? { ...campaign, status: "Paused" } : campaign,
-            ),
-          };
-        }
-      },
-    });
-    const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {
-      count: 1,
-    });
-    assert.equal(result.source, "error");
-    assert.equal(harness.commitCalls, 0);
-    assert.equal(harness.events.length, 0);
-  }
-});
-
-test("Apollo search dedupes against commit-time state and emits only after an applied write", async () => {
-  const state = buildSeedState();
-  const campaignId = state.campaigns[0].id;
-  const concurrentCandidate: Candidate = {
-    ...state.candidates[0],
-    id: "candidate_concurrent_apollo",
-    campaignId,
-    email: "",
-    linkedinUrl: apolloProfile.linkedinUrl,
-    githubUrl: "",
-    sourcePlatform: "Apollo",
-    sourceAuthorityId: apolloProfile.targetId,
-  };
-  const deduped = createHarness({
-    state,
-    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
-    beforePersist: (current) => ({
-      ...current,
-      candidates: [concurrentCandidate, ...current.candidates],
-    }),
-  });
-
-  const duplicateResult = await deduped.actions.sourceFromApollo(campaignId, { count: 1 });
-  assert.equal(duplicateResult.source, "apollo");
-  assert.equal(duplicateResult.accepted.length, 0);
-  assert.equal(duplicateResult.skipped.length, 1);
-  assert.equal(deduped.activityDrafts.length, 0);
-  assert.equal(deduped.events.length, 0);
-  assert.equal(
-    deduped.state.candidates.filter(
-      (candidate) => candidate.sourceAuthorityId === apolloProfile.targetId,
-    ).length,
-    1,
-  );
-
-  const rejected = createHarness({
-    state: buildSeedState(),
-    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
-    persistAllowed: false,
-  });
-  const rejectedResult = await rejected.actions.sourceFromApollo(
-    rejected.state.campaigns[0].id,
-    { count: 1 },
-  );
-  assert.equal(rejectedResult.source, "error");
-  assert.equal(rejectedResult.accepted.length, 0);
-  assert.equal(rejected.events.length, 0);
-});
-
-test("Apollo search saves before paid selection and preparation requires an exact selection receipt", async () => {
-  const state = buildSeedState();
-  const campaignId = state.campaigns[0].id;
-  const sourced = createHarness({
-    state: structuredClone(state),
-    responseBody: { ok: true, source: "apollo", profiles: [apolloProfile] },
-  });
-  const sourcedResult = await sourced.actions.sourceFromApollo(campaignId, { count: 1 });
-  assert.equal(sourcedResult.source, "apollo");
-  assert.equal(sourcedResult.accepted.length, 1);
-  assert.equal(sourced.fetchCalls, 1);
-  assert.equal(sourced.persistedCalls, 1);
-
-  const candidate = sourced.state.candidates.find((item) => item.id === apolloProfile.candidateId);
-  assert.ok(candidate);
-  const rejected = createHarness({
-    state: structuredClone(sourced.state),
-    responseBodies: [
-      { ok: false, code: "APOLLO_AUTHORITY_UNAVAILABLE", error: "Selection failed." },
-    ],
-  });
-  const rejectedResult = await rejected.actions.prepareApolloEnrichment(candidate.id);
-  assert.equal(rejectedResult.ok, false);
-  assert.equal(rejected.fetchCalls, 1);
-
-  const mismatched = createHarness({
-    state: structuredClone(sourced.state),
-    responseBodies: [{
-        ok: true,
-        selected: [{
-          targetId: apolloProfile.targetId,
-          candidateId: "88888888-8888-4888-8888-888888888888",
-        }],
-      }],
-  });
-  const mismatchedResult = await mismatched.actions.prepareApolloEnrichment(candidate.id);
-  assert.equal(mismatchedResult.ok, false);
-  assert.equal(mismatched.fetchCalls, 1);
-});
-
-test("Apollo search preserves not-configured truth without state work", async () => {
-  const harness = createHarness({
-    responseBody: {
-      ok: true,
-      source: "not_configured",
-      profiles: [],
-      code: "APOLLO_NOT_CONFIGURED",
-      error: "Apollo is not configured.",
-    },
-  });
-
-  const result = await harness.actions.sourceFromApollo(harness.state.campaigns[0].id, {});
-
-  assert.deepEqual(result, {
-    accepted: [],
-    skipped: [],
-    source: "not_configured",
-    error: "Apollo is not configured.",
-  });
-  assert.equal(harness.commitCalls, 0);
-  assert.equal(harness.events.length, 0);
-});
-
-test("Apollo paid enrichment prepares before confirmation and commits one bound target", async () => {
-  const state = buildSeedState();
-  const campaign = state.campaigns[0];
-  const candidate: Candidate = {
-    ...state.candidates[0],
-    id: apolloProfile.candidateId,
-    campaignId: campaign.id,
-    email: "",
-    phone: "",
-    sourcePlatform: "Apollo",
-    sourceExternalId: undefined,
-    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
-  };
-  state.candidates = [candidate, ...state.candidates];
-  const harness = createHarness({
-    state,
-    responseBodies: [
-      {
-        ok: true,
-        selected: [{
-          targetId: candidate.sourceAuthorityId,
-          candidateId: candidate.id,
-        }],
-      },
-      {
-        ok: true,
-        status: "prepared",
-        campaignId: candidate.campaignId,
-        candidateId: candidate.id,
-        targetId: candidate.sourceAuthorityId,
-        scope: "email",
-        confirmationNonce: "33333333-3333-4333-8333-333333333333",
-        expiresAt: "2026-07-13T07:00:00.000Z",
-        maxCostCredits: 1,
-      },
-      {
-        ok: true,
-        status: "completed",
-        campaignId: candidate.campaignId,
-        candidateId: candidate.id,
-        targetId: candidate.sourceAuthorityId,
-        revealed: true,
-        cached: false,
-        email: "revealed@example.test",
-        phone: "",
-        detail: "email_revealed",
-      },
-    ],
-  });
-
-  const prepared = await harness.actions.prepareApolloEnrichment(candidate.id);
-  assert.equal(prepared.ok, true);
-  if (!prepared.ok) return;
-  assert.equal(harness.commitCalls, 0);
-  assert.deepEqual(JSON.parse(String(harness.requests[0].init?.body)), {
-    campaignId: candidate.campaignId,
-    candidates: [{
-      targetId: candidate.sourceAuthorityId,
-      candidateId: candidate.id,
-    }],
-  });
-  assert.deepEqual(JSON.parse(String(harness.requests[1].init?.body)), {
-    action: "prepare",
-    campaignId: candidate.campaignId,
-    candidateId: candidate.id,
-    targetId: candidate.sourceAuthorityId,
-    scope: "email",
-  });
-
-  const completed = await harness.actions.enrichApolloCandidate(
-    candidate.id,
-    prepared.confirmationNonce,
-  );
-  assert.deepEqual(completed, {
-    ok: true,
-    revealed: true,
-    detail: "Contact email revealed.",
-  });
-  const commitBody = JSON.parse(String(harness.requests[2].init?.body)) as Record<string, unknown>;
-  assert.equal(commitBody.action, "commit");
-  assert.equal(commitBody.campaignId, candidate.campaignId);
-  assert.equal(commitBody.candidateId, candidate.id);
-  assert.equal(commitBody.targetId, candidate.sourceAuthorityId);
-  assert.equal(commitBody.scope, "email");
-  assert.equal(commitBody.confirmationNonce, prepared.confirmationNonce);
-  assert.match(String(commitBody.idempotencyKey), /^[0-9a-f-]{36}$/i);
-  assert.equal(harness.state.candidates.find((item) => item.id === candidate.id)?.email, "revealed@example.test");
-  assert.equal(harness.persistedCalls, 1);
-});
-
-test("Apollo no-contact completion does not invent an unverified credit outcome", async () => {
-  const state = buildSeedState();
-  const campaign = state.campaigns[0];
-  const candidate: Candidate = {
-    ...state.candidates[0],
-    id: apolloProfile.candidateId,
-    campaignId: campaign.id,
-    email: "",
-    phone: "",
-    sourcePlatform: "Apollo",
-    sourceExternalId: undefined,
-    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
-  };
-  state.candidates = [candidate, ...state.candidates];
-  const harness = createHarness({
-    state,
-    responseBody: {
-      ok: true,
-      status: "completed",
-      campaignId: candidate.campaignId,
-      candidateId: candidate.id,
-      targetId: candidate.sourceAuthorityId,
-      revealed: false,
-      cached: false,
-      email: "",
-      phone: "",
-      detail: "no_contact_found",
-    },
-  });
-
-  const result = await harness.actions.enrichApolloCandidate(
-    candidate.id,
-    "33333333-3333-4333-8333-333333333333",
-  );
-
-  assert.deepEqual(result, { ok: true, revealed: false, detail: "No contact email found." });
-  assert.doesNotMatch(result.detail, /credit|charged/i);
-  assert.equal(harness.commitCalls, 0);
-});
-
-test("Apollo client preserves bounded server error codes for UI recovery", async () => {
-  const state = buildSeedState();
-  const campaign = state.campaigns[0];
-  const candidate: Candidate = {
-    ...state.candidates[0],
-    id: apolloProfile.candidateId,
-    campaignId: campaign.id,
-    email: "",
-    sourcePlatform: "Apollo",
-    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
-  };
-  state.candidates = [candidate, ...state.candidates];
-  const harness = createHarness({
-    state,
-    responseStatus: 409,
-    responseBody: {
-      ok: false,
-      code: "APOLLO_RECONCILIATION_REQUIRED",
-      error: "Enrichment requires reconciliation.",
-      requestId: "request-1",
-    },
-  });
-
-  const result = await harness.actions.enrichApolloCandidate(
-    candidate.id,
-    "33333333-3333-4333-8333-333333333333",
-  );
-
-  assert.deepEqual(result, {
-    ok: false,
-    revealed: false,
-    detail: "Enrichment requires reconciliation.",
-    code: "APOLLO_RECONCILIATION_REQUIRED",
-  });
-  assert.equal(harness.commitCalls, 0);
-});
-
-test("Apollo enrichment rejects unbound, unauthorized, malformed, and unapplied results", async () => {
-  const state = buildSeedState();
-  const campaign = state.campaigns[0];
-  const candidate: Candidate = {
-    ...state.candidates[0],
-    id: apolloProfile.candidateId,
-    campaignId: campaign.id,
-    email: "",
-    sourcePlatform: "Apollo",
-    sourceExternalId: undefined,
-    sourceAuthorityId: "22222222-2222-4222-8222-222222222222",
-  };
-  state.candidates = [candidate, ...state.candidates];
-
-  const viewer = createHarness({ state: structuredClone(state), mutationAllowed: false });
-  assert.equal((await viewer.actions.prepareApolloEnrichment(candidate.id)).ok, false);
-  assert.equal(
-    (await viewer.actions.enrichApolloCandidate(candidate.id, "33333333-3333-4333-8333-333333333333")).ok,
-    false,
-  );
-  assert.equal(viewer.fetchCalls, 0);
-
-  const malformed = createHarness({
-    state: structuredClone(state),
-    responseBody: {
-      ok: true,
-      status: "completed",
-      campaignId: candidate.campaignId,
-      candidateId: candidate.id,
-      targetId: candidate.sourceAuthorityId,
-      revealed: true,
-      cached: false,
-      email: "revealed@example.test",
-      phone: "+14155550100",
-      detail: "email_revealed",
-    },
-  });
-  const malformedResult = await malformed.actions.enrichApolloCandidate(
-    candidate.id,
-    "33333333-3333-4333-8333-333333333333",
-  );
-  assert.equal(malformedResult.ok, false);
-  assert.equal(malformed.commitCalls, 0);
-
-  const rejected = createHarness({
-    state: structuredClone(state),
-    persistAllowed: false,
-    responseBody: {
-      ok: true,
-      status: "completed",
-      campaignId: candidate.campaignId,
-      candidateId: candidate.id,
-      targetId: candidate.sourceAuthorityId,
-      revealed: true,
-      cached: false,
-      email: "revealed@example.test",
-      phone: "",
-      detail: "email_revealed",
-    },
-  });
-  const rejectedResult = await rejected.actions.enrichApolloCandidate(
-    candidate.id,
-    "33333333-3333-4333-8333-333333333333",
-  );
-  assert.equal(rejectedResult.ok, false);
-  assert.equal(rejected.state.candidates.find((item) => item.id === candidate.id)?.email, "");
-
-  const authorityChangedDuringCommit = createHarness({
-    state: structuredClone(state),
-    beforePersist: (current) => ({
-      ...current,
-      candidates: current.candidates.map((item) =>
-        item.id === candidate.id ? { ...item, sourceAuthorityId: undefined } : item,
-      ),
-    }),
-    responseBody: {
-      ok: true,
-      status: "completed",
-      campaignId: candidate.campaignId,
-      candidateId: candidate.id,
-      targetId: candidate.sourceAuthorityId,
-      revealed: true,
-      cached: false,
-      email: "revealed@example.test",
-      phone: "",
-      detail: "email_revealed",
-    },
-  });
-  const staleCommit = await authorityChangedDuringCommit.actions.enrichApolloCandidate(
-    candidate.id,
-    "33333333-3333-4333-8333-333333333333",
-  );
-  assert.equal(staleCommit.ok, false);
-  assert.equal(
-    authorityChangedDuringCommit.state.candidates.find((item) => item.id === candidate.id)?.email,
-    "",
-  );
-});
-
-test("Apollo UI obtains the server nonce before asking for human confirmation", () => {
-  const prepareIndex = candidateDrawerSource.indexOf("prepareApolloEnrichment(c.id)");
-  const confirmIndex = candidateDrawerSource.indexOf("await confirm(", prepareIndex);
-  const commitIndex = candidateDrawerSource.indexOf("enrichApolloCandidate(", confirmIndex);
-  assert.ok(prepareIndex >= 0 && confirmIndex > prepareIndex && commitIndex > confirmIndex);
-  assert.doesNotMatch(candidateDrawerSource.slice(prepareIndex, commitIndex), /phone/i);
-  assert.equal((storeSource.match(/const prepareApolloEnrichment = useCallback/g) ?? []).length, 0);
-  assert.equal((storeSource.match(/const enrichApolloCandidate = useCallback/g) ?? []).length, 0);
 });

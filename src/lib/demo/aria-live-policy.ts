@@ -1,3 +1,6 @@
+import type { Campaign } from "../types";
+import { campaignAllowsLiveSourcing } from "../sourcing/campaign-lifecycle";
+
 export type AriaLiveRunPolicy =
   | { ok: true }
   | { ok: false; reason: string };
@@ -14,4 +17,16 @@ export function getAriaLiveRunPolicy(supabaseConnected: boolean): AriaLiveRunPol
     };
   }
   return { ok: true };
+}
+
+/**
+ * The campaign Aria Live plays on. The run starts by sourcing, so it needs a
+ * campaign the sourcing actions accept (the same lifecycle rule): the active
+ * campaign when it qualifies, otherwise the first one that does. Null when no
+ * campaign is open for sourcing.
+ */
+export function pickAriaLiveCampaign(campaigns: Campaign[], activeCampaignId: string | null): Campaign | null {
+  const active = campaigns.find((c) => c.id === activeCampaignId);
+  if (active && campaignAllowsLiveSourcing(active.status)) return active;
+  return campaigns.find((c) => campaignAllowsLiveSourcing(c.status)) ?? null;
 }

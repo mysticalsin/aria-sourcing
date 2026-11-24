@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
-import { NAV_ITEMS } from "./nav";
+import { SEARCH_PAGES } from "./nav";
+import { useTutorial } from "@/components/tutorial/tutorial";
 import {
   useActions,
   useActiveCampaignId,
   useCampaigns,
   useCandidates,
-  useHermes,
+  useWorkspaceStateGetter,
   useHydrated,
   useSeats,
 } from "@/lib/store";
@@ -36,11 +37,12 @@ interface Result {
 
 export function CommandSearch() {
   const router = useRouter();
+  const tutorial = useTutorial();
   const campaigns = useCampaigns();
   const candidates = useCandidates();
   const actions = useActions();
   const { setActiveCampaign } = actions;
-  const { state: hermesState } = useHermes();
+  const getWorkspaceState = useWorkspaceStateGetter();
   const hydrated = useHydrated();
   const seats = useSeats();
   const activeCampaignId = useActiveCampaignId();
@@ -90,10 +92,12 @@ export function CommandSearch() {
   const results = React.useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
     const out: Result[] = [];
-    NAV_ITEMS.forEach((n) => {
+    SEARCH_PAGES.forEach((n) => {
       if (!q || n.label.toLowerCase().includes(q) || n.description.toLowerCase().includes(q))
         out.push({ id: `nav-${n.href}`, label: n.label, hint: n.description, group: "Pages", run: () => router.push(n.href) });
     });
+    if (!q || "tutorial learn guide help walkthrough".includes(q))
+      out.push({ id: "tutorial", label: "Tutorial", hint: "Learn each part of Aria step by step", group: "Pages", run: () => tutorial.openTutorial() });
     campaigns.forEach((c) => {
       if (!q || c.title.toLowerCase().includes(q) || c.department.toLowerCase().includes(q))
         out.push({
@@ -133,7 +137,7 @@ export function CommandSearch() {
         run: () => {
           const result = beginAriaLiveRun({
             actions,
-            state: hermesState,
+            state: getWorkspaceState(),
             campaigns,
             activeCampaignId,
             seats,
@@ -178,10 +182,11 @@ export function CommandSearch() {
     setActiveCampaign,
     hydrated,
     actions,
-    hermesState,
+    getWorkspaceState,
     activeCampaignId,
     seats,
     toast,
+    tutorial,
   ]);
 
   const grouped = React.useMemo(() => {

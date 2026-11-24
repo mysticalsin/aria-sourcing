@@ -11,7 +11,7 @@ import { summarizeCampaignLaunch } from "../src/lib/store/campaign-launch";
 import type {
   Activity,
   Campaign,
-  HermesState,
+  WorkspaceState,
   JobAnalysis,
 } from "../src/lib/types";
 
@@ -20,17 +20,17 @@ type ActivityDraft = Parameters<CampaignActionDependencies["makeActivity"]>[0];
 const campaignActionsSource = readFileSync(
   new URL("../src/lib/store/campaign-actions.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const storeSource = readFileSync(
   new URL("../src/lib/store.ts", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 const intakePageSource = readFileSync(
-  new URL("../src/app/intake/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/single-role-intake.tsx", import.meta.url),
   "utf8",
 );
 const launchPageSource = readFileSync(
-  new URL("../src/app/launch/page.tsx", import.meta.url),
+  new URL("../src/components/campaigns/multi-role-launch.tsx", import.meta.url),
   "utf8",
 );
 const campaignPageSource = readFileSync(
@@ -51,7 +51,7 @@ test("campaign action boundary is React-free and memoized from stable dependenci
   );
   assert.equal(
     storeSource.indexOf("function makeActivity(") <
-      storeSource.indexOf("export function HermesProvider("),
+      storeSource.indexOf("export function WorkspaceProvider("),
     true,
     "pure activity helpers must stay outside the provider render cycle",
   );
@@ -64,8 +64,10 @@ test("campaign action boundary is React-free and memoized from stable dependenci
 test("campaign callers handle rejected creation, updates, queries, and sourcing", () => {
   assert.match(
     intakePageSource,
-    /const campaign = actions\.createCampaignFromAnalysis[\s\S]*?if \(!campaign\)[\s\S]*?return;[\s\S]*?actions\.sourceNextBatch/,
+    /const campaign = actions\.createCampaignFromAnalysis[\s\S]*?if \(!campaign\)[\s\S]*?return;[\s\S]*?router\.push/,
   );
+  assert.doesNotMatch(intakePageSource, /actions\.sourceNextBatch/, "Intake must wait for explicit source/limit review");
+  assert.match(launchPageSource, /if \(supabaseEnabled\)[\s\S]*?return \{ created: true, sourcingComplete: false \};[\s\S]*?actions\.sourceNextBatch/, "Connected bulk launch prepares campaigns before any synthetic sourcing wave");
   assert.match(
     launchPageSource,
     /if \(!campaign\) return \{ created: false, sourcingComplete: false \};/,
@@ -123,7 +125,7 @@ test("campaign launch summary requires every requested role to complete", () => 
   assert.equal(totalFailure.creationFailed, 2);
 });
 
-function campaignFixture(state: HermesState, id = "camp_created"): Campaign {
+function campaignFixture(state: WorkspaceState, id = "camp_created"): Campaign {
   const source = state.campaigns[0];
   return {
     ...source,
@@ -154,7 +156,7 @@ function createHarness(
     meta: { hiringManager: string; hiringManagerEmail: string };
   }> = [];
   const effectiveWeightInputs: Array<{
-    skills: HermesState["skills"];
+    skills: WorkspaceState["skills"];
     weights: Campaign["scoringWeights"];
   }> = [];
   const scoredJobTitles: string[] = [];

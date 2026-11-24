@@ -150,7 +150,7 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
           d={dataPath}
           fill={color}
           fillOpacity={drawn ? 0.18 : 0}
-          style={{ transition: reducedMotion ? noTransition : "fill-opacity 180ms var(--ease-motion-out)" }}
+          style={{ transition: reducedMotion ? noTransition : "fill-opacity 500ms ease-out 250ms" }}
         />
         {/* Animated stroke draw-in: pathLength=1 normalises the perimeter to
             1 unit so the dash math is always a plain 1 -> 0 offset. */}
@@ -163,7 +163,7 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
           pathLength={1}
           strokeDasharray={1}
           strokeDashoffset={drawn ? 0 : 1}
-          style={{ transition: reducedMotion ? noTransition : "stroke-dashoffset 180ms var(--ease-motion-out)" }}
+          style={{ transition: reducedMotion ? noTransition : "stroke-dashoffset 800ms cubic-bezier(0.22,1,0.36,1)" }}
         />
         {dataPoints.map((p, i) => (
           <circle
@@ -173,7 +173,7 @@ export function FitRadar({ matchBreakdown, size = 220, label }: FitRadarProps) {
             r={3}
             fill={color}
             opacity={drawn ? 1 : 0}
-            style={{ transition: reducedMotion ? noTransition : "opacity 180ms var(--ease-motion-out)" }}
+            style={{ transition: reducedMotion ? noTransition : "opacity 200ms ease-out 750ms" }}
           />
         ))}
       </svg>

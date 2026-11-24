@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import {
   Card,
@@ -16,6 +17,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useActions, useCandidate, useCampaign, useSettings } from "@/lib/store";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { OUTREACH_TONES, type OutreachMessage, type OutreachTone } from "@/lib/types";
 import {
   initialsFrom,
@@ -38,21 +40,26 @@ import {
   Repeat,
   ArrowUpRight,
   Copy,
-  ExternalLink,
   Clock,
 } from "lucide-react";
 
 /** "waiting 3d" style label for how long a draft has sat in the queue — reuses
  *  formatTimeAgo's tested duration math, just drops the trailing "ago" so it
  *  reads naturally as a waiting duration instead of a past event. */
-function waitingLabel(createdAt: string): string {
-  const ago = formatTimeAgo(createdAt);
+export function waitingLabel(createdAt: string, now: number = Date.now()): string {
+  const days = (now - new Date(createdAt).getTime()) / 86_400_000;
+  // formatTimeAgo switches to a calendar date after 30 days; a queue age
+  // stays a duration.
+  if (days >= 30) return `waiting ${Math.round(days / 30)} mo`;
+  const ago = formatTimeAgo(createdAt, now);
   return ago === "just now" ? "waiting <1m" : `waiting ${ago.replace(/ ago$/, "")}`;
 }
 
 /** Escalates tone the longer a draft has been waiting on a human — mirrors the
- *  SLA countdown badge on reply cards (see reply-card.tsx). */
-function agingTone(createdAt: string): Tone {
+ *  SLA countdown badge on reply cards (see reply-card.tsx). The synthetic demo
+ *  ships with frozen seed dates, so its drafts never read as overdue. */
+export function agingTone(createdAt: string, synthetic = !supabaseEnabled): Tone {
+  if (synthetic) return "neutral";
   const days = (Date.now() - new Date(createdAt).getTime()) / 86_400_000;
   if (days >= 3) return "danger";
   if (days >= 1) return "warning";
@@ -105,6 +112,7 @@ export function OutreachMessageCard({
 
   const [regenerating, setRegenerating] = React.useState(false);
   const [approving, setApproving] = React.useState(false);
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
   const [rejecting, setRejecting] = React.useState(false);
 
   async function handleToneChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -143,6 +151,11 @@ export function OutreachMessageCard({
     }
     if (res.dryRun) {
       toast({ title: "Public demo only", description: res.warnings.join(" "), variant: "info" });
+      return;
+    }
+    if (message.channel === "LinkedIn") {
+      // Approving the exact LinkedIn message is the decision to send it.
+      await deliverOnLinkedIn(message);
       return;
     }
     toast({
@@ -194,13 +207,12 @@ export function OutreachMessageCard({
     }
   }
 
-  function handleOpenLinkedIn() {
-    const url = candidate?.linkedinUrl;
-    if (!url) {
-      toast({ title: "No LinkedIn URL", description: "This candidate has no LinkedIn profile on file.", variant: "error" });
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
+  const [sendingLinkedIn, setSendingLinkedIn] = React.useState(false);
+  async function handleSendPendingOnLinkedIn() {
+    if (sendingLinkedIn) return;
+    setSendingLinkedIn(true);
+    await deliverOnLinkedIn(message);
+    setSendingLinkedIn(false);
   }
 
   function handleConfirmManualSend() {
@@ -222,14 +234,6 @@ export function OutreachMessageCard({
     setSending(false);
     if (!res.ok) {
       toast({ title: "Send blocked", description: res.error, variant: "error" });
-      return;
-    }
-    if (res.queued) {
-      toast({
-        title: "WhatsApp queued",
-        description: "ARIA will re-check consent, do-not-contact status, the reply window, and your approval before delivery.",
-        variant: "success",
-      });
       return;
     }
     toast({
@@ -312,7 +316,7 @@ export function OutreachMessageCard({
         </div>
 
         {/* Tone control */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Tone" htmlFor={toneId} hint="Switching tone regenerates the copy.">
             <Select
               id={toneId}
@@ -349,44 +353,53 @@ export function OutreachMessageCard({
           />
         </Field>
 
-        {/* LinkedIn assisted-manual send panel */}
+        {/* LinkedIn: approved, not sent yet */}
         {pendingManual && (
           <div className="space-y-3 rounded-2xl bg-tangerine-soft px-3.5 py-3 text-sm text-tangerine ring-1 ring-inset ring-tangerine/20">
             <div className="flex items-start gap-2.5">
               <Linkedin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div>
-                <p className="font-semibold">LinkedIn message ready: manual send required</p>
+                <p className="font-semibold">Approved LinkedIn message, not sent yet</p>
                 <p className="mt-0.5 text-tangerine/80">
-                  Aria cannot send LinkedIn messages automatically. Copy the draft, open the candidate&apos;s profile, paste it, then confirm here.
+                  Send it from your LinkedIn now. If you already sent it yourself (copy-paste), record it instead.
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
-                variant="outline"
-                leftIcon={<Copy className="h-4 w-4" />}
-                onClick={handleCopyMessage}
-              >
-                {copied ? "Copied" : "Copy message"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                leftIcon={<ExternalLink className="h-4 w-4" />}
-                onClick={handleOpenLinkedIn}
-                disabled={!candidate?.linkedinUrl}
-              >
-                Open LinkedIn
-              </Button>
-              <Button
-                size="sm"
                 variant="primary"
-                leftIcon={<Check className="h-4 w-4" />}
-                onClick={handleConfirmManualSend}
+                leftIcon={<Linkedin className="h-4 w-4" />}
+                onClick={handleSendPendingOnLinkedIn}
+                loading={sendingLinkedIn}
+                disabled={sendingLinkedIn || !candidate?.linkedinUrl}
+                data-send-on-linkedin
               >
-                Confirm manual send
+                {sendingLinkedIn ? "Sending…" : "Send on LinkedIn"}
               </Button>
+              {candidate?.linkedinUrl && (
+                <Link
+                  href={`/candidates?focus=${encodeURIComponent(message.candidateId)}&tab=linkedin&outreach=${encodeURIComponent(message.id)}`}
+                  data-send-with-linkedin
+                  className="text-sm font-semibold text-[#0a66c2] underline-offset-2 hover:underline"
+                >
+                  Edit in {name.split(" ")[0]}&apos;s LinkedIn tab
+                </Link>
+              )}
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="ghost" leftIcon={<Copy className="h-4 w-4" />} onClick={handleCopyMessage}>
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={<Check className="h-4 w-4" />}
+                  onClick={handleConfirmManualSend}
+                  title="Records that you sent this message yourself on LinkedIn. It sends nothing."
+                >
+                  I sent it myself
+                </Button>
+              </span>
             </div>
           </div>
         )}
@@ -407,6 +420,7 @@ export function OutreachMessageCard({
                 {message.approvedBy ? `Approved by ${message.approvedBy}` : "Approved"}
                 {message.scheduledFor ? ` · ${formatTimeAgo(message.scheduledFor)}` : ""}
                 {message.dryRun ? " · Nothing sent live." : ""}
+                {!message.dryRun && message.channel === "LinkedIn" && message.sentAt ? " · Sent on LinkedIn." : ""}
                 {approvedPendingSend ? " · Review done. Click Send to deliver." : ""}
               </p>
             </div>
@@ -451,7 +465,7 @@ export function OutreachMessageCard({
                 loading={approving}
                 disabled={approving || rejecting}
               >
-                {approving ? "Recording approval…" : "Approve"}
+                {approving ? (message.channel === "LinkedIn" ? "Approving and sending…" : "Recording approval…") : message.channel === "LinkedIn" ? "Approve & send on LinkedIn" : "Approve"}
               </Button>
               <Button
                 size="sm"

@@ -12,12 +12,6 @@ assert.equal(document.openapi, "3.1.0");
 const paths = document.paths as Record<string, unknown>;
 assert.deepEqual(Object.keys(paths).sort(), [
   "/api/admin/candidates/erasure",
-  "/api/admin/source/apollo/erasure",
-  "/api/admin/source/apollo/reconciliation",
-  "/api/agents/memories",
-  "/api/source/apollo/enrich",
-  "/api/source/apollo/search",
-  "/api/source/apollo/select",
 ]);
 
 const references: string[] = [];
@@ -47,57 +41,7 @@ for (const reference of references) {
   }
 }
 
-const memoryPath = paths["/api/agents/memories"] as Record<string, unknown>;
-const memoryGet = memoryPath.get as {
-  parameters?: Array<{ name?: string; required?: boolean; schema?: Record<string, unknown> }>;
-};
-const memoryGetParameters = Object.fromEntries(
-  (memoryGet.parameters ?? []).map((parameter) => [parameter.name, parameter]),
-);
-assert.deepEqual(Object.keys(memoryGetParameters).sort(), ["cursor", "limit", "specCursor", "specId"]);
-assert.equal(memoryGetParameters.specId?.required, false);
-assert.deepEqual(memoryGetParameters.limit?.schema, {
-  type: "integer",
-  minimum: 1,
-  maximum: 100,
-  default: 25,
-});
-assert.equal(memoryGetParameters.cursor?.schema?.type, "string");
-assert.equal(memoryGetParameters.cursor?.schema?.maxLength, 512);
-assert.equal(memoryGetParameters.specCursor?.schema?.type, "string");
-assert.equal(memoryGetParameters.specCursor?.schema?.maxLength, 512);
-
 const schemas = (document.components as Record<string, unknown>).schemas as Record<string, unknown>;
-const memoryListResponse = schemas.AgentMemoryListResponse as {
-  required?: string[];
-  properties?: Record<string, unknown>;
-};
-assert.deepEqual(
-  [...(memoryListResponse.required ?? [])].sort(),
-  ["bounds", "memories", "nextCursor", "nextSpecCursor", "ok", "requestId", "specs"],
-);
-const nextSpecCursor = memoryListResponse.properties?.nextSpecCursor as {
-  oneOf?: Array<Record<string, unknown>>;
-};
-assert.ok(nextSpecCursor.oneOf?.some((branch) => branch.type === "string"));
-assert.ok(nextSpecCursor.oneOf?.some((branch) => branch.type === "null"));
-const memoryListBounds = schemas.AgentMemoryListBounds as { required?: string[] };
-assert.deepEqual(
-  [...(memoryListBounds.required ?? [])].sort(),
-  ["specLimit", "specsTruncated"],
-);
-for (const method of ["post", "patch", "delete"]) {
-  const operation = memoryPath[method] as { responses?: Record<string, unknown> };
-  assert.deepEqual(
-    operation.responses?.["415"],
-    { $ref: "#/components/responses/AgentMemoryErrorResponse" },
-    `${method.toUpperCase()} /api/agents/memories must document its non-JSON response`,
-  );
-}
-const memoryError = schemas.AgentMemoryError as {
-  properties?: { code?: { enum?: string[] } };
-};
-assert.ok(memoryError.properties?.code?.enum?.includes("memory_in_use"));
 
 const candidateErasurePath = paths["/api/admin/candidates/erasure"] as Record<string, unknown>;
 assert.deepEqual(Object.keys(candidateErasurePath).sort(), ["patch", "post"]);

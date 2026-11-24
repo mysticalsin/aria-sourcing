@@ -1,10 +1,18 @@
 name: CI
 
+# Jobs pin ubuntu-24.04. ubuntu-latest has stayed queued with no runner.
+
 on:
   push:
-    branches: ["**"]
+    branches: [vercel-demo, main, twa-odoo]
   pull_request:
     branches: ["**"]
+
+# One group per workflow and branch. Pull requests cancel a stale run.
+# Pushes to the default branch and twa-odoo do not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/twa-odoo' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)) }}
 
 permissions:
   contents: read
@@ -12,7 +20,7 @@ permissions:
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -37,75 +45,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Install flyctl
-        shell: bash
-        env:
-          FLYCTL_VERSION: 0.5.15
-          FLYCTL_ARCHIVE_SHA256: 88136c52952fe75371d3a156b840b7999c6554a5d501e29b0ca7348cd701065b
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/flyctl.tar.gz"
-          install_dir="$HOME/.fly/bin"
-          mkdir -p "$install_dir"
-          curl --fail --silent --show-error --location \
-            --proto '=https' --tlsv1.2 \
-            --retry 5 --retry-all-errors --connect-timeout 10 --max-time 120 \
-            --output "$archive" \
-            "https://github.com/superfly/flyctl/releases/download/v$FLYCTL_VERSION/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
-          printf '%s  %s\n' "$FLYCTL_ARCHIVE_SHA256" "$archive" | sha256sum --check --strict -
-          tar --extract --gzip --file "$archive" --directory "$install_dir" flyctl
-          chmod +x "$install_dir/flyctl"
-          ln -s flyctl "$install_dir/fly"
-          case "$("$install_dir/flyctl" version)" in
-            "flyctl v$FLYCTL_VERSION "*) ;;
-            *) exit 1 ;;
-          esac
-
       - name: Test
-        env:
-          FLY_API_TOKEN: local-validate-only
-        run: |
-          export PATH="$HOME/.fly/bin:$PATH"
-          npm test
-
-      - name: Verify orphan-owner recovery operator contract
-        run: npm run test:owner-recovery
-
-      - name: Build Obscura sidecar image
-        run: docker build -t aria-obscura-ci ./docker/obscura
-
-      - name: Start Obscura sidecar
-        run: docker run -d --name obscura-ci -p 9222:9222 aria-obscura-ci
-
-      - name: Wait for Obscura sidecar
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs obscura-ci
-          exit 1
-
-      - name: Obscura integration test
-        env:
-          ARIA_REQUIRE_OBSCURA_TEST: "true"
-          OBSCURA_URL: http://127.0.0.1:9222
-        run: npm run test:obscura
-
-      - name: Stop Obscura sidecar
-        if: always()
-        run: docker rm -f obscura-ci
+        run: npm test
 
       - name: Build
         run: npm run build
 
   dependency-audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -126,7 +74,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -155,32 +103,46 @@ jobs:
           test "$("$install_dir/gitleaks" version)" = "$GITLEAKS_VERSION"
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Scan full history including the current release commit
+      # #168. HEAD is this branch, or the pull request merge commit.
+      - name: Scan the checked-out history
+        shell: bash
+        run: |
+          set -euo pipefail
+          gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='HEAD'
+
+      # #167. --all covers history that is fetched. An ignore commit that is
+      # not in this checkout yet is skipped. A commit that is here must be reachable.
+      - name: Scan the history of this checkout
         shell: bash
         run: |
           set -euo pipefail
           gitleaks git . --redact=100 --no-banner --config .gitleaks.toml --log-opts='--all'
+          git rev-list --all > "$RUNNER_TEMP/all-commits"
+          while IFS= read -r line; do
+            case "$line" in
+              ''|\#*) continue ;;
+            esac
+            sha="${line%%:*}"
+            if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+              continue
+            fi
+            grep -qx "$sha" "$RUNNER_TEMP/all-commits" || {
+              echo "gitleaks ignore commit is not reachable with --all: $sha" >&2
+              exit 1
+            }
+          done < .gitleaksignore
 
   database-security:
     name: Database security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Verify effective database authority
-        run: npm run test:db-privileges
-
       - name: Verify cross-channel cap serialization
         run: npm run test:db-cross-channel-cap
-
-      - name: Verify agent memory authority
-        run: npm run test:db-agent-memory
-
-      - name: Verify agent operational rollback authority
-        run: npm run test:db-agent-operational-rollback
 
       - name: Verify candidate erasure authority
         run: npm run test:db-candidate-erasure
@@ -191,236 +153,141 @@ jobs:
       - name: Verify person identity model
         run: npm run test:db-person-model
 
-      - name: Verify autonomous-loop job spine authority
-        run: npm run test:db-loop-jobs
-
-      - name: Verify Apollo enrichment authority
-        run: npm run test:db-apollo-enrichment
-
       - name: Verify adaptive sourcing authority
         run: npm run test:db-sourcing-learning
 
       - name: Verify conversation and message authority
         run: npm run test:db-conversation-authority
 
-      - name: Verify DeerFlow and Flowise database authority
-        run: npm run test:db-agent-framework
+      - name: Verify schema function privileges, workspace provisioning, and Dust authority
+        run: npm run test:db-schema-authority
 
-      - name: Verify orphan-owner recovery database authority
-        run: npm run test:db-owner-recovery
+      - name: Verify email outbox durability
+        run: npm run test:db-email-durability
 
-      - name: Prove Fly database volume and restart behavior
-        run: npm run test:fly-db-volume
+      - name: Verify inbound email correlation
+        run: npm run test:db-email-inbound
 
-  supply-chain:
-    name: Production image supply chain
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    env:
-      ARIA_CI_IMAGE: aria-msourcing:ci-${{ github.sha }}
-      ARIA_CI_DB_IMAGE: aria-msourcing-db:ci-${{ github.sha }}
-      ARIA_CI_BOOTSTRAP_IMAGE: aria-msourcing-bootstrap:ci-${{ github.sha }}
-      ARIA_CI_KONG_IMAGE: aria-msourcing-kong:ci-${{ github.sha }}
-      ARIA_CI_GRAPHIFY_IMAGE: aria-graphify-lessons:ci-${{ github.sha }}
-      # Trivy v0.72.0 OCI index digest, verified against Docker Hub on 2026-07-11.
-      TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
-      # Official CycloneDX CLI v0.32.0 OCI index digest, verified on 2026-07-11.
-      CYCLONEDX_CLI_IMAGE: cyclonedx/cyclonedx-cli:0.32.0@sha256:9a858a15e7b0843606efc0ff19d5f7575011a5428d7f3d343b4f6cf09d8f0d4e
+      - name: Verify candidate outcome events
+        run: npm run test:db-email-outcomes
+
+      # #167. The database test is not on twa-odoo yet, so these steps skip.
+      - name: Detect approval dispatch database test
+        id: approval-dispatch
+        run: |
+          set -euo pipefail
+          if grep -q '"test:db-approval-dispatch"' package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "test:db-approval-dispatch is not in package.json on this branch"
+          fi
+
+      - name: Setup Node 22
+        if: steps.approval-dispatch.outputs.present == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.approval-dispatch.outputs.present == 'true'
+        run: npm ci
+
+      - name: Verify approval dispatch hashes on Postgres
+        if: steps.approval-dispatch.outputs.present == 'true'
+        run: npm run test:db-approval-dispatch
+
+  local-demo:
+    name: Local Docker demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup Node 22
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install test dependencies
+        run: npm ci
+      - name: Verify the runner's installed browser
+        run: google-chrome --version
+      - name: Prove clean startup, login, persistence and restart
+        env:
+          ARIA_LOCAL_ACCEPTANCE: "1"
+          ARIA_ACCEPTANCE_PROJECT: aria-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          ARIA_RELEASE_SHA: ${{ github.sha }}
+          APP_PORT: "3101"
+          API_PORT: "54331"
+          DB_HOST_PORT: "54332"
+          ARIA_BROWSER_CHANNEL: chrome
+        run: npm run test:local-demo
+
+  channel-adapters:
+    name: Channel adapters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Install pinned Cosign verifier
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Verify the pinned Trivy scanner signature
-        run: |
-          set -euo pipefail
-          cosign verify "$TRIVY_IMAGE" \
-            --certificate-identity-regexp 'https://github\.com/aquasecurity/trivy/\.github/workflows/.+' \
-            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-            >/dev/null
-
-      - name: Build every production custom image
-        run: |
-          set -euo pipefail
-          docker build \
-            --pull \
-            --platform linux/amd64 \
-            --file Dockerfile.prod \
-            --tag "$ARIA_CI_IMAGE" \
-            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://aria-ci.invalid \
-            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-public-anon-key \
-            --build-arg NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN=example.invalid \
-            --build-arg NEXT_PUBLIC_ENABLE_DEMO_LOGIN=false \
-            .
-          docker build --pull --platform linux/amd64 \
-            --file docker/db/Dockerfile.fly \
-            --tag "$ARIA_CI_DB_IMAGE" \
-            .
-          docker build --pull --platform linux/amd64 \
-            --file docker/bootstrap/Dockerfile.fly \
-            --tag "$ARIA_CI_BOOTSTRAP_IMAGE" \
-            .
-          docker build --pull --platform linux/amd64 \
-            --file docker/kong/Dockerfile.fly \
-            --tag "$ARIA_CI_KONG_IMAGE" \
-            .
-          docker build --pull --platform linux/amd64 \
-            --file workers/graphify-lessons/Dockerfile \
-            --tag "$ARIA_CI_GRAPHIFY_IMAGE" \
-            workers/graphify-lessons
-          GRAPHIFY_IMAGE="$ARIA_CI_GRAPHIFY_IMAGE" npm run test:graphify-learning
-          mkdir -p "$RUNNER_TEMP/aria-scan-input"
-          for specification in \
-            "app|$ARIA_CI_IMAGE" \
-            "db|$ARIA_CI_DB_IMAGE" \
-            "bootstrap|$ARIA_CI_BOOTSTRAP_IMAGE" \
-            "kong|$ARIA_CI_KONG_IMAGE" \
-            "graphify|$ARIA_CI_GRAPHIFY_IMAGE"
-          do
-            IFS='|' read -r component image <<< "$specification"
-            docker image save \
-              --output "$RUNNER_TEMP/aria-scan-input/aria-$component-image.tar" \
-              "$image"
-          done
-
-      - name: Generate and schema-validate the package-only CycloneDX SBOM
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/supply-chain .trivy-cache
-          validate_cyclonedx() {
-            local host_dir="$1" file="$2"
-            docker run --rm \
-              --network none \
-              --read-only \
-              --cap-drop ALL \
-              --security-opt no-new-privileges:true \
-              --tmpfs /tmp:rw,noexec,nosuid,size=16m \
-              --volume "$host_dir:/artifacts:ro" \
-              "$CYCLONEDX_CLI_IMAGE" validate \
-              --input-file "/artifacts/$file" \
-              --input-format json \
-              --input-version v1_7 \
-              --fail-on-errors
-          }
-
-          export ARIA_CYCLONEDX_PROBE_DIR="$PWD/artifacts/supply-chain"
-          node <<'NODE'
-          const fs = require("node:fs");
-          const path = require("node:path");
-          const dir = process.env.ARIA_CYCLONEDX_PROBE_DIR;
-          fs.writeFileSync(
-            path.join(dir, "validator-valid.cdx.json"),
-            `${JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.7", version: 1 })}\n`,
-          );
-          fs.writeFileSync(
-            path.join(dir, "validator-invalid.cdx.json"),
-            `${JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.7", version: 0, unexpected: true })}\n`,
-          );
-          NODE
-          validate_cyclonedx "$PWD/artifacts/supply-chain" validator-valid.cdx.json
-          if validate_cyclonedx "$PWD/artifacts/supply-chain" validator-invalid.cdx.json >/dev/null 2>&1; then
-            echo "::error::CycloneDX validator accepted the malformed control document"
-            exit 1
-          fi
-          rm -f artifacts/supply-chain/validator-valid.cdx.json artifacts/supply-chain/validator-invalid.cdx.json
-
-          for component in app db bootstrap kong graphify; do
-            docker run --rm \
-              --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
-              --volume "$PWD/.trivy-cache:/trivy-cache" \
-              --volume "$PWD/artifacts/supply-chain:/artifacts" \
-              "$TRIVY_IMAGE" image \
-              --input "/image/aria-$component-image.tar" \
-              --cache-dir /trivy-cache \
-              --format cyclonedx \
-              --output "/artifacts/aria-$component.cdx.json" \
-              --timeout 15m
-            validate_cyclonedx "$PWD/artifacts/supply-chain" "aria-$component.cdx.json"
-          done
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          for name in ("app", "db", "bootstrap", "kong", "graphify"):
-              path = Path(f"artifacts/supply-chain/aria-{name}.cdx.json")
-              document = json.loads(path.read_text(encoding="utf-8"))
-              component = document.get("metadata", {}).get("component", {})
-              if document.get("bomFormat") != "CycloneDX":
-                  raise SystemExit(f"{name} SBOM is not CycloneDX")
-              if component.get("type") != "container":
-                  raise SystemExit(f"{name} SBOM metadata is not a container")
-              if not document.get("components"):
-                  raise SystemExit(f"{name} SBOM component inventory is empty")
-          PY
-          (
-            cd artifacts/supply-chain
-            for component in app db bootstrap kong graphify; do
-              sha256sum "aria-$component.cdx.json" > "aria-$component.cdx.json.sha256"
-            done
-          )
-
-      - name: Block high and critical production-image vulnerabilities
-        run: |
-          set -euo pipefail
-          # linkedin-client-id detects a public OAuth client identifier (not a
-          # credential) and false-fires on Sillage request field names compiled into
-          # the app bundle. The linkedin-client-secret rule remains armed.
-          cat > artifacts/supply-chain/trivy-secret.yaml <<'YAML'
-          disable-rules:
-            - linkedin-client-id
-          YAML
-          for component in app db bootstrap kong graphify; do
-            docker run --rm \
-              --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
-              --volume "$PWD/.trivy-cache:/trivy-cache" \
-              --volume "$PWD/artifacts/supply-chain:/artifacts" \
-              "$TRIVY_IMAGE" image \
-              --input "/image/aria-$component-image.tar" \
-              --cache-dir /trivy-cache \
-              --scanners vuln \
-              --severity HIGH,CRITICAL \
-              --ignore-unfixed=true \
-              --exit-code 1 \
-              --format json \
-              --output "/artifacts/aria-$component-vulnerabilities.json" \
-              --timeout 15m
-            docker run --rm \
-              --volume "$RUNNER_TEMP/aria-scan-input:/image:ro" \
-              --volume "$PWD/.trivy-cache:/trivy-cache" \
-              --volume "$PWD/artifacts/supply-chain:/artifacts" \
-              "$TRIVY_IMAGE" image \
-              --input "/image/aria-$component-image.tar" \
-              --cache-dir /trivy-cache \
-              --scanners secret \
-              --image-config-scanners secret \
-              --secret-config /artifacts/trivy-secret.yaml \
-              --exit-code 1 \
-              --format json \
-              --output "/artifacts/aria-$component-secrets.json" \
-              --timeout 15m
-          done
-
-      - name: Archive non-secret supply-chain reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          name: aria-production-supply-chain-${{ github.sha }}
-          path: |
-            artifacts/supply-chain/aria-*.cdx.json
-            artifacts/supply-chain/aria-*.cdx.json.sha256
-            artifacts/supply-chain/aria-*-vulnerabilities.json
-            artifacts/supply-chain/aria-*-secrets.json
+          go-version: "1.22"
+          cache: false
+
+      # #175. services/channels is not on twa-odoo yet, so each step skips.
+      - name: Vet channel adapters
+        run: |
+          set -euo pipefail
+          if [ ! -f services/channels/go.mod ]; then
+            echo "services/channels is not on this branch yet"
+            exit 0
+          fi
+          (cd services/channels && go vet ./...)
+
+      - name: Test channel adapters with the race detector
+        run: |
+          set -euo pipefail
+          if [ ! -f services/channels/go.mod ]; then
+            echo "services/channels is not on this branch yet"
+            exit 0
+          fi
+          (cd services/channels && go test -race ./...)
+
+  linkedin-token-e2e:
+    name: LinkedIn token Playwright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup Node 22
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Run the headless LinkedIn token suite
+        env:
+          CI: "true"
+        run: bash scripts/e2e-mac.sh
+      - name: Upload the end-to-end log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linkedin-token-e2e
+          path: e2e-artifacts
           if-no-files-found: error
-          retention-days: 30
 
   release-gate:
     name: Release gate
     if: always()
-    needs: [quality, dependency-audit, secret-scan, database-security, supply-chain]
-    runs-on: ubuntu-latest
+    needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
@@ -430,9 +297,11 @@ jobs:
           AUDIT_RESULT: ${{ needs.dependency-audit.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
           DATABASE_SECURITY_RESULT: ${{ needs.database-security.result }}
-          SUPPLY_CHAIN_RESULT: ${{ needs.supply-chain.result }}
+          LOCAL_DEMO_RESULT: ${{ needs.local-demo.result }}
+          CHANNEL_ADAPTERS_RESULT: ${{ needs.channel-adapters.result }}
+          LINKEDIN_TOKEN_E2E_RESULT: ${{ needs.linkedin-token-e2e.result }}
         run: |
-          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$SUPPLY_CHAIN_RESULT" != success ]; then
-            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT supply_chain=$SUPPLY_CHAIN_RESULT"
+          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ] || [ "$CHANNEL_ADAPTERS_RESULT" != success ] || [ "$LINKEDIN_TOKEN_E2E_RESULT" != success ]; then
+            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT channel_adapters=$CHANNEL_ADAPTERS_RESULT linkedin_token_e2e=$LINKEDIN_TOKEN_E2E_RESULT"
             exit 1
           fi

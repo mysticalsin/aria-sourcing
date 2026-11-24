@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 const scriptPath = "scripts/provision-first-admin.sh";
 assert.ok(existsSync(scriptPath), `${scriptPath} must exist`);
@@ -392,9 +392,9 @@ if [ "\${1:-}" = "--config" ] && [ -n "\${2:-}" ]; then
   shift 2
   normalized="\${config}.behavior-test"
   /usr/bin/sed 's/^fail-with-body = false$/no-fail-with-body/' "\$config" > "\$normalized"
-  exec "\$REAL_CURL" --config "\$normalized" "\$@"
+  exec "\$REAL_CURL" --cacert "\$CURL_CA_BUNDLE" --config "\$normalized" "\$@"
 fi
-exec "\$REAL_CURL" "\$@"
+exec "\$REAL_CURL" --cacert "\$CURL_CA_BUNDLE" "\$@"
 `,
     { mode: 0o700 },
   );
@@ -442,7 +442,7 @@ exec "\$REAL_CURL" "\$@"
       encoding: "utf8",
       env: {
         NODE_ENV: "test",
-        PATH: `${binPath}:${process.env.PATH ?? ""}`,
+        PATH: `${binPath}${delimiter}${process.env.PATH ?? ""}`,
         HOME: process.env.HOME ?? "",
         TMPDIR: root,
         REAL_CURL: realCurl,

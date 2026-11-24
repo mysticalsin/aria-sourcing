@@ -1,3 +1,4 @@
+import { loadBaselineSchema } from "./lib/baseline-schema.mts";
 import { existsSync, readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { NextRequest } from "next/server";
@@ -105,15 +106,15 @@ const body = (await response.json()) as { ok?: boolean };
 ok("member-controlled workspace state cannot authorize a Dust run", body.ok === false && dustRuns === 0);
 ok("Dust execution never reads member-writable workspace_state", workspaceStateReads === 0);
 
-const migration = source("supabase/migrations/0020_dust_authority.sql");
+const migration = source("supabase/migrations/0001_baseline.sql");
+const dustAudit = loadBaselineSchema().fn("audit_dust_connection_authority");
 const databaseTest = source("tests/db/dust-authority.sql");
-const databaseHarness = source("scripts/test-db-privileges.sh");
 const authority = source("src/lib/integrations/dust-authority.ts");
 const runRoute = source("src/app/api/dust/run/route.ts");
 const configRoute = source("src/app/api/integrations/dust/config/route.ts");
 const stateMigration = source("src/lib/store/migrations.ts");
 const settingsPanel = source("src/components/settings/dust-agent-panel.tsx");
-const intakePage = source("src/app/intake/page.tsx");
+const intakePage = source("src/components/campaigns/single-role-intake.tsx");
 
 ok("normalized Dust authority migration exists", migration.length > 0);
 ok("Dust authority resolver exists", authority.length > 0);
@@ -142,10 +143,6 @@ ok(
     /request\.jwt\.claims/i.test(databaseTest),
 );
 ok(
-  "disposable database harness runs Dust authority verification",
-  /tests\/db\/dust-authority\.sql/.test(databaseHarness),
-);
-ok(
   "migration creates append-only non-secret Dust audit storage",
   /create table[^;]+dust_connection_events/is.test(migration) &&
     /config_hash\s+text/i.test(migration) &&
@@ -159,13 +156,12 @@ ok(
 );
 ok(
   "migration hashes structured Dust authority without copying configuration",
-  /audit_dust_connection_authority/i.test(migration) &&
-    /digest\(\s*jsonb_build_array\(/i.test(migration) &&
-    !/insert into public\.dust_connection_events[\s\S]*?agent_locks/i.test(migration),
+  /digest\(\s*jsonb_build_array\(/i.test(dustAudit) &&
+    !/insert into public\.dust_connection_events[\s\S]*?agent_locks/i.test(dustAudit),
 );
 ok(
   "Dust audit reads have a tenant and connection index",
-  /create index if not exists [^\n]+[\s\S]*?on public\.dust_connection_events\s*\(workspace_id, connection_id, created_at desc\)/i.test(
+  /CREATE INDEX \w+ ON public\.dust_connection_events USING btree \(workspace_id, connection_id, created_at DESC\)/.test(
     migration,
   ),
 );
@@ -174,7 +170,7 @@ ok(
   /foreign key\s*\(api_key_id,\s*workspace_id,\s*credential_provider\)/i.test(migration),
 );
 ok("migration restricts configuration mutations to admins", /current_profile_role\(\)\s*=\s*'admin'/i.test(migration));
-ok("migration gives the service resolver explicit read access", /grant\s+select\s+on\s+public\.dust_connections\s+to\s+service_role/i.test(migration));
+ok("migration gives the service resolver explicit read access", /^GRANT SELECT ON TABLE public\.dust_connections TO service_role;$/m.test(migration));
 ok("migration strips untrusted legacy Dust JSON authority", /strip_legacy_dust_authority/i.test(migration));
 ok("Dust execution resolves canonical authority", /resolveDustAuthority/.test(runRoute));
 ok("Dust execution source no longer references workspace_state", !/workspace_state/.test(runRoute));

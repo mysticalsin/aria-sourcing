@@ -2,16 +2,16 @@
  * audit-fixes.mts — verifies the D/F/S audit-fix correctness without React.
  *
  * Covered:
- *  D-1/D-2  migration fills every required HermesState field from a v6-shaped blob
+ *  D-1/D-2  migration fills every required WorkspaceState field from a v6-shaped blob
  *  D-3      removeProvider cascade: savedModels pruned, seat.providerId cleared, default promoted
  *  D-4      removeModel cascade: defaultModels pruned, seat.modelId cleared
  *  D-6      removeApiKey only commits when the server delete succeeds (res.ok guard)
- *  F-1      classify falls back to mock classifyReply when hermesAvailable returns false
+ *  F-1      classify falls back to mock classifyReply when no AI provider is configured
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import { hermesAvailable } from "../src/lib/ai/hermes.js";
+import { resolveAiProvider } from "../src/lib/ai/provider.js";
 import { classifyReply } from "../src/lib/mock-ai.js";
-import type { HermesState, LlmProvider, SavedModel, AgentSeat } from "../src/lib/types.js";
+import type { WorkspaceState, LlmProvider, SavedModel, AgentSeat } from "../src/lib/types.js";
 
 let pass = 0;
 let fail = 0;
@@ -37,42 +37,39 @@ const v6Blob = {
   version: 6,
   campaigns: seed.campaigns.slice(0, 1),
   candidates: seed.candidates.slice(0, 2),
-  outreach: [] as HermesState["outreach"],
-  replies: [] as HermesState["replies"],
-  bookings: [] as HermesState["bookings"],
-  reports: [] as HermesState["reports"],
-  integrations: [] as HermesState["integrations"],
-  activities: [] as HermesState["activities"],
+  outreach: [] as WorkspaceState["outreach"],
+  replies: [] as WorkspaceState["replies"],
+  bookings: [] as WorkspaceState["bookings"],
+  reports: [] as WorkspaceState["reports"],
+  integrations: [] as WorkspaceState["integrations"],
+  activities: [] as WorkspaceState["activities"],
   activeCampaignId: null as string | null,
   settings: {
     ...seed.settings,
     // Fields absent in v6:
-    llmProviders: undefined as unknown as HermesState["settings"]["llmProviders"],
-    savedModels: undefined as unknown as HermesState["settings"]["savedModels"],
-    tools: undefined as unknown as HermesState["settings"]["tools"],
-    defaultModels: undefined as unknown as HermesState["settings"]["defaultModels"],
-    hermesLiveMode: undefined as unknown as boolean,
-    hermesApiUrl: undefined as unknown as string,
-    hermesApiKeyId: undefined as unknown as string,
-    notifications: undefined as unknown as HermesState["settings"]["notifications"],
-    guardrails: undefined as unknown as HermesState["settings"]["guardrails"],
+    llmProviders: undefined as unknown as WorkspaceState["settings"]["llmProviders"],
+    savedModels: undefined as unknown as WorkspaceState["settings"]["savedModels"],
+    tools: undefined as unknown as WorkspaceState["settings"]["tools"],
+    defaultModels: undefined as unknown as WorkspaceState["settings"]["defaultModels"],
+    notifications: undefined as unknown as WorkspaceState["settings"]["notifications"],
+    guardrails: undefined as unknown as WorkspaceState["settings"]["guardrails"],
   },
-  seats: [] as HermesState["seats"],
+  seats: [] as WorkspaceState["seats"],
   // Absent in v6:
-  suppression: undefined as unknown as HermesState["suppression"],
-  ledger: undefined as unknown as HermesState["ledger"],
-  skills: undefined as unknown as HermesState["skills"],
-  apiKeys: undefined as unknown as HermesState["apiKeys"],
-  currentRole: undefined as unknown as HermesState["currentRole"],
-  chats: undefined as unknown as HermesState["chats"],
-  wins: undefined as unknown as HermesState["wins"],
-  interviewers: undefined as unknown as HermesState["interviewers"],
-  memory: undefined as unknown as HermesState["memory"],
-  schedules: undefined as unknown as HermesState["schedules"],
+  suppression: undefined as unknown as WorkspaceState["suppression"],
+  ledger: undefined as unknown as WorkspaceState["ledger"],
+  skills: undefined as unknown as WorkspaceState["skills"],
+  apiKeys: undefined as unknown as WorkspaceState["apiKeys"],
+  currentRole: undefined as unknown as WorkspaceState["currentRole"],
+  chats: undefined as unknown as WorkspaceState["chats"],
+  wins: undefined as unknown as WorkspaceState["wins"],
+  interviewers: undefined as unknown as WorkspaceState["interviewers"],
+  memory: undefined as unknown as WorkspaceState["memory"],
+  schedules: undefined as unknown as WorkspaceState["schedules"],
 };
 
 // Apply the same fills that migrateToCurrentVersion performs.
-const migrated: HermesState = {
+const migrated: WorkspaceState = {
   ...v6Blob,
   version: STATE_VERSION,
   campaigns: v6Blob.campaigns ?? [],
@@ -100,16 +97,13 @@ const migrated: HermesState = {
     savedModels: v6Blob.settings.savedModels ?? defs.savedModels,
     tools: v6Blob.settings.tools ?? defs.tools,
     defaultModels: v6Blob.settings.defaultModels ?? defs.defaultModels,
-    hermesLiveMode: v6Blob.settings.hermesLiveMode ?? defs.hermesLiveMode,
-    hermesApiUrl: v6Blob.settings.hermesApiUrl ?? defs.hermesApiUrl,
-    hermesApiKeyId: v6Blob.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
     notifications: v6Blob.settings.notifications ?? defs.notifications,
     guardrails: v6Blob.settings.guardrails ?? defs.guardrails,
   },
   seats: (v6Blob.seats ?? []).map((seat: AgentSeat) => ({ ...seat })),
 };
 
-// Every required HermesState field must be defined after migration.
+// Every required WorkspaceState field must be defined after migration.
 ok("D-2 migration: version bumped to STATE_VERSION", migrated.version === STATE_VERSION);
 ok("D-2 migration: campaigns defined", Array.isArray(migrated.campaigns));
 ok("D-2 migration: candidates defined", Array.isArray(migrated.candidates));
@@ -134,8 +128,6 @@ ok("D-2 migration: llmProviders filled", Array.isArray(migrated.settings.llmProv
 ok("D-2 migration: savedModels filled", Array.isArray(migrated.settings.savedModels));
 ok("D-2 migration: tools filled", Array.isArray(migrated.settings.tools));
 ok("D-2 migration: defaultModels filled", migrated.settings.defaultModels !== undefined);
-ok("D-2 migration: hermesLiveMode filled (false)", migrated.settings.hermesLiveMode === false);
-ok("D-2 migration: hermesApiUrl filled (empty)", migrated.settings.hermesApiUrl === "");
 ok("D-2 migration: notifications filled", migrated.settings.notifications !== undefined);
 ok("D-2 migration: guardrails filled", migrated.settings.guardrails !== undefined);
 // D-1: existing settings are preserved (not wiped by defaults).
@@ -153,7 +145,7 @@ const modelA: SavedModel = { id: "model_a", providerId: "prov_a", modelName: "cl
 const modelB: SavedModel = { id: "model_b", providerId: "prov_b", modelName: "gpt-4", label: "GPT-4", enabled: true };
 const seatWithProvA = { ...seed.seats[0], providerId: "prov_a", modelId: undefined };
 
-const stateWithProviders: HermesState = {
+const stateWithProviders: WorkspaceState = {
   ...seed,
   settings: {
     ...seed.settings,
@@ -165,7 +157,7 @@ const stateWithProviders: HermesState = {
 };
 
 // Simulate the D-3 removeProvider cascade logic (mirrors the store action).
-function applyRemoveProvider(s: HermesState, id: string): HermesState {
+function applyRemoveProvider(s: WorkspaceState, id: string): WorkspaceState {
   const removedProvider = (s.settings.llmProviders ?? []).find((p) => p.id === id);
   const remaining = (s.settings.llmProviders ?? []).filter((p) => p.id !== id);
   let updatedProviders = remaining;
@@ -201,7 +193,7 @@ ok("D-3 removeProvider: new default promoted (prov_b)", afterRemoveProvA.setting
    ========================================================================== */
 
 const seatWithModelA = { ...seed.seats[0], modelId: "model_a", providerId: undefined };
-const stateWithModels: HermesState = {
+const stateWithModels: WorkspaceState = {
   ...seed,
   settings: {
     ...seed.settings,
@@ -212,7 +204,7 @@ const stateWithModels: HermesState = {
 };
 
 // Simulate the D-4 removeModel cascade logic (mirrors the store action).
-function applyRemoveModel(s: HermesState, id: string): HermesState {
+function applyRemoveModel(s: WorkspaceState, id: string): WorkspaceState {
   const defaultModels = { ...(s.settings.defaultModels ?? {}) };
   (Object.keys(defaultModels) as Array<keyof typeof defaultModels>).forEach((task) => {
     if (defaultModels[task] === id) delete defaultModels[task];
@@ -259,14 +251,13 @@ ok("D-6 removeApiKey: no commit when server returns error", !(await simulateRemo
 ok("D-6 removeApiKey: commits when server returns ok", await simulateRemoveApiKey(true));
 
 /* ============================================================================
-   F-1  Classify falls back to mock when hermesAvailable returns false
+   F-1  Classify falls back to mock when no AI provider is configured
    ========================================================================== */
 
-// When live mode is off, hermesAvailable is false and mock classifyReply is used.
-ok("F-1 classify: hermesAvailable false when liveMode off", !hermesAvailable(defs));
+// With no provider for the classification task, the mock classifyReply is used.
 ok(
-  "F-1 classify: hermesAvailable false when URL missing",
-  !hermesAvailable({ ...defs, hermesLiveMode: true, hermesApiUrl: "" }),
+  "F-1 classify: no live classifier without a configured provider",
+  resolveAiProvider({ ...defs, llmProviders: [], savedModels: [], defaultModels: {} }, "classification") === null,
 );
 
 // Verify the mock returns the correct ReplyClassification shape.

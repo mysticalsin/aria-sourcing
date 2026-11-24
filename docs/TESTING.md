@@ -28,8 +28,8 @@ npm run build:isolated
 lifecycle phases to `tests/test-manifest.mjs`, and
 `scripts/run-test-manifest.mjs` validates and executes that literal process
 inventory without a shell. Do not create another copied command list.
-`build:isolated` is required in the OneDrive checkout because it copies build
-inputs to a temporary unsynced directory before running the Next.js build.
+`build:isolated` copies build inputs to a temporary directory before running
+the Next.js build; use it when the checkout lives in a synced folder (OneDrive).
 
 ## Security gate
 
@@ -48,66 +48,48 @@ its exact lockfile or digest.
 These commands require Docker and create disposable databases:
 
 ```bash
-npm run test:db-privileges
-npm run test:db-agent-memory
-npm run test:db-agent-operational-rollback
 npm run test:db-candidate-erasure
 npm run test:db-candidates-corpus
 npm run test:db-person-model
 npm run test:db-cross-channel-cap
-npm run test:db-apollo-enrichment
 npm run test:db-sourcing-learning
 npm run test:db-conversation-authority
-npm run test:db-agent-framework
-npm run test:db-owner-recovery
-npm run test:fly-db-volume
 ```
 
-They cover direct-session privilege separation, migration idempotence, retired
-credentials, exact-scope agent memory, current-tip operational fallback and
-forward recovery, candidate-erasure authority, cross-channel daily-cap
-serialization, candidate-corpus mirror authority, derived person identity,
-Apollo authority,
-adaptive-sourcing lessons, conversation and framework authority, orphan-owner
-recovery, legacy-volume refusal, and restart
-persistence. This list mirrors the disposable-database jobs in
+They cover candidate-erasure authority, candidate-corpus mirror authority,
+derived person identity, cross-channel daily-cap
+serialization, sourcing-run receipts, and
+conversation authority. This list mirrors the `database-security` job in
 `.github/workflows/ci.yml`; update both when adding a database gate.
 
 Static SQL-text tests are useful regression guards but do not replace these
 database behavior tests.
 
-## Documentation and repository contracts
+## Repository contracts
 
 ```bash
-npx tsx tests/docs-truth.mts
 npx tsx tests/repository-hygiene.mts
 ```
 
-These tests derive current process counts from the manifest and migration tips
-from the migration directory. Avoid unchecked hand-entered totals in current
-documentation.
+Avoid unchecked hand-entered totals (suite counts, migration tips) in current
+documentation; derive them from the manifest and the migration directory.
 
-## CI and protected release
+## CI
 
-Local green is necessary but does not qualify a production release. The exact
-release SHA must have:
+`.github/workflows/ci.yml` runs Quality (typecheck, lint, tests, build),
+Dependency audit, Secret scan, Database security and Local Docker demo, then a
+Release gate that requires all five. `codeql.yml` runs CodeQL.
 
-- CI quality, dependency, secret, database, image, and aggregate release jobs;
-- CodeQL with no open high or critical alert;
-- protected-branch and independent-environment approval;
-- recovery receipt bound to the release and recovery target;
-- immutable image digests, scans, SBOM validation, and attestations;
-- accepted release evidence artifacts.
+There is no production deployment: Fly and Vercel were removed and the
+self-hosting target is not chosen yet. Release requirements (protected ref,
+image digests, environment approval) will be defined with that target.
 
-The production workflow must execute from the protected release ref and deploy
-the same reviewed SHA.
+## Acceptance on a deployed stack
 
-## Live acceptance
-
-After deployment, verify:
+Once a deployment exists, verify after each deployment:
 
 1. application, login, liveness, and `/api/ready`;
-2. authenticated Kong REST and Auth behavior;
+2. authenticated gateway REST and Auth behavior;
 3. running image and build identity;
 4. complete migration identity;
 5. database and Auth persistence across two controlled restarts;
@@ -137,13 +119,11 @@ Do not summarize a partial gate as full production readiness.
 
 The chained source gate does not currently include:
 
-- a real-browser Agent Studio journey;
-- two-user concurrent Agent execution through deployed application APIs;
+- a real-browser journey through the recruiting pages (a manual Docker smoke
+  is the current check);
 - axe, keyboard, and mobile-viewport acceptance;
 - behavioral coverage instrumentation and enforced thresholds;
-- a real email and official WhatsApp send-and-reply round trip;
-- production restart, recovery, and exact-release acceptance for the current
-  migration tip.
+- a real email send-and-reply round trip;
 
 Static source assertions and mock-server harnesses remain useful regression
 checks, but they do not close these gaps.

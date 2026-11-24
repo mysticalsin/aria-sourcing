@@ -18,9 +18,20 @@ ok("public careers route requires an explicit workspace configuration", route.in
 ok("public careers route uses only the server-side service client", route.includes("getServiceSupabase") && !route.includes("getServerSupabase"));
 ok("public careers writes are rate limited", route.includes("checkRateLimit") && route.includes("tooManyRequests"));
 ok("public careers writes require JSON validation", route.includes("validateBody") && route.includes("application/json"));
-ok("public careers writes reject cross-origin browser requests", route.includes("origin") && route.includes("req.nextUrl.origin"));
+ok("public careers writes reject cross-origin browser requests", route.includes("if (!isSameOriginRequest(req)) return json({ ok: false }, 403);"));
 ok("public careers writes use the optimistic-concurrency submission service", route.includes("submitPublicCareerApplication"));
 ok("public careers responses are never cached", route.includes("Cache-Control") && route.includes("no-store"));
+
+ok(
+  "the synthetic demo serves seed roles only without a backend or careers tenant",
+  route.includes("if (workspaceId) return { workspaceId, repository: serviceRepository(), demo: false };") &&
+    route.includes("if (!supabaseEnabled) return { workspaceId: DEMO_WORKSPACE_ID, repository: demoRepository(), demo: true };"),
+);
+ok(
+  "demo applications are validated but never stored",
+  /async compareAndSet\(\) \{\s*return true;/.test(route) &&
+    !/function demoRepository[\s\S]{0,500}getServiceSupabase/.test(route),
+);
 
 console.log(`RESULT careers-route: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

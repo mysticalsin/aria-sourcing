@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useDeliverApprovedLinkedIn } from "@/components/linkedin/outreach-send";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -13,13 +14,13 @@ import {
   EmptyState,
   Progress,
   SkeletonCard,
+  Drawer,
   useToast,
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
-import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
+import { OutreachMessageCard, waitingLabel } from "@/components/outreach/outreach-message-card";
 import { RateMeterPanel } from "@/components/outreach/rate-meter-panel";
 import { QuickDraft } from "@/components/outreach/quick-draft";
-import { WhatsAppTemplatePicker } from "@/components/outreach/whatsapp-template-picker";
 import { SequenceLadder } from "@/components/outreach/sequence-ladder";
 import { GlassBoxPanel } from "@/components/outreach/glass-box-panel";
 import {
@@ -35,6 +36,8 @@ import {
 } from "@/lib/store";
 import type { FollowUpDueItem } from "@/lib/recommendations";
 import type { Candidate, OutreachMessage } from "@/lib/types";
+import { runMission } from "@/lib/agents/mission";
+import { followUpPlan } from "@/lib/agents/follow-up-mission";
 import { cn, pluralize } from "@/lib/utils";
 import {
   Inbox,
@@ -46,6 +49,7 @@ import {
   Linkedin,
   Repeat,
   CheckCheck,
+  PenLine,
 } from "lucide-react";
 
 /** View-only "why this person" fallback — guarantees the chip on a queue row
@@ -71,9 +75,9 @@ function whyThisPersonHook(message: OutreachMessage, candidate: Candidate | unde
   return real ?? personalizationFallbackHook(candidate);
 }
 
-/** Compact "why this person" chip for a queue row — distinct per candidate
- *  since it's sourced from that candidate's own evidence/skills, never a
- *  shared template string. */
+/** Compact "why this person" chip for the scheduled and sent lists — distinct
+ *  per candidate since it's sourced from that candidate's own evidence/skills,
+ *  never a shared template string. */
 function WhyThisPersonChip({ message }: { message: OutreachMessage }) {
   const candidate = useCandidate(message.candidateId);
   const hook = whyThisPersonHook(message, candidate);
@@ -82,6 +86,90 @@ function WhyThisPersonChip({ message }: { message: OutreachMessage }) {
       <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
       {hook}
     </Badge>
+  );
+}
+
+/** One pending draft as a compact, collapsed row: who, subject, why this
+ *  person, channel and queue age. Clicking unfolds the full editable card
+ *  (approve, reject, edit) and its guardrail detail, one row at a time, so a
+ *  long queue stays scannable instead of a wall of open editors. */
+function PendingRow({
+  message,
+  expanded,
+  onToggle,
+  selected,
+  onToggleSelect,
+  glassBoxOpen,
+  onToggleGlassBox,
+}: {
+  message: OutreachMessage;
+  expanded: boolean;
+  onToggle: () => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+  glassBoxOpen: boolean;
+  onToggleGlassBox: () => void;
+}) {
+  const candidate = useCandidate(message.candidateId);
+  const name = candidate?.name ?? "Unknown candidate";
+  const hook = whyThisPersonHook(message, candidate);
+  const panelId = `draft-${message.id}`;
+  return (
+    <div className={cn("rounded-2xl border bg-surface transition-colors", expanded ? "border-electric/30" : "border-line")}>
+      <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(message.id)}
+          aria-label={`Select the draft to ${name}`}
+          className="h-4 w-4 shrink-0 rounded border-line accent-tangerine focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-ink">
+              {name}
+              <span className="font-normal text-muted"> · {message.subject}</span>
+            </span>
+            <span className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-soft" title={hook}>
+              <Sparkles className="h-3 w-3 shrink-0 text-aqua" aria-hidden />
+              <span className="truncate">{hook}</span>
+            </span>
+          </span>
+          {message.draftedBy === "ai" && (
+            <Badge tone="electric" size="sm" className="hidden shrink-0 md:inline-flex">
+              Claude
+            </Badge>
+          )}
+          <Badge tone="neutral" size="sm" className="shrink-0">
+            {message.channel}
+          </Badge>
+          <span className="hidden shrink-0 text-xs tabular-nums text-muted sm:inline">{waitingLabel(message.createdAt)}</span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted transition-transform", expanded && "rotate-180")} aria-hidden />
+        </button>
+      </div>
+      {expanded && (
+        <div id={panelId} className="space-y-2 border-t border-line p-2 sm:p-3">
+          <OutreachMessageCard message={message} />
+          <button
+            type="button"
+            onClick={onToggleGlassBox}
+            aria-expanded={glassBoxOpen}
+            className="inline-flex items-center gap-1.5 rounded-full px-1 text-xs font-semibold text-electric transition hover:text-electric/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            {glassBoxOpen ? "Hide guardrail detail" : "Show guardrail detail"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", glassBoxOpen && "rotate-180")} aria-hidden />
+          </button>
+          {glassBoxOpen && <GlassBoxPanel message={message} />}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -112,18 +200,6 @@ function StatTile({
       <p className="text-xs font-medium text-muted">{label}</p>
     </div>
   );
-}
-
-/** Small concurrent batches so drafting the whole due backlog (40+) never
- *  freezes the store or the UI -- mirrors handleBulkDraftOutreach's
- *  commit-loop pattern in candidates/page.tsx. draftFollowUpFor is itself
- *  async (it may attempt a live-gen round trip), so each batch runs its
- *  calls concurrently via Promise.all, then yields one tick before the next
- *  batch so the Progress meter actually paints. */
-const FOLLOWUP_DRAFT_BATCH_SIZE = 5;
-
-function nextTick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /** One row in the "Follow-ups due" list (Task 1) — drafts a step-N follow-up
@@ -191,10 +267,15 @@ function OutreachView() {
   const [approvingAll, setApprovingAll] = React.useState(false);
   const [draftingAllDue, setDraftingAllDue] = React.useState(false);
   const [draftAllProgress, setDraftAllProgress] = React.useState({ done: 0, total: 0 });
+  const followUpAbortRef = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => followUpAbortRef.current?.abort(), []);
   // Which pending draft (if any) has its glass-box guardrail detail expanded.
   // Collapsed by default so the queue doesn't render every candidate's radar
   // + claim map at once; the panel is one click away for every draft.
   const [glassBoxId, setGlassBoxId] = React.useState<string | null>(null);
+  // One pending draft unfolded at a time; the composer lives in a drawer.
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = React.useState(false);
 
   function toggleGlassBox(messageId: string) {
     setGlassBoxId((prev) => (prev === messageId ? null : messageId));
@@ -235,6 +316,8 @@ function OutreachView() {
    *  checkOutreachApproval internally) — never flips status directly, never
    *  bypasses a blocker, and never sends. Blocked drafts simply stay in the
    *  queue and get counted, matching the single-approve failure path. */
+  const deliverOnLinkedIn = useDeliverApprovedLinkedIn();
+
   async function handleBulkApprove() {
     if (approvingAll) return;
     const ids = selectedInView.map((m) => m.id);
@@ -243,11 +326,19 @@ function OutreachView() {
     let approved = 0;
     let blocked = 0;
     let simulated = 0;
+    let linkedInHeld = 0;
     const blockers = new Set<string>();
     const blockedIds = new Set<string>();
     try {
       for (const id of ids) {
         const res = await actions.approveOutreach(id);
+        const approvedMessage = res.allowed && !res.dryRun ? selectedInView.find((m) => m.id === id) : undefined;
+        if (approvedMessage?.channel === "LinkedIn") {
+          // Approving a LinkedIn message sends it (paced by the server); a
+          // failure leaves it in Pending manual send.
+          const sent = await deliverOnLinkedIn(approvedMessage, { quiet: true });
+          if (!sent.ok) linkedInHeld += 1;
+        }
         if (res.dryRun) {
           simulated += 1;
           blockedIds.add(id);
@@ -269,9 +360,10 @@ function OutreachView() {
             ? `Approved ${approved}, ${blocked} blocked`
             : `Approved ${approved}`,
         description:
-          blocked > 0 || simulated > 0
+          (blocked > 0 || simulated > 0
             ? `Unchanged drafts stayed selected in the queue. ${Array.from(blockers).join(" ")}`
-            : "Queued for send per the usual approval flow.",
+            : "Queued for send per the usual approval flow.") +
+          (linkedInHeld > 0 ? ` ${linkedInHeld} LinkedIn message(s) could not be sent and wait in Pending manual send.` : ""),
         variant: blocked > 0 || simulated > 0 ? "warning" : "success",
       });
     } finally {
@@ -279,35 +371,50 @@ function OutreachView() {
     }
   }
 
-  /** Draft-all-due autopilot (Task 2.4): clears the entire follow-up backlog
-   *  in one click by calling the SAME draftFollowUpFor the single-row button
-   *  uses for every currently-due item — never sends, only adds drafts to
-   *  the approval queue above, each already tagged with its own sequence
-   *  step. Batches with a small concurrency cap (see FOLLOWUP_DRAFT_BATCH_SIZE)
-   *  so a large backlog (40+) never freezes the store or the UI. */
+  /** Draft-all-due mission: one follow-up drafting agent per due candidate
+   *  (followUpPlan), three at a time, best matches first, at most
+   *  MAX_FOLLOW_UPS_PER_RUN per click. Each agent calls the SAME
+   *  draftFollowUpFor as the single-row button, so it never sends; it only
+   *  adds drafts to the approval queue above, each tagged with its own
+   *  sequence step. Leaving the page stops the agents not yet started. */
   async function handleDraftAllDue() {
     if (draftingAllDue) return;
     const items = followUpsDueFiltered;
     if (items.length === 0) return;
 
+    const plan = followUpPlan(items, (candidateId) => actions.draftFollowUpFor(candidateId));
+    const runs = plan.steps[0]?.fanOut?.({}).length ?? 0;
+    followUpAbortRef.current?.abort();
+    const controller = new AbortController();
+    followUpAbortRef.current = controller;
     setDraftingAllDue(true);
-    setDraftAllProgress({ done: 0, total: items.length });
-    let drafted = 0;
-    for (let i = 0; i < items.length; i += FOLLOWUP_DRAFT_BATCH_SIZE) {
-      const batch = items.slice(i, i + FOLLOWUP_DRAFT_BATCH_SIZE);
-      const results = await Promise.all(batch.map((item) => actions.draftFollowUpFor(item.candidateId)));
-      drafted += results.filter((msg) => msg !== null).length;
-      setDraftAllProgress({ done: Math.min(i + FOLLOWUP_DRAFT_BATCH_SIZE, items.length), total: items.length });
-      await nextTick();
-    }
+    setDraftAllProgress({ done: 0, total: runs });
+    let finished = 0;
+    const report = await runMission(plan, {
+      concurrency: 3,
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type === "agent_finished") setDraftAllProgress({ done: ++finished, total: runs });
+      },
+    });
+    if (controller.signal.aborted) return;
     setDraftingAllDue(false);
 
-    const skipped = items.length - drafted;
+    const messages = (report.results["follow-ups"] as OutreachMessage[] | undefined) ?? [];
+    const drafted = messages.length;
+    const byClaude = messages.filter((m) => m.draftedBy === "ai").length;
+    const skipped = runs - drafted;
+    const remaining = items.length - runs;
+    const notes = [
+      byClaude > 0 ? `${byClaude} written by Claude.` : "",
+      skipped > 0 ? `${pluralize(skipped, "candidate")} skipped (already handled).` : "",
+      remaining > 0 ? `${remaining} more due: run again after reviewing these.` : "",
+    ].filter(Boolean);
     toast({
       title: `Drafted ${pluralize(drafted, "follow-up")}`,
       description:
-        skipped > 0
-          ? `${pluralize(skipped, "candidate")} skipped (already handled). Each draft carries its own sequence step, review above.`
+        notes.length > 0
+          ? `${notes.join(" ")} Each draft carries its own sequence step, review above.`
           : "Each draft carries its own sequence step. Review and approve above; nothing was sent.",
       variant: drafted > 0 ? "success" : "warning",
     });
@@ -326,11 +433,11 @@ function OutreachView() {
   return (
     <>
       <PageHeader
-        eyebrow="Outreach approvals"
-        title="Human approval. Machine speed."
+        eyebrow="Engage"
+        title="Outreach"
         description="Every message is drafted by the system and held here for your sign-off. Nothing reaches a candidate without your approval."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label
               htmlFor="outreach-campaign-filter"
               className="text-sm font-semibold text-ink-soft"
@@ -345,14 +452,26 @@ function OutreachView() {
               aria-label="Filter outreach by campaign"
               className="w-56"
             />
+            <Button variant="outline" leftIcon={<PenLine className="h-4 w-4" aria-hidden />} onClick={() => setComposerOpen(true)}>
+              New message
+            </Button>
           </div>
         }
       />
 
+      <Drawer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        title="New message"
+        description="Draft a one-off message. It joins the approval queue like every other draft."
+      >
+        <QuickDraft />
+      </Drawer>
+
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
               <SkeletonCard />
               <SkeletonCard />
@@ -364,12 +483,10 @@ function OutreachView() {
         }
       >
         <div className="space-y-6">
-        <QuickDraft />
-        <WhatsAppTemplatePicker />
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main queue */}
           <div className="space-y-6 lg:col-span-2">
-            <section className="space-y-4">
+            <section data-tour="approval-queue" className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span
@@ -427,31 +544,18 @@ function OutreachView() {
                   }
                 />
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-2">
                   {pendingFiltered.map((m) => (
-                    <div key={m.id} className="space-y-2">
-                      <WhyThisPersonChip message={m} />
-                      <OutreachMessageCard
-                        message={m}
-                        selectable
-                        selected={selectedIds.has(m.id)}
-                        onToggleSelect={toggleSelect}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleGlassBox(m.id)}
-                        aria-expanded={glassBoxId === m.id}
-                        className="inline-flex items-center gap-1.5 rounded-full px-1 text-xs font-semibold text-electric transition hover:text-electric/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
-                      >
-                        <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                        {glassBoxId === m.id ? "Hide guardrail detail" : "Show guardrail detail"}
-                        <ChevronDown
-                          className={cn("h-3.5 w-3.5 transition-transform", glassBoxId === m.id && "rotate-180")}
-                          aria-hidden
-                        />
-                      </button>
-                      {glassBoxId === m.id && <GlassBoxPanel message={m} />}
-                    </div>
+                    <PendingRow
+                      key={m.id}
+                      message={m}
+                      expanded={expandedId === m.id}
+                      onToggle={() => setExpandedId((prev) => (prev === m.id ? null : m.id))}
+                      selected={selectedIds.has(m.id)}
+                      onToggleSelect={toggleSelect}
+                      glassBoxOpen={glassBoxId === m.id}
+                      onToggleGlassBox={() => toggleGlassBox(m.id)}
+                    />
                   ))}
                 </div>
               )}
@@ -506,6 +610,7 @@ function OutreachView() {
                     variant="outline"
                     leftIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden />}
                     onClick={handleDraftAllDue}
+                    data-tour="draft-due"
                     loading={draftingAllDue}
                     disabled={draftingAllDue}
                   >
@@ -545,9 +650,9 @@ function OutreachView() {
                     <Send className="h-4 w-4" />
                   </span>
                   <span>
-                    <span className="block text-sm font-bold text-ink">Scheduled</span>
+                    <span className="block text-sm font-bold text-ink">Sent &amp; scheduled</span>
                     <span className="block text-xs text-muted">
-                      Approved &amp; queued for send
+                      Approved: sent on LinkedIn, or queued (email stays a dry-run)
                     </span>
                   </span>
                 </span>
@@ -664,7 +769,7 @@ export default function OutreachPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
             <SkeletonCard />
             <SkeletonCard />

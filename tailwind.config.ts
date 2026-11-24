@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Hermes Sourcing design system.
+ * Aria Sourcing design system.
  * Colors are wired to CSS variables declared in src/styles/globals.css so the
  * palette can be retuned in one place. Raw hex fallbacks live in globals.css.
  */
@@ -114,7 +114,7 @@ const config: Config = {
         // this is visually identical to `both` with the bug removed.
         "fade-in": "fade-in 0.18s var(--ease-motion-out) backwards",
         "scale-in": "scale-in 0.2s ease-out backwards",
-        "slide-in-right": "slide-in-right 0.18s var(--ease-motion-out) backwards",
+        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards",
         "spin-slow": "spin-slow 14s linear infinite",
       },
     },

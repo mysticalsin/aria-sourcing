@@ -10,9 +10,12 @@ import {
   validateCandidateBoundText,
 } from "@/lib/agent-disclosure-policy";
 import { DEFAULT_MODEL, VAULT_PROVIDER, resolveAiProvider, type AiProviderSlug } from "@/lib/ai/provider";
+import { aiBudgetStatus } from "@/lib/ai/usage";
+import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { SOURCING_TOOL_DEFS, makeSourcingToolRunner } from "@/lib/ai/sourcing-tools";
 import { runAnthropicWithTools, runOpenAiWithTools, type ResolvedMcpServer } from "@/lib/ai/tool-loop";
 import { resolveVaultSecret } from "@/lib/ai/vault-secret";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { can } from "@/lib/rbac";
@@ -20,18 +23,13 @@ import { dedupeCandidates } from "@/lib/rules";
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import {
   beginSourcingRun,
-  beginAgentFrameworkSourcingRun,
   completeSourcingRun,
-  completeAgentFrameworkSourcingEffect,
-  checkAgentFrameworkSourcingExecution,
   failSourcingRun,
-  failAgentFrameworkSourcingEffect,
   listPromotedSourcingLessons,
   type SourcingLearningLesson,
   type SourcingRoleBasis,
 } from "@/lib/sourcing/learning-authority";
 import { validateSourcingQuery } from "@/lib/sourcing/query-policy";
-import { appliedPromotedLessonIds } from "@/lib/sourcing/framework-learning-selection";
 import { sourcingRoleBasisForCampaign } from "@/lib/sourcing/role-basis";
 import {
   SourcingAgentRequestSchema,
@@ -218,8 +216,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
   if (contentType.split(";", 1)[0]?.trim() !== "application/json") {
     return fail(415, "INVALID_REQUEST", "Expected a JSON request.");
   }
-  const origin = req.headers.get("origin");
-  if (!origin || origin !== req.nextUrl.origin) {
+  if (!isSameOriginRequest(req)) {
     return fail(403, "CROSS_ORIGIN_REQUEST", "Cross-origin sourcing is not allowed.");
   }
 
@@ -287,20 +284,19 @@ async function handlePost(req: NextRequest, correlationId: string) {
   const configuredQueries = initial.value.campaign.sourcingStrategy.githubQueries
     .map((query) => query.query.trim())
     .filter(Boolean);
-  const frameworkAuthorization = validated.data.agentFrameworkRunId &&
-    validated.data.agentFrameworkCapabilityToken &&
-    validated.data.agentFrameworkQuery
-    ? {
-        runId: validated.data.agentFrameworkRunId,
-        capabilityToken: validated.data.agentFrameworkCapabilityToken,
-        query: validated.data.agentFrameworkQuery,
-      }
-    : null;
-  if (frameworkAuthorization && !configuredQueries.includes(frameworkAuthorization.query)) {
-    return fail(409, "CAMPAIGN_CHANGED", "The framework query is no longer approved for this campaign.");
-  }
-  const cloudConfig = resolveAiProvider(initial.value.aiSettings, "sourcing");
-  const deterministic = Boolean(frameworkAuthorization) || !cloudConfig;
+  // Live sourcing spends only an admin-created workspace key, never the server
+  // env key. A cloud provider that is enabled but has no linked workspace key is
+  // therefore not configured here, and deterministic sourcing stays available
+  // (the default seed enables Anthropic before any key is saved). The same
+  // fallback applies once the Claude spend cap is reached.
+  const resolvedCloud = resolveAiProvider(initial.value.aiSettings, "sourcing");
+  const cloudConfig =
+    resolvedCloud &&
+    (resolvedCloud.provider === "local" || resolvedCloud.apiKeyId) &&
+    (resolvedCloud.provider !== "anthropic" || aiBudgetStatus().ok)
+      ? resolvedCloud
+      : null;
+  const deterministic = !cloudConfig;
   if (deterministic && configuredQueries.length === 0) {
     return fail(409, "CAMPAIGN_NOT_READY", "Campaign has no reviewed real-sourcing query.");
   }
@@ -311,11 +307,15 @@ async function handlePost(req: NextRequest, correlationId: string) {
 
   let cloudSlug: AiProviderSlug | null = null;
   let toolModel: string | null = null;
-  if (!frameworkAuthorization && cloudConfig) {
+  if (cloudConfig) {
     cloudSlug = cloudConfig.provider as AiProviderSlug;
     toolModel = cloudConfig.model || DEFAULT_MODEL[cloudSlug];
-    if (!cloudConfig.apiKeyId) {
-      return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "The selected provider has no workspace key.");
+    if (cloudSlug === "local") {
+      try { resolveProviderEndpoint(cloudSlug, cloudConfig.baseUrl); }
+      catch { return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "Configure an allowed local provider base URL."); }
+      if (!toolModel || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(toolModel)) {
+        return fail(503, "SOURCING_AGENT_NOT_CONFIGURED", "Configure the exact local model name.");
+      }
     }
   }
   const configurationFingerprint = createHash("sha256")
@@ -344,38 +344,15 @@ async function handlePost(req: NextRequest, correlationId: string) {
     idempotencyKey,
     requestId: correlationId,
   };
-  const begun = frameworkAuthorization
-    ? await beginAgentFrameworkSourcingRun({
-        ...beginInput,
-        count,
-        campaignFingerprint: createHash("sha256")
-          .update(initial.value.fingerprint, "utf8")
-          .digest("hex"),
-        sourceQuery: frameworkAuthorization.query,
-        frameworkRunId: frameworkAuthorization.runId,
-        capabilityToken: frameworkAuthorization.capabilityToken,
-      })
-    : await beginSourcingRun(beginInput);
+  const begun = await beginSourcingRun(beginInput);
   if (begun.status === "quota_exceeded") {
     return fail(429, "SOURCING_AGENT_RATE_LIMITED", "Daily live-sourcing limit reached.");
-  }
-  if (begun.status === "result_ready" && frameworkAuthorization) {
-    const recovered = parseSourcingAgentSuccessResponse({
-      ...(begun.resultPayload as Record<string, unknown>),
-      agentFrameworkResultSha256: begun.resultSha256,
-    }, campaignId, count, frameworkAuthorization.runId);
-    return recovered && recovered.sourcingRunId === begun.runId
-      ? noStoreJson(recovered)
-      : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
   }
   if (
     begun.status === "in_progress" ||
     begun.status === "completed" ||
     begun.status === "failed" ||
-    begun.status === "idempotency_conflict" ||
-    begun.status === "already_consumed" ||
-    begun.status === "authorization_expired"
-    || begun.status === "framework_disabled"
+    begun.status === "idempotency_conflict"
   ) {
     return fail(409, "SOURCING_AGENT_REPLAY_BLOCKED", "This sourcing request was already claimed.");
   }
@@ -387,15 +364,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
   }
 
   const recordClaimFailure = async (code: ErrorCode | "RUN_COMPLETION_FAILED" | "UNHANDLED_EXECUTION_FAILURE") => {
-    if (frameworkAuthorization) {
-      return failAgentFrameworkSourcingEffect({
-        workspaceId,
-        actorId: user.id,
-        frameworkRunId: frameworkAuthorization.runId,
-        sourcingRunId: begun.runId,
-        errorCode: code,
-      });
-    }
     return failSourcingRun({
       workspaceId,
       actorId: user.id,
@@ -451,19 +419,6 @@ async function handlePost(req: NextRequest, correlationId: string) {
         message: "Campaign authority changed during the operation.",
       };
     }
-    if (frameworkAuthorization && !await checkAgentFrameworkSourcingExecution({
-      workspaceId,
-      actorId: user.id,
-      frameworkRunId: frameworkAuthorization.runId,
-      sourcingRunId: begun.runId,
-    })) {
-      return {
-        ok: false,
-        status: 409,
-        code: "CAMPAIGN_CHANGED",
-        message: "Agent framework execution authority changed during the operation.",
-      };
-    }
     return { ok: true, workspace: latest };
   };
 
@@ -477,7 +432,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
     const beforeSecrets = await failIfAuthorityChanged();
     if (beforeSecrets) return await beforeSecrets;
     let vaultKey: string | null = null;
-    if (cloudConfig && cloudSlug) {
+    if (cloudConfig && cloudSlug && cloudConfig.apiKeyId) {
       vaultKey = await resolveVaultSecret(cloudConfig.apiKeyId, VAULT_PROVIDER[cloudSlug]);
       if (!vaultKey) {
         return await failClaimed(
@@ -513,11 +468,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
             lesson.query,
             initial.value.campaign,
           ).ok;
-          return valid && (!frameworkAuthorization || (
-            lesson.platform === "GitHub" &&
-            lesson.query === frameworkAuthorization.query &&
-            configuredQueries.includes(lesson.query)
-          ));
+          return valid;
         });
       } else if (listed.status !== "learning_disabled") {
         return await failClaimed(
@@ -551,16 +502,14 @@ async function handlePost(req: NextRequest, correlationId: string) {
     let drafts: ReturnType<typeof parseDrafts> = [];
     if (deterministic) {
       const searchSignal = AbortSignal.timeout(45_000);
-      const queries = frameworkAuthorization
-        ? [frameworkAuthorization.query]
-        : [
-            ...promotedLessons
-              .filter((lesson) => lesson.platform === "GitHub")
-              .map((lesson) => lesson.query),
-            ...configuredQueries,
-          ]
-            .filter((query, index, all) => all.indexOf(query) === index)
-            .slice(0, 3);
+      const queries = [
+        ...promotedLessons
+          .filter((lesson) => lesson.platform === "GitHub")
+          .map((lesson) => lesson.query),
+        ...configuredQueries,
+      ]
+        .filter((query, index, all) => all.indexOf(query) === index)
+        .slice(0, 3);
       let successfulQuery = false;
       for (const query of queries) {
         const remaining = count - runner.getFound().length;
@@ -593,7 +542,7 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
     } else {
-      if (!cloudSlug || !toolModel || !vaultKey) {
+      if (!cloudSlug || !toolModel || (!vaultKey && cloudSlug !== "local")) {
         return await failClaimed(
           503,
           "SOURCING_AGENT_NOT_CONFIGURED",
@@ -607,17 +556,20 @@ async function handlePost(req: NextRequest, correlationId: string) {
               model: toolModel,
               system: SYSTEM_PROMPT,
               prompt,
-              key: vaultKey,
+              key: vaultKey ?? "",
               servers,
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
+              task: "sourcing",
+              activity: "sourcing-agent",
             })
           : await runOpenAiWithTools({
               provider: cloudSlug,
+              baseUrl: cloudConfig?.baseUrl,
               model: toolModel,
               system: SYSTEM_PROMPT,
               prompt,
-              key: vaultKey,
+              key: vaultKey ?? "",
               servers,
               maxRounds: 6,
               beforeExternalCall: async () => (await currentAuthority()).ok,
@@ -632,11 +584,11 @@ async function handlePost(req: NextRequest, correlationId: string) {
         );
       }
       drafts = parseDrafts(result.text ?? "", count);
-      if (!drafts) {
+      if (!drafts || (drafts.length === 0 && runner.getFound().length > 0)) {
         return await failClaimed(
           502,
           "SOURCING_AGENT_RESPONSE_INVALID",
-          "The sourcing-agent response was invalid.",
+          "The model returned no valid drafts. Use a tool-capable model or disable the provider to use deterministic sourcing.",
         );
       }
     }
@@ -721,19 +673,20 @@ async function handlePost(req: NextRequest, correlationId: string) {
         "The sourcing-agent result was invalid.",
       );
     }
+    if (!deterministic && found.length > 0 && projected.length === 0) {
+      return await failClaimed(
+        502,
+        "SOURCING_AGENT_RESPONSE_INVALID",
+        "The model returned no valid drafts for the found profiles. Use a tool-capable model or disable the provider to use deterministic sourcing.",
+      );
+    }
 
     const executed = new Set(
       executions.map((execution) => lessonExecutionKey(execution.platform, execution.query)),
     );
-    const appliedLessonIds = frameworkAuthorization
-      ? appliedPromotedLessonIds(
-          frameworkAuthorization.query,
-          configuredQueries,
-          promotedLessons,
-        )
-      : promotedLessons
-          .filter((lesson) => executed.has(lessonExecutionKey(lesson.platform, lesson.query)))
-          .map((lesson) => lesson.lessonId);
+    const appliedLessonIds = promotedLessons
+      .filter((lesson) => executed.has(lessonExecutionKey(lesson.platform, lesson.query)))
+      .map((lesson) => lesson.lessonId);
     const resultPayload = {
       ok: true,
       mode: deterministic ? "deterministic" : "cloud",
@@ -744,30 +697,8 @@ async function handlePost(req: NextRequest, correlationId: string) {
       requestId: correlationId,
       idempotencyKey,
       sourcingRunId: begun.runId,
-      ...(frameworkAuthorization ? { agentFrameworkRunId: frameworkAuthorization.runId } : {}),
       appliedLessonIds,
     };
-    if (frameworkAuthorization) {
-      const completion = await completeAgentFrameworkSourcingEffect({
-        workspaceId,
-        actorId: user.id,
-        frameworkRunId: frameworkAuthorization.runId,
-        sourcingRunId: begun.runId,
-        queryReceipts: executions,
-        resultPayload,
-      });
-      if (completion.status !== "result_ready" || completion.runId !== begun.runId) {
-        await recordClaimFailure("RUN_COMPLETION_FAILED");
-        return fail(503, "SOURCING_AGENT_UNAVAILABLE", "Sourcing result staging could not be recorded.");
-      }
-      const staged = parseSourcingAgentSuccessResponse({
-        ...(completion.resultPayload as Record<string, unknown>),
-        agentFrameworkResultSha256: completion.resultSha256,
-      }, campaignId, count, frameworkAuthorization.runId);
-      return staged
-        ? noStoreJson(staged)
-        : fail(503, "SOURCING_AGENT_UNAVAILABLE", "The staged sourcing result is invalid.");
-    }
     const completion = await completeSourcingRun({
       workspaceId,
       actorId: user.id,

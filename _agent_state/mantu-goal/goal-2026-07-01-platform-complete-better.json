@@ -22,7 +22,8 @@
       ]
     }
   ],
-  "status": "IN_PROGRESS",
+  "status": "ABANDONED",
+  "status_note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md): Obscura browser removed; owner dropped Vercel and the vercel-demo merge goal on 2026-11-03 (self-host later). Open milestones m10/m11 set to ABANDONED.",
   "status_history": [
     {
       "status": "CAPTURED",
@@ -39,6 +40,11 @@
     {
       "status": "IN_PROGRESS",
       "at": "2026-07-01T06:10:00Z"
+    },
+    {
+      "status": "ABANDONED",
+      "at": "2026-11-03T00:00:00Z",
+      "note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md); Vercel dropped by owner 2026-11-03."
     }
   ],
   "milestones": [
@@ -184,7 +190,7 @@
         "m4",
         "m9"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m11",
@@ -195,7 +201,7 @@
       "depends_on": [
         "m10"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     }
   ],
   "premortem_risks": [

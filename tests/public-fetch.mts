@@ -208,7 +208,6 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
     });
   const webTools = readFileSync("src/lib/ai/web-tools.ts", "utf8");
   const mcpClient = readFileSync("src/lib/mcp-client.ts", "utf8");
-  const browserTools = readFileSync("src/lib/ai/browser-tools.ts", "utf8");
   const publicFetchSource = readFileSync("src/lib/api/public-fetch.ts", "utf8");
   ok(
     "public web tools use the pinned transport for every request",
@@ -218,17 +217,8 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
     "MCP handshakes and tool calls use the pinned transport",
     mcpClient.includes("fetchPublicUrl") && !/(?<!PublicUrl)\bfetch\s*\(/.test(mcpClient),
   );
-  ok(
-    "browser robots checks use the pinned transport",
-    browserTools.includes("fetchPublicUrl") &&
-      !/await\s+fetch\s*\(robotsUrl/.test(browserTools) &&
-      (browserTools.match(/assertPublicUrl\(/g) ?? []).length === 1,
-  );
   for (const route of [
-    "src/app/api/agents/run/route.ts",
-    "src/app/api/hermes/chat/route.ts",
-    "src/app/api/integrations/databricks/config/route.ts",
-    "src/app/api/integrations/databricks/needs/route.ts",
+    "src/app/api/ai/chat/route.ts",
     "src/app/api/mcp/test/route.ts",
   ]) {
     ok(
@@ -261,10 +251,7 @@ async function rejects(name: string, fn: () => Promise<unknown>, pattern: RegExp
     ),
   );
   for (const route of [
-    "src/app/api/agents/run/route.ts",
-    "src/app/api/hermes/chat/route.ts",
-    "src/app/api/integrations/databricks/config/route.ts",
-    "src/app/api/integrations/databricks/needs/route.ts",
+    "src/app/api/ai/chat/route.ts",
     "src/app/api/mcp/test/route.ts",
     "src/app/api/source/route.ts",
     "src/app/api/sourcing-agent/route.ts",

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Eyebrow } from "@/components/ui";
 import { useCampaigns, useOutreach } from "@/lib/store";
@@ -119,7 +120,7 @@ function LaneCard({
           <div className="min-w-0">
             <Eyebrow className="truncate">{campaign.department}</Eyebrow>
             <CardTitle className="mt-1 truncate text-lg" title={campaign.title}>
-              {campaign.title}
+              <Link href={`/campaigns/${campaign.id}#campaign-sourcing`} className="hover:underline">{campaign.title}</Link>
             </CardTitle>
           </div>
           <Badge tone={sourcing ? "electric" : "success"} size="sm" dot className="shrink-0">

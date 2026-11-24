@@ -18,6 +18,7 @@ import {
 import { useActions } from "@/lib/store";
 import type { IntegrationStatus } from "@/lib/types";
 import { toneForHealth, formatTimeAgo, cn } from "@/lib/utils";
+import { integrationStateLabel } from "@/lib/integrations";
 import {
   Inbox,
   Search,
@@ -43,13 +44,6 @@ const CATEGORY_ICON: Record<IntegrationStatus["category"], React.ReactNode> = {
   Calendar: <Calendar className="h-5 w-5" />,
   Comms: <MessageSquare className="h-5 w-5" />,
   Infra: <Server className="h-5 w-5" />,
-};
-
-const HEALTH_LABEL: Record<IntegrationStatus["status"], string> = {
-  connected: "Connected",
-  degraded: "Degraded",
-  error: "Error",
-  not_configured: "Not configured",
 };
 
 export function IntegrationCard({ integration }: { integration: IntegrationStatus }) {
@@ -181,7 +175,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
     handleCloseModal();
   }
 
-  const tone = toneForHealth(integration.status);
+  const stateLabel = integrationStateLabel(integration);
+  // A simulated (mock) integration is healthy but not connected to anything.
+  const tone = stateLabel === "Simulated" ? "neutral" : toneForHealth(integration.status);
 
   return (
     <>
@@ -202,15 +198,12 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
             </div>
             <div className="min-w-0 flex-1">
               <Eyebrow>{integration.category}</Eyebrow>
-              <h3 className="truncate text-base font-bold text-ink">{integration.name}</h3>
+              <h3 className="text-balance text-base font-bold leading-snug text-ink">{integration.name}</h3>
             </div>
-            {integration.real ? (
+            {/* The mode only means something once credentials exist. */}
+            {stateLabel !== "Not configured" && (
               <Badge tone={isLive ? "tangerine" : "aqua"} size="sm">
                 {isLive ? "Live" : "Mock"}
-              </Badge>
-            ) : (
-              <Badge tone="neutral" size="sm">
-                Concept
               </Badge>
             )}
           </div>
@@ -228,7 +221,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={tone} dot>
-              {HEALTH_LABEL[integration.status]}
+              {stateLabel}
             </Badge>
             <span className="text-xs text-muted">
               {integration.lastSync
@@ -252,26 +245,24 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
           )}
 
           <div className="mt-auto space-y-3 pt-1">
-            {integration.real && (
-              <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
-                <div>
-                  <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
-                    Live mode
-                  </label>
-                  <p className="text-xs text-muted">
-                    {isLive ? "Real credentials path" : "Mock is the safe default"}
-                  </p>
-                </div>
-                <Switch
-                  id={`mode-${integration.id}`}
-                  checked={isLive}
-                  onCheckedChange={handleToggleMode}
-                  label={`Toggle ${integration.name} live mode`}
-                />
+            <div className="flex items-center justify-between rounded-2xl bg-canvas px-3 py-2.5">
+              <div>
+                <label htmlFor={`mode-${integration.id}`} className="text-sm font-semibold text-ink">
+                  Live mode
+                </label>
+                <p className="text-xs text-muted">
+                  {isLive ? "Real credentials path" : "Mock is the safe default"}
+                </p>
               </div>
-            )}
+              <Switch
+                id={`mode-${integration.id}`}
+                checked={isLive}
+                onCheckedChange={handleToggleMode}
+                label={`Toggle ${integration.name} live mode`}
+              />
+            </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -282,9 +273,9 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                 Configure
               </Button>
               {/* Only GitHub has a real, live connection check (testIntegration in
-                  store.ts pings /api/source). Other real cards point to their actual
+                  store.ts pings /api/source). Other cards point to their actual
                   setup surface instead of running the no-op mock testConnection(). */}
-              {integration.real && integration.id === "int_github" && (
+              {integration.id === "int_github" && (
                 <Button
                   variant="subtle"
                   size="sm"
@@ -296,7 +287,7 @@ export function IntegrationCard({ integration }: { integration: IntegrationStatu
                   Test connection
                 </Button>
               )}
-              {integration.real && integration.id !== "int_github" && integration.setupHref && (
+              {integration.id !== "int_github" && integration.setupHref && (
                 <Button
                   variant="subtle"
                   size="sm"

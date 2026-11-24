@@ -18,7 +18,7 @@ import {
 import { evaluateNeedReadiness } from "@/lib/needs/readiness";
 import { buildClarificationEmail, parseEmailAndJD, type ParsedIntake } from "@/lib/mock-ai";
 import { resolveAiProvider } from "./provider";
-import { hermesAvailable, hermesGenerate } from "./hermes";
+import { aiGenerate } from "./generate";
 
 /* ============================================================================
    Live intake / JD parsing — client helper.
@@ -28,7 +28,7 @@ import { hermesAvailable, hermesGenerate } from "./hermes";
    is configured, the live call fails, or the reply isn't usable JSON. This
    mirrors the same three-layer fallback generateOutreachLive uses for outreach
    drafting and classifyAndStoreReply uses for reply classification (store.ts) —
-   this is TEXT EXTRACTION ONLY, routed over the existing /api/hermes/chat proxy's
+   this is TEXT EXTRACTION ONLY, routed over the existing /api/ai/chat proxy's
    "chat" task (no dedicated "parse" task/route — the prompt below is fully
    self-contained, so the generic chat system prompt is enough). Never creates,
    sends, or contacts anything; the intake page still requires an explicit
@@ -59,7 +59,7 @@ function pickEmail(value: unknown): string | undefined {
 
 /** Every field optional — an absent/invalid field falls back to the heuristic's
  *  value in parseIntakeLive. Only fields that pass strict type/enum validation
- *  survive parseHermesIntakeJson, so a hallucinated shape can't corrupt state. */
+ *  survive parseIntakeJson, so a hallucinated shape can't corrupt state. */
 interface LiveIntakeFields {
   senderName?: string;
   senderEmail?: string;
@@ -135,8 +135,8 @@ export function buildIntakeParsePrompt(text: string): string {
 
 /** Tolerant JSON parse + per-field validation. Returns null only when the reply
  *  has no usable JSON object at all — caller then falls back entirely to the
- *  heuristic. Mirrors parseHermesOutreach's tolerant-parse contract. */
-export function parseHermesIntakeJson(text: string): LiveIntakeFields | null {
+ *  heuristic. Mirrors parseOutreachDraft's tolerant-parse contract. */
+export function parseIntakeJson(text: string): LiveIntakeFields | null {
   const trimmed = (text ?? "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -191,6 +191,27 @@ function claimAppearsInSource(value: string | undefined, source: string): boolea
   return normalize(source).includes(normalize(value));
 }
 
+/**
+ * A skill the model reworded from the text ("Murex Pricing" for "Murex Front
+ * Office tools on MX.III (Pricing, ...)") is still grounded when every one of
+ * its words is in the text. A word the text never uses ("Kubernetes") still
+ * drops it, so nothing is invented.
+ */
+function skillAppearsInSource(value: string | undefined, source: string): boolean {
+  if (claimAppearsInSource(value, source)) return true;
+  const words = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9+#.]+/g, " ")
+      .split(" ")
+      .map((word) => word.replace(/^\.+|\.+$/g, ""))
+      .filter(Boolean);
+  const claimWords = words(value ?? "");
+  if (claimWords.length === 0) return false;
+  const sourceWords = new Set(words(source));
+  return claimWords.every((word) => sourceWords.has(word) || sourceWords.has(`${word}s`));
+}
+
 function numberAppearsInSource(value: number | null | undefined, source: string): boolean {
   if (value == null) return false;
   if (source.includes(String(value))) return true;
@@ -205,6 +226,8 @@ export function groundLiveIntakeFields(
     value && claimAppearsInSource(value, source) ? value : undefined;
   const supportedList = (values: string[] | undefined) =>
     values?.filter((value) => claimAppearsInSource(value, source));
+  const supportedSkills = (values: string[] | undefined) =>
+    values?.filter((value) => skillAppearsInSource(value, source));
   const sourceLower = source.toLowerCase();
   const seniority = fields.seniority &&
     (claimAppearsInSource(fields.seniority, source) ||
@@ -248,8 +271,8 @@ export function groundLiveIntakeFields(
       (fields.currency === "GBP" && source.includes("£") ? "GBP" : undefined) ??
       (fields.currency === "USD" && source.includes("$") ? "USD" : undefined),
     equity: fields.equity && /equity|options|esop|stock/i.test(sourceLower) ? true : undefined,
-    requiredSkills: supportedList(fields.requiredSkills),
-    niceToHaveSkills: supportedList(fields.niceToHaveSkills),
+    requiredSkills: supportedSkills(fields.requiredSkills),
+    niceToHaveSkills: supportedSkills(fields.niceToHaveSkills),
     minYearsExperience: numberAppearsInSource(fields.minYearsExperience, source)
       ? fields.minYearsExperience
       : undefined,
@@ -308,8 +331,9 @@ export async function parseIntakeLive(
 ): Promise<ParsedIntake> {
   const mock = parseEmailAndJD(input);
 
-  const aiCfg = resolveAiProvider(settings, "chat");
-  if (!aiCfg && !(settings.hermesLiveMode && hermesAvailable(settings))) {
+  // Extraction tier (Haiku by default) with a schema-constrained answer.
+  const aiCfg = resolveAiProvider(settings, "extraction");
+  if (!aiCfg) {
     return {
       ...mock,
       providerWarning: "No cloud parser is configured. Only facts present in the submitted brief were extracted.",
@@ -318,21 +342,19 @@ export async function parseIntakeLive(
 
   const prompt = buildIntakeParsePrompt(`${input.email}\n${input.jd ?? ""}`);
 
-  let genInput: Parameters<typeof hermesGenerate>[0];
-  if (aiCfg) {
-    genInput = { task: "chat", prompt, provider: aiCfg.provider, model: aiCfg.model, apiKeyId: aiCfg.apiKeyId };
-  } else {
-    const chatModelId = settings.defaultModels?.chat;
-    genInput = { task: "chat", prompt, hermesApiUrl: settings.hermesApiUrl, hermesApiKeyId: settings.hermesApiKeyId };
-    if (chatModelId) {
-      const modelName = (settings.savedModels ?? []).find((m) => m.id === chatModelId)?.modelName;
-      if (modelName) genInput.model = modelName;
-    }
-  }
+  const genInput: Parameters<typeof aiGenerate>[0] = {
+    task: "extract",
+    activity: "brief-extraction",
+    prompt,
+    provider: aiCfg.provider,
+    model: aiCfg.model,
+    baseUrl: aiCfg.baseUrl,
+    apiKeyId: aiCfg.apiKeyId,
+  };
 
-  let result: Awaited<ReturnType<typeof hermesGenerate>>;
+  let result: Awaited<ReturnType<typeof aiGenerate>>;
   try {
-    result = await hermesGenerate(genInput);
+    result = await aiGenerate(genInput);
   } catch {
     return {
       ...mock,
@@ -346,7 +368,7 @@ export async function parseIntakeLive(
     };
   }
 
-  const parsedFields = parseHermesIntakeJson(result.text);
+  const parsedFields = parseIntakeJson(result.text);
   if (!parsedFields) {
     return {
       ...mock,

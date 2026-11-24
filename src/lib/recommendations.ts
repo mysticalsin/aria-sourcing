@@ -14,7 +14,7 @@
 // once breached so an overdue reply always outranks a merely-imminent one;
 // match score contributes 0-100; stage leverage is a single-digit tiebreak).
 
-import type { HermesState, OutreachMessage } from "./types";
+import type { WorkspaceState, OutreachMessage } from "./types";
 import type { Tone } from "./utils";
 import { daysSince } from "./rules";
 
@@ -134,7 +134,7 @@ export function hasPendingDraft(outreach: OutreachMessage[], candidateId: string
  * is the selector that makes that promise real -- as a due-queue feeding the
  * human approval gate, never as a background job that sends anything itself.
  */
-export function deriveFollowUpsDue(state: HermesState, now: number = Date.now()): FollowUpDueItem[] {
+export function deriveFollowUpsDue(state: WorkspaceState, now: number = Date.now()): FollowUpDueItem[] {
   const gapDays = state.settings.rateLimits.followUpGapDays;
   // OOO is a pause signal, not a real reply (the state machine deliberately
   // leaves stage as Contacted for it — see classifyAndStoreReply) -- excluded
@@ -180,7 +180,7 @@ interface ScoredItem {
   why?: string;
 }
 
-export function deriveRecommendations(state: HermesState, now: number = Date.now()): Recommendation[] {
+export function deriveRecommendations(state: WorkspaceState, now: number = Date.now()): Recommendation[] {
   const candidateById = new Map(state.candidates.map((c) => [c.id, c]));
   const items: ScoredItem[] = [];
 

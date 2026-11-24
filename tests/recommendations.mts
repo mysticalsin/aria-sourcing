@@ -5,7 +5,7 @@
  */
 import { deriveRecommendations } from "../src/lib/recommendations";
 import { buildSeedState } from "../src/lib/seed";
-import type { Candidate, Campaign, ClassifiedReply, OutreachMessage, HermesState } from "../src/lib/types";
+import type { Candidate, Campaign, ClassifiedReply, OutreachMessage, WorkspaceState } from "../src/lib/types";
 
 let pass = 0,
   fail = 0;
@@ -74,7 +74,7 @@ function campaign(overrides: Partial<Campaign>): Campaign {
 // cleared below. Tests that want an empty/exact-count queue don't intend to
 // exercise that path, so start with no campaigns too; tests that specifically
 // need one set s.campaigns themselves.
-function emptyState(): HermesState {
+function emptyState(): WorkspaceState {
   return { ...seed, candidates: [], outreach: [], replies: [], campaigns: [] };
 }
 

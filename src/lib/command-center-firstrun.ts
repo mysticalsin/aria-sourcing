@@ -38,14 +38,14 @@ export function commandCenterMode(snapshot: Pick<CommandCenterSnapshot, "campaig
 /**
  * Single next action for the Command Center command bar / hero.
  * Priority: approve drafts → handle replies → keep sourcing active campaign →
- * otherwise start an intake. First-run always points at intake.
+ * otherwise start a new campaign. First-run always points at the new-campaign flow.
  */
 export function resolveCommandCenterNextStep(snapshot: CommandCenterSnapshot): CommandCenterNextStep {
   if (isFirstRunWorkspace(snapshot)) {
     return {
       cta: "Paste a job brief",
       reason: "Aria will find people and draft messages — you approve before anything sends.",
-      href: "/intake",
+      href: "/campaigns/new",
     };
   }
 
@@ -126,14 +126,14 @@ export type OnboardingTourStep = {
 export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
   {
     title: "Welcome to Aria",
-    body: "Paste a job brief. Aria finds people, drafts outreach, and books interviews — you approve every send.",
+    body: "Paste a job brief. Aria finds matching people on LinkedIn, scores them and writes the first message. You approve every send.",
   },
   {
     title: "You stay in control",
-    body: "Every message starts as a draft. Flip to live sending only when you’re ready. Dry-run is the default.",
+    body: "Every message starts as a draft. A LinkedIn message leaves from your own account only when you approve it; email stays a dry-run.",
   },
   {
     title: "Start with one job",
-    body: "That’s it. Open Intake, paste a brief, and Aria takes the first step.",
+    body: "That’s it. Click New campaign, paste a brief, and Aria takes the first step. For a guided walkthrough of every page, open Tutorial in the menu.",
   },
 ] as const;

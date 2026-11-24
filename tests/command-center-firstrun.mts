@@ -27,7 +27,7 @@ check("mode maps campaigns → returning", commandCenterMode({ campaignCount: 2 
 
 const first = resolveCommandCenterNextStep({ campaignCount: 0 });
 check("first-run CTA is paste brief", first.cta === "Paste a job brief");
-check("first-run href is intake", first.href === "/intake");
+check("first-run href is the new campaign flow", first.href === "/campaigns/new");
 check("first-run reason mentions approve", /approve/i.test(first.reason));
 
 const approve = resolveCommandCenterNextStep({

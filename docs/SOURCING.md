@@ -1,11 +1,10 @@
 # ARIA Sourcing — Architecture & Operations Guide
 
-This document describes the sourcing experience as it is actually implemented in this
-repository (MSourcing / ARIA) on `integration/sourcing-enrichment-on-main`
-(HEAD `3ff4852`). Every claim below is grounded in a real file; line references point at
-the code that backs the claim as of this commit and will drift as the code moves.
+This document describes the sourcing experience as implemented on `mbe-branch` after
+the demo cleanup (October 2026). Line references point at the code that backed each
+claim when it was written and drift as the code moves; the file paths stay accurate.
 
-For the broader system map (agent runtime, outreach, deployment), see
+For the broader system map (sourcing agent, outreach, local stack), see
 [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md). This file goes one layer deeper on sourcing,
 scoring, enrichment, and the candidate corpus specifically.
 
@@ -22,9 +21,7 @@ JD intake → campaign → multi-provider discovery → deterministic scoring
 ```
 
 Nothing sends itself. Every outbound message requires a recorded human approval
-(`outreach_approvals`, `supabase/migrations/0006_outreach_approvals.sql:1-4` — the
-migration's own header comment calls this "the human-approval gate ('never
-auto-send')"). Sourcing and enrichment are read/discovery operations against public or
+(the `outreach_approvals` table, the "never auto-send" gate). Sourcing and enrichment are read/discovery operations against public or
 vendor-licensed data; nothing in this document authorizes automated messaging.
 
 ### Two-mode runtime
@@ -47,60 +44,102 @@ behavior (no login gate, implicit admin) in production. The one sanctioned excep
 
 ## 2. The sourcing pipeline
 
+### Reviewed campaign launch
+
+In a connected workspace, **Run sourcing** opens one source review: LinkedIn via
+web search first, GitHub optionally alongside it, editable role-bound queries
+and a maximum of 1–20 profiles per selected source. Creating a campaign makes no
+provider call.
+
+"LinkedIn via web search" (`src/lib/sourcing/claude-web-search.ts`) runs
+Claude's server-side web search, restricted to public `linkedin.com/in` pages:
+the reviewed query plus a few close variants, 2 to 5 searches per run
+(`webSearchBudget` in `src/lib/sourcing/unified-contract.ts`). It needs the
+workspace Anthropic key, linked on the Anthropic provider in **Settings → AI &
+Models**, and costs $0.01 per search plus tokens. Candidates come from the
+search results (name, headline, link, cited text), never from the model's
+prose. Every query Claude actually ran is checked against the sourcing policy;
+results of a refused query are discarded. GitHub needs no key.
+
+`/api/source/campaign` records a `campaign_sourcing_jobs` row before executing
+any source. The campaign page advances persisted steps every four seconds;
+closing the page pauses subsequent operations. Returning resumes the stored
+run, including after a server restart. No additional container or background
+worker is required.
+
+Each source displays actual found, added, duplicate and excluded counts.
+Profile limits are not a quoted price. Missing configuration (no Anthropic key,
+AI budget reached) is reported before a run is created.
+
+Paid starts are marked before egress and protected by a compare-and-swap lease.
+A web search interrupted before its results were saved is marked **Needs
+review** (`uncertain`) and never searched again automatically. A source failure
+does not discard the other source's successful results. The engine re-checks
+every web-search hit with `canonicalLinkedInProfileUrl` and counts any other
+URL as excluded.
+
+Candidates and source completion commit in one database transaction, with a
+workspace version check and dedupe against the latest state. Reruns normalize
+LinkedIn/GitHub URL variants and nonblank email; names alone are not identity
+proof. Each candidate retains its source run, profile link and observed signals.
+Unknown titles, email, and tenure remain unknown. The preview proposes the next
+review action; outreach still requires human approval.
+
+Provider reservations share an independent 100-runs/day workspace ceiling. This
+replaces a stale reference to retired loop controls in the baseline function;
+apply migrations `0003_unified_campaign_sourcing.sql` and
+`0004_provider_run_binding.sql`, never edit the baseline. Provider tables retain
+their private ACL. Only the initiating operator can advance a run; an
+administrator can also close it if that operator loses access.
+
+Fixture tests cover source ordering, refresh, concurrency, interrupted starts,
+partial failures, role/workspace authority, URL validation and concurrent state
+edits. `tests/db/unified-sourcing.sql` exercises the actual SQL transaction in
+the Docker database security gate. A real provider smoke test still requires
+an operator-selected low cap and a configured Anthropic key.
+
+**Apify (retired 2026-11-06).** The LinkedIn profile-search source
+(`harvestapi/linkedin-profile-search`), its name/school filter dialog, its
+routes and its Settings key were removed: the owner will not use Apify. A step
+saved by an older run with source `LinkedIn` now ends `failed` ("LinkedIn
+search through Apify was removed…") without any provider call. Historical
+`provider_runs` rows keep the `Apify` label.
+
 ### Providers
 
 | Provider | Platform id | Discovery mechanism | Key requirement | Notes |
 |---|---|---|---|---|
 | GitHub | `GitHub` | GitHub Users Search API, read-only | None — keyless by default (60 req/hr/IP anonymous, 5,000/hr with optional `GITHUB_TOKEN`) | `src/lib/sourcing/github.ts:1-17` |
-| Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256` |
-| Apify — profile search | `Apify` | `harvestapi~linkedin-profile-search` actor, async run + poll + dataset fetch | Workspace-stored Apify key | `src/lib/sourcing/apify.ts:1-25`; supports `firstNames`/`lastNames` as explicit search filters (§below) |
-| Apollo | `Apollo` | Free `mixed_people/search`, then a paid `people/match` for email/phone | Workspace-stored Apollo key | `src/lib/sourcing/apollo.ts`, receipt-ledgered via `src/lib/sourcing/source-authority.ts` |
-| Seamless.AI | `Seamless` | Free search + async paid research/poll | Workspace-stored key | **Production-disabled by design** (see below) |
-| Sillage | `Sillage` | Company-domain account mapping, async | Workspace-stored key | **Production-disabled by design** (see below) |
+| LinkedIn via web search | `LinkedIn` | Claude server-side web search restricted to `linkedin.com/in` | Workspace Anthropic key, linked in **Settings → AI & Models** | `src/lib/sourcing/claude-web-search.ts`; campaign sourcing only |
+| Web search (LinkedIn / Stack Overflow / Dribbble / Behance) | `LinkedIn`, `Stack Overflow`, `Dribbble`, `Behance` | `site:`-scoped Tavily web search, honest User-Agent, SSRF-guarded | Workspace-stored Tavily key, or `TAVILY_API_KEY` env fallback | `src/lib/sourcing/web-leads.ts:1-9`, `src/lib/ai/web-tools.ts:191-256`; sourcing agent tool |
 
 All provider keys except `GITHUB_TOKEN` and the Tavily env fallback are entered via
 **Settings → API Keys**, encrypted at rest, and never sent to the browser
-(`validateApiKeyFormat` in `src/lib/providers.ts:18-37` does client-safe format checks
+(`validateApiKeyFormat` in `src/lib/providers.ts` does client-safe format checks
 before the key is even submitted).
 
-**The Apify profile-search filter (commit `3c29b23`, extended `25b65de`).** The
-`harvestapi/linkedin-profile-search` actor input accepts structured filters —
-`locations`, `currentJobTitles`, `pastJobTitles`, `currentCompanies`, `pastCompanies`,
-`schools`, and (since `25b65de`) `firstNames`/`lastNames`
-(`src/lib/sourcing/apify.ts:38-52`). The `firstNames`/`lastNames` pair was backend-ready
-since the initial Apify integration but UI-hidden until `25b65de` wired it into the
-source dialog (`src/components/candidates/source-apify-dialog.tsx:47-134`, validated
-server-side at `src/app/api/source/apify/start/route.ts:34-48`). This is what lets a
-recruiter resolve one *specific* named person (e.g. "find exactly this candidate's
-current profile") instead of only running a broad boolean search.
+### The sourcing agent
 
-**Seamless/Sillage are production-disabled by design**, not by accident:
+A campaign's **Run agent** button (`src/components/run/agent-run-stream.tsx`) calls
+`runCampaignSourcing` (`src/lib/sourcing/campaign-run.ts`), which goes through the
+canonical store action `sourceNextBatch`. In a live workspace that action calls
+`/api/sourcing-agent`, which runs in-process in one of two modes:
 
-```ts
-// src/lib/supabase/config.ts:33-39
-// Sillage and Seamless do not yet have the server-owned receipt authority used
-// by Apollo. They remain available only for explicit local development and
-// can never be enabled in a production build.
-export const experimentalPaidSourcingEnabled =
-  !isProduction && process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING === "true";
-```
+| Mode | When | What happens |
+|---|---|---|
+| `cloud` | An LLM provider (Anthropic or an OpenAI-compatible API) is configured in Settings with a workspace key | A bounded tool loop (`src/lib/ai/tool-loop.ts`) lets the model call `search_candidates` (`src/lib/ai/sourcing-tools.ts`), which runs the real GitHub / web-search pipeline. The model only picks already-scored real people and drafts first-touch copy; it never invents a candidate, score or URL. |
+| `deterministic` | No LLM provider configured | The reviewed GitHub queries of the campaign run directly; no model is called. |
 
-Apollo has a server-owned claim/receipt ledger (`prepare → claim → complete/ambiguous →
-reconcile → erase`, `src/lib/sourcing/source-authority.ts:152-488`, backed by RPCs like
-`prepare_apollo_enrichment`/`claim_apollo_enrichment`) that makes a paid spend
-idempotent, auditable, and erasure-safe. Seamless and Sillage don't have that authority
-layer yet, so their discovery/enrichment paths are gated off entirely in a production
-build (`isProduction` check, not just a feature flag) — keys alone won't turn them on in
-prod. This is the same design principle the enrichment orchestrator's runners inherit
-(§4).
+Every run is recorded through `src/lib/sourcing/learning-authority.ts`
+(`beginSourcingRun` / `completeSourcingRun`), which also enforces a daily quota and
+returns feedback receipts. An explicit demo deployment (no Supabase) uses the synthetic
+`Talent Pool` source instead.
 
 ### Discover → map → score → dedupe → commit
 
-The canonical path (the DeerFlow-reviewed sourcing-agent flow,
-`src/lib/store/sourcing-actions.ts:735-782`) runs:
+The canonical path (the sourcing-agent flow in `src/lib/store/sourcing-actions.ts`) runs:
 
-1. **Discover** — a provider adapter returns raw results (GitHub users, web-search hits,
-   Apify/Apollo profiles).
+1. **Discover** — a provider adapter returns raw results (GitHub users, web-search hits).
 2. **Map** — `candidateFromSourcingAgentDto` / the platform-specific mapper
    (`src/lib/sourcing/candidate-mappers.ts`) normalizes raw provider data into the
    `Candidate` shape.
@@ -232,6 +271,13 @@ invented.
 
 ## 4. Enrichment
 
+Operator flow: [Review a sourced candidate](CANDIDATE-REVIEW.md). The unified
+enrichment route accepts a saved `candidateId`, requested `want` fields and an
+optional bounded budget hint. It resolves profile ownership, campaign readiness,
+exclusions and scoring from the authenticated workspace rather than a client
+profile payload. The caller persists the complete richness/scoring patch before
+reporting success; provider failures retain distinct attempt outcomes.
+
 `src/lib/enrichment/*` (commit `8bda068`, "unified multi-provider enrichment
 orchestrator"; commit `acd69a9`, "home experience/education/languages instead of
 discarding them") is the cost-aware waterfall that fills in missing candidate fields
@@ -244,30 +290,26 @@ after discovery.
 1. Filters `ENRICHMENT_PROVIDERS` (`src/lib/enrichment/registry.ts:59-116`) to those that
    (a) can fill at least one wanted field, and (b) can resolve an identity key for this
    specific candidate (`provider.keyField(candidate) != null`).
-2. Sorts the eligible providers **cheapest-first**:
+2. Sorts the eligible providers **cheapest-first**.
 
-   | Provider | `costUnits` | Fills |
-   |---|---|---|
-   | Apify (dev_fusion, LinkedIn full profile) | 1 | email, headline, skills, experience, education, languages, location |
-   | Apollo | 2 | email, phone |
-   | Seamless.AI | 3 | email, phone |
-   | Sillage (account mapping) | 4 | email, phone, headline, location |
+   No provider is registered today: `ENRICHMENT_PROVIDERS` is `[]` and
+   `ENRICHMENT_RUNNERS` is `{}`. Apify, the only one, was retired on 2026-11-06.
+   The candidate drawer says "No enrichment provider is set up. Add verified
+   contact details by hand." A new licensed provider is one registry entry
+   (with the `keyProvider` whose stored key unlocks it) plus one runner. The
+   runner must apply identity-lookup hygiene itself (the retired Apify runner
+   used `clearIdentityResolution`), and the open spend-authority gaps listed in
+   `_relay/codex-findings.md` must be closed first.
 
 3. Runs each provider in turn until the wanted fields are covered, the caller's
    `budgetRemaining` (cost-unit budget) hits zero, or a **45-second wall-clock deadline**
    (`ORCH_DEADLINE_MS = 45_000`, `orchestrator.ts:22`) is reached — kept comfortably under
    the platform's 60s route cap so a request never 504s and strands an already-spent
    cheap-provider result.
-4. Slow async pollers (Seamless research, Sillage account mapping,
-   `POLL_BUDGET_MS = 30_000`) get a pre-flight runway check before starting — a provider
-   that can't finish its own worst-case poll within the remaining deadline is recorded as
-   `"deferred"` and simply not started, rather than run into the cutoff mid-poll.
-5. **Cross-provider identity resolution** is the core design principle: every provider
-   resolves its *own* identity from the candidate's universal fields (name, company,
-   `linkedinUrl`, `externalIds`) via its own free search/lookup step, so a candidate
-   discovered by GitHub can still be enriched by Apollo, and vice versa
-   (`registry.ts:11-17`).
-6. On completion, if a `JobAnalysis` was supplied, the candidate is re-scored
+4. Each provider resolves its *own* identity from the candidate's universal fields
+   (`keyField`), so a candidate discovered by one source can still be enriched by
+   another provider.
+5. On completion, if a `JobAnalysis` was supplied, the candidate is re-scored
    (`scoreCandidate`, `orchestrator.ts:185-188`) — enrichment can move a candidate's
    composite once real skills/experience/location data replaces an `unknown` anchor.
 
@@ -295,7 +337,7 @@ into the candidate field-by-field:
 
 ### Experience/education/languages are now homed, not discarded
 
-Before `acd69a9`, Apify's rich `experience`/`education`/`languages` payload had nowhere
+Before `acd69a9`, a provider's rich `experience`/`education`/`languages` payload had nowhere
 to live on `Candidate` — only the fact that a provider *supplied* them was tracked via
 provenance, and the actual string arrays were dropped. That's fixed: `Candidate` now
 carries dedicated optional slots —
@@ -308,64 +350,59 @@ languages?: string[];  // spoken/written languages
 ```
 
 — and `merge.ts`'s `HOMED_FIELDS` set (`merge.ts:41`) plus `applyFieldValue`
-(`merge.ts:160-169`) read/write them like any other homed field. The Apify runner
-(`enrichment/runners.ts:125-133`) formats each experience/education entry as
-`"Title @ Company (dates)"` / `"Degree @ School (dates)"` from the raw actor payload.
-Deliberately **not** parsed into `yearsExperience` — that field carries its own
+(`merge.ts:160-169`) read/write them like any other homed field. A runner formats
+each experience/education entry as `"Title @ Company (dates)"` /
+`"Degree @ School (dates)"`. Deliberately **not** parsed into `yearsExperience` — that field carries its own
 fabrication contract (`types.ts:387-389`: "Null means not provided and must never be
 rendered or scored as zero years") and free-text date ranges from a scraped profile
 aren't reliable enough to compute a number from.
 
-(One stale artifact: `merge.ts`'s module-header comment, lines 8-22, still describes
-these three fields as having "NO dedicated slot on Candidate today" — that comment
-predates `acd69a9` and should be treated as outdated; the code below it (`HOMED_FIELDS`,
-`readHomedValue`, `applyFieldValue`) is the current, correct behavior.)
 
 ---
 
-## 5. The candidate corpus (migrations 0035 / 0036 / 0037)
+## 5. The candidate corpus
+
+All objects below are defined in `supabase/migrations/0001_baseline.sql`.
 
 The workspace's JSONB document (`workspace_state.state->'candidates'`) remains the
 single **authoritative** write path for candidates — nothing about the corpus changes
 where a client writes. The corpus is a read-side compounding foundation layered on top.
 
-### The shadow `candidates` table (0035)
+### The shadow `candidates` table
 
-`supabase/migrations/0035_candidate_corpus_mirror.sql` creates a normalized
+The schema creates a normalized
 `public.candidates` table and populates it entirely via **database triggers** —
 `candidates_corpus_mirror_ins`/`_upd` fire after every insert/update to
-`workspace_state` and call `sync_candidates_corpus()`
-(`0035_candidate_corpus_mirror.sql:235-245`), which flattens
+`workspace_state` and call `sync_candidates_corpus()`, which flattens
 `new.state->'candidates'` into rows. **Zero client change**: no app code calls this table
 directly to write; every existing sourcing/scoring/enrichment code path above continues
 writing the JSONB document exactly as before, and the mirror just happens.
 
 The table is locked down hard: RLS is force-enabled, all grants revoked from
 `public/anon/authenticated/service_role/authenticator`, and the only policy grants
-access to `postgres, supabase_admin` (`0035:45-51`) — this table is not directly
+access to `postgres, supabase_admin` — this table is not directly
 product-readable by a tenant session; it exists purely as raw material for the read RPC
 below and future corpus consumers (embeddings, redeployment).
 
 Erasure-safety is built into the same trigger: the mirror sync query filters out any
 candidate whose id matches a `candidate_erasure_suppression_tombstones` row before
-inserting (`0035:164-174`), and a dedicated
+inserting, and a dedicated
 `cleanup_erased_candidate_mirror()` trigger on `candidate_erasure_requests` deletes the
 mirrored row the moment an erasure request lands with any non-`blocked_legal_hold`
-status (`0035:247-271`).
+status.
 
-### The tenant-isolated read path (0036)
+### The tenant-isolated read path
 
-`0036_candidate_corpus_read.sql` adds:
+The schema also defines:
 
 - `list_workspace_candidates(campaignId, stage, source, search, sort, limit, offset)` —
   a `security definer` RPC that **checks `auth.uid()` and resolves
-  `current_workspace_id()` itself** (`0036:255-262`) rather than trusting a caller-passed
+  `current_workspace_id()` itself** rather than trusting a caller-passed
   workspace id, so cross-tenant reads are impossible even with a crafted argument. Only
-  `authenticated` has `execute` (`0036:313-314`); everyone else's grant is explicitly
+  `authenticated` has `execute`; everyone else's grant is explicitly
   revoked.
 - `backfill_candidates_corpus()` / `mirror_workspace_candidates()` — the same mirroring
-  logic as the trigger, callable directly for backfilling pre-existing workspaces (the
-  migration ends by calling `backfill_candidates_corpus()` for itself, `0036:316`).
+  logic as the trigger, callable directly for backfilling pre-existing workspaces.
 
 The app-facing surface is `GET /api/candidates` (`src/app/api/candidates/route.ts`),
 which fails closed the same way as every other production route
@@ -383,9 +420,9 @@ export const corpusServerReadEnabled =
 Default off — the existing store-backed `/candidates` page keeps working unchanged until
 this flag is explicitly turned on (`src/app/candidates/page.tsx:147`).
 
-### The person model (0037)
+### The person model
 
-`0037_person_identity_model.sql` adds a derived identity layer *over* the candidate
+The schema adds a derived identity layer *over* the candidate
 corpus: `public.persons` (one row per resolved real person) and
 `public.candidate_identities` (identity keys pointing at a person).
 
@@ -393,16 +430,16 @@ Linkage is **deliberately conservative**: the only identity key today is a canon
 LinkedIn personal-profile URL —
 
 ```sql
--- 0037_person_identity_model.sql:82-84
+-- link_one_candidate()
 if p_candidate.linkedin_url is not null
    and btrim(p_candidate.linkedin_url) ~* '^(https?://)?(www\.)?linkedin\.com/in/[^/?#]+/?(\?.*)?$' then
   v_key := lower(btrim(p_candidate.linkedin_url));
 ```
 
-— i.e. `/in/...` profile URLs only, byte-for-byte canonicalized the same way the 0033
+— i.e. `/in/...` profile URLs only, byte-for-byte canonicalized the same way the
 erasure tombstones are. Anything else (name-only match, email match) is out of scope for
 now — an ambiguous match (more than one existing identity row for the same normalized
-URL) is treated as **no link** rather than a guess (`0037:135-145`).
+URL) is treated as **no link** rather than a guess.
 
 `link_candidate_person()` is a trigger on `public.candidates` (fires after insert/update
 of `linkedin_url`) that calls `link_one_candidate()` to resolve or create the person row
@@ -410,12 +447,11 @@ and record the identity — this is how a candidate sourced under two different 
 (or re-sourced weeks later) still resolves to the same `person_id`.
 
 **Fail-closed erasure GC**: `link_one_candidate()` re-checks the same erasure tombstone
-table before linking (`0037:102-126`, with a documented STABLE-function hoisting guard so
+table before linking (with a documented STABLE-function hoisting guard so
 the check only fires when tombstones actually exist for the workspace) — a direct-DB
 attempt to relink a previously-erased LinkedIn identity is blocked as defense-in-depth,
-even though the migration's own analysis (`0037:297-307`) argues the normal erasure path
-already makes this unreachable in practice. `gc_deleted_candidacies()`
-(`0037:245-289`) is a statement-level trigger that removes now-orphaned
+even though the normal erasure path already makes this unreachable in practice.
+`gc_deleted_candidacies()` is a statement-level trigger that removes now-orphaned
 `candidate_identities`/`persons` rows whenever a candidacy is deleted, so the person
 layer never accumulates dangling identities.
 
@@ -436,22 +472,22 @@ endpoint off by default.
 
 | Control | Mechanism | Where |
 |---|---|---|
-| Never-auto-send | DB table `outreach_approvals`, keyed to the exact message body hash; send route refuses without a matching row | `supabase/migrations/0006_outreach_approvals.sql:1-4` |
+| Never-auto-send | DB table `outreach_approvals`, keyed to the exact message body hash; send route refuses without a matching row | `supabase/migrations/0001_baseline.sql` (`outreach_approvals`) |
 | App-level approval gate | Score floor, personalization evidence, do-not-contact/unsubscribed/suppressed checks, per-channel contact-info and rate-limit checks | `checkOutreachApproval`, `src/lib/rules.ts:52-160`+ |
-| Multi-tenancy | Row-Level Security on every workspace-scoped table; force-RLS on the corpus mirror and person tables | `0035:45-46`, `0037:28-31` |
-| GDPR erasure | Legal-hold-aware, idempotency-keyed erasure transaction scrubbing every candidate-addressable store; tombstones drive corpus-mirror and person-linkage suppression | `0033_candidate_erasure_authority.sql`, extended by `0035`/`0037` |
+| Multi-tenancy | Row-Level Security on every workspace-scoped table; force-RLS on the corpus mirror and person tables | `supabase/migrations/0001_baseline.sql` |
+| GDPR erasure | Legal-hold-aware, idempotency-keyed erasure transaction scrubbing every candidate-addressable store; tombstones drive corpus-mirror and person-linkage suppression | `request_candidate_erasure()` |
 | Lawful basis capture | Operator-recorded `consent` / `legitimate_interest` basis with source + timestamp, required before outreach approval on any manually-entered candidate | `src/lib/candidate-lawful-basis.ts`, enforced in `rules.ts:84-97` |
 | Field provenance | Per-field `{ provider, at, confidence }` on every enriched value | `src/lib/enrichment/merge.ts:225` |
 | Discrimination-proxy filter | Provider-backed sourcing egress requires a `ProviderClearance`; discovery clearances are minted only after every submitted discovery field is checked for protected-class terms (age/gender/race/religion/disability/marital/nationality/university-graduation wording) and the search is bound to the approved role's own JD terms; name fields are still screened for control characters, injection and length | `src/lib/sourcing/query-policy.ts`, `src/lib/sourcing/provider-egress.ts` |
-| LinkedIn policy | This app never logs into, scrapes, or automates LinkedIn itself; LinkedIn data comes from a licensed vendor API (Apify); LinkedIn *outreach* is assisted-manual only (draft → human copy/paste/send) | `src/lib/linkedin-policy.ts:1-89` |
+| LinkedIn policy | The server never logs into or scrapes LinkedIn; LinkedIn profiles come from public search results through Claude's web search; LinkedIn *outreach* is assisted-manual (draft → human copy/paste/send), or, when the opt-in experimental LinkedIn bridge is on, sent from the user's own browser session by the ARIA extension, one human click per message or invitation ([`docs/linkedin-bridge.md`](linkedin-bridge.md)) | `src/lib/linkedin-policy.ts:1-89` |
 
-**Erasure request lifecycle** (`0033_candidate_erasure_authority.sql`): a request binds
+**Erasure request lifecycle** (`request_candidate_erasure()`): a request binds
 an exact workspace + campaign + candidate + administrator + idempotency key, blocks on
 an active legal hold (`candidate_legal_holds`), scrubs every candidate-addressable
 operational store, and records only row counts plus opaque provider-reference hashes.
 External provider-side deletion is never assumed complete — unsupported provider work is
-left `manual_required` until independently closed by an operator. `0035` and `0037`
-extend this same tombstone mechanism to the corpus mirror and the person-identity layer,
+left `manual_required` until independently closed by an operator. The same tombstone mechanism
+extends to the corpus mirror and the person-identity layer,
 so an erased candidate can't resurface through either.
 
 **Lawful basis**: `recordedCandidateLawfulBasis()` only returns a basis when all three of
@@ -471,27 +507,15 @@ candidate without one.
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Presence switches the app from DEMO to LIVE mode (`supabase/config.ts:15-19`) |
 | `NEXT_PUBLIC_ENABLE_DEMO_LOGIN` | Sanctioned public-demo exception to the prod fail-closed rule; outreach stays dry-run regardless |
-| `NEXT_PUBLIC_ENABLE_EXPERIMENTAL_PAID_SOURCING` | Combined with a non-production build, unlocks Seamless/Sillage locally — never in prod |
 | `NEXT_PUBLIC_ENABLE_CORPUS_SERVER_READ` | Preview flag for the `/api/candidates` server-corpus read path; default off |
 | `GITHUB_TOKEN` | Optional; raises GitHub Users Search API from 60 to 5,000 req/hr — never required |
 | `TAVILY_API_KEY` | Server-side fallback for web-search sourcing when no workspace Tavily key is stored |
-| Apify / Apollo / Seamless / Sillage keys | Entered via Settings → API Keys, encrypted at rest, never env vars |
+| LLM provider keys, Tavily key | Entered via Settings → API Keys, encrypted at rest (requires `DATA_ENCRYPTION_KEY`) |
 
-### Fly topology (as deployed)
+### Local stack
 
-```
-Internet
-  -> aria-mantu-app         (Next.js)
-  -> aria-mantu-kong        (API gateway)
-       -> aria-mantu-auth   (self-hosted Supabase Auth/GoTrue)
-       -> aria-mantu-rest   (PostgREST)
-            -> aria-mantu-db (Postgres)
-
-aria-mantu-bootstrap  -> privileged reconciliation + ordered migrations, exits after
-```
-
-Five long-running Fly services plus a one-shot migration/bootstrap app — self-hosted
-Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
+The demo runs with `docker compose up --build` (Next.js app + self-hosted Supabase:
+Postgres, GoTrue, PostgREST, Caddy gateway). See [`DOCKER.md`](../DOCKER.md).
 
 ### Running one role end to end
 
@@ -499,47 +523,40 @@ Supabase, not the managed Supabase cloud (`docs/ARCHITECTURE.md:184-200`).
    (required/nice-to-have skills, experience band, company-stage target, industry,
    regions) and a campaign is created.
 2. **Source** — the recruiter triggers one or more providers from the campaign page
-   (GitHub / web-search / Apify / Apollo, gated by `campaignAllowsLiveSourcing(status)`
-   and, in prod, further gated off for Seamless/Sillage). Each run discovers → maps →
+   (the sourcing agent, or LinkedIn via web search and GitHub, gated by
+   `campaignAllowsLiveSourcing(status)`). Each run discovers → maps →
    scores → dedupes → commits into the campaign's candidate list.
 3. **Review** — candidates land sorted by match score, each with a rationale-annotated
    breakdown (§3) so a low score is explainable, not just a number.
-4. **Enrich** — for a shortlisted candidate missing contact info, the recruiter (or an
-   automated post-source step) runs the enrichment waterfall (§4); email/phone/skills/
-   experience get filled in cheapest-provider-first, and the candidate is re-scored.
+4. **Enrich** — for a shortlisted candidate missing contact info, the recruiter adds
+   verified details by hand. Once an enrichment provider is registered, the enrichment
+   waterfall (§4) fills email/phone/skills/experience cheapest-provider-first and
+   re-scores the candidate.
 5. **Draft** — an outreach draft is generated with personalization evidence attached.
 6. **Approve** — a human reviews and approves the exact draft; the approval is recorded
    against the exact message body hash.
-7. **Send** — only now does `/api/outreach/send` deliver (email via Resend/SendGrid;
-   WhatsApp via signed webhook adapters, currently dry-run pending Meta WABA
-   provisioning; LinkedIn is always assisted-manual copy/paste).
+7. **Send** — only now does `/api/outreach/send` deliver (email from a connected
+   Gmail / Outlook mailbox, or Resend / SendGrid; LinkedIn is always assisted-manual
+   copy/paste).
 8. **Reply / schedule** — inbound replies are classified and routed to a human-review
    queue; a durable calendar-booking authority (commit `99419a1`) handles interview
    proposals with a fail-closed claim ledger.
 
-### Current owner-gated items
-
-These require Tony personally (credentials, account approval, or a deliberate spend
-decision) — compiled from `_relay/2026-07-16-owner-actions.md`:
+### Owner-gated items
 
 | Item | What it unlocks | Action |
 |---|---|---|
-| **dev_fusion Apify actor approval** | The secondary LinkedIn profile enricher used by the enrichment waterfall (currently returns `403 full-permission-actor-not-approved`, surfaced gracefully as `not_configured`) | One click in the Apify console — approve the actor's permissions |
-| **Apollo / Seamless / Sillage API keys** | The full cost-ascending enrichment waterfall beyond Apify | Enter via Settings → API Keys (Seamless/Sillage still won't run in prod without the receipt-authority work described in §2) |
-| **GitHub Actions budget** | CI/CodeQL — every job currently fails at startup with "Actions budget…" | Raise the spending limit / add payment in GitHub billing |
-
-harvestapi (the primary Apify discovery actor) already covers discover + enrich + email
-on its own without the dev_fusion approval — that approval only unlocks the *secondary*
-enricher in the cost-ascending waterfall.
+| **LLM provider key** | `cloud` mode of the sourcing agent, AI drafting, and LinkedIn via web search (Anthropic) | Settings → API Keys, then select the provider in Settings |
+| **An enrichment provider** | The enrichment waterfall (§4); none is registered since Apify was retired | Choose a licensed provider, then add its registry entry and runner |
 
 ---
 
 ## Section index
 
 1. Overview — two-mode runtime, fail-closed production posture
-2. The sourcing pipeline — providers, discover→map→score→dedupe→commit, dedupe keys, 90-day recontact window
+2. The sourcing pipeline — providers, sourcing agent, discover→map→score→dedupe→commit, dedupe keys, 90-day recontact window
 3. Signal-aware scoring — six dimensions, three-state model, `UNKNOWN_ANCHOR`
 4. Enrichment — cost-ascending waterfall, per-field provenance, homed experience/education/languages
 5. The candidate corpus — shadow mirror, tenant-isolated read RPC, person-identity model
 6. Compliance & safety — never-auto-send, RLS, GDPR erasure, lawful basis, discrimination-proxy filter, LinkedIn policy
-7. Operating it — env/flags, Fly topology, end-to-end run, owner-gated items
+7. Operating it — env/flags, local stack, end-to-end run, owner-gated items

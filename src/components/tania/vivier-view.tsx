@@ -16,7 +16,7 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
-import { StarBadge, SourceBadge } from "@/components/tania/badges";
+import { ScoreBadge, SourceBadge } from "@/components/tania/badges";
 import { useActions, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
 import { hasPendingDraft } from "@/lib/recommendations";
 import {
@@ -142,7 +142,7 @@ export function VivierView() {
   const handleRemove = React.useCallback(
     async (c: Candidate) => {
       const ok = await confirm({
-        title: "Remove from #Vivier?",
+        title: "Remove from the talent pool?",
         description: `${c.name} will leave the talent pool. You can re-add them from their profile at any time.`,
         confirmLabel: "Remove from pool",
         cancelLabel: "Keep",
@@ -151,7 +151,7 @@ export function VivierView() {
       if (!ok) return;
       actions.toggleVivier(c.id);
       toast({
-        title: "Removed from #Vivier",
+        title: "Removed from the talent pool",
         description: `${c.name} is no longer in the talent pool.`,
         variant: "success",
       });
@@ -164,9 +164,9 @@ export function VivierView() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Talent Pool"
-        title="#Vivier"
-        description="TopGuns and A-players not hired now, kept warm for the future: silver medalists, a re-contact pipeline, and the pool's aggregate DNA."
+        eyebrow="Recruit"
+        title="Talent pool"
+        description="Strong candidates not hired this time, kept warm for future roles: runners-up, people due a re-contact, and what the pool has in common."
       />
 
       <HydrationGate hydrated={hydrated} fallback={<VivierFallback />}>
@@ -174,7 +174,7 @@ export function VivierView() {
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}
             title="The talent pool is empty"
-            description="Pool a strong candidate who dropped out from their profile. Silver medalists and always-pooled referrals & outbound leads land here to be kept warm."
+            description="Pool a strong candidate who dropped out from their profile. Runners-up, referrals and outbound leads land here to be kept warm."
           />
         ) : (
           <div className="space-y-8">
@@ -191,9 +191,9 @@ export function VivierView() {
                 tone="electric"
               />
               <MetricCard
-                label="Silver Medalists"
+                label="Runners-up"
                 value={derived.totalSilver}
-                hint="TopGun / A talent who dropped out"
+                hint="Scored 80+ and left the process"
                 icon={<Trophy aria-hidden />}
                 tone="warning"
               />
@@ -254,13 +254,13 @@ export function VivierView() {
             <section aria-labelledby="vivier-silver">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div className="min-w-0">
-                  <Eyebrow>The gold we didn&apos;t lose</Eyebrow>
+                  <Eyebrow>Finalists not hired</Eyebrow>
                   <h2
                     id="vivier-silver"
                     className="display mt-1 flex items-center gap-2 text-2xl text-ink"
                   >
                     <Trophy className="h-5 w-5 shrink-0 text-mantu-yellow" aria-hidden />
-                    Silver Medalist tracker
+                    Runners-up
                   </h2>
                 </div>
                 <span className="shrink-0 text-sm text-muted">
@@ -272,7 +272,7 @@ export function VivierView() {
                 <EmptyState
                   icon={<Trophy className="h-6 w-6" aria-hidden />}
                   title="No silver medalists here"
-                  description="Strong TopGun / A candidates who dropped out will appear here to be kept warm for a future need."
+                  description="Candidates who scored 80+ and left the process will appear here, kept warm for a future need."
                 />
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -280,7 +280,6 @@ export function VivierView() {
                     <SilverMedalistCard
                       key={c.id}
                       candidate={c}
-                      rating={ratingOf(c)}
                       now={derived.now}
                       onRecontact={handleRecontact}
                       onRemove={handleRemove}
@@ -305,7 +304,7 @@ export function VivierView() {
                     Warm pipeline
                   </h2>
                   <p className="mt-1 text-sm text-muted">
-                    Pooled candidates whose re-contact date has arrived, highest star rating first.
+                    Pooled candidates whose re-contact date has arrived, highest match score first.
                   </p>
                 </div>
 
@@ -321,7 +320,6 @@ export function VivierView() {
                       <WarmRow
                         key={c.id}
                         candidate={c}
-                        rating={ratingOf(c)}
                         now={derived.now}
                         onDraft={handleRecontact}
                         drafting={draftingIds.has(c.id)}
@@ -335,7 +333,7 @@ export function VivierView() {
               <section aria-labelledby="vivier-dna">
                 <Card className="animate-fade-in">
                   <CardHeader>
-                    <Eyebrow>DNA Extractor</Eyebrow>
+                    <Eyebrow>Pool profile</Eyebrow>
                     <CardTitle className="mt-1 flex items-center gap-2">
                       <Dna className="h-5 w-5 shrink-0 text-violet" aria-hidden />
                       Pool DNA
@@ -421,14 +419,12 @@ function FilterChip({
 
 function SilverMedalistCard({
   candidate: c,
-  rating,
   now,
   onRecontact,
   onRemove,
   drafting,
 }: {
   candidate: Candidate;
-  rating: ReturnType<typeof deriveStarRating>;
   now: number;
   onRecontact: (c: Candidate) => void;
   onRemove: (c: Candidate) => void;
@@ -441,12 +437,12 @@ function SilverMedalistCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <StarBadge rating={rating} size="sm" />
+          <ScoreBadge score={c.matchScore} size="sm" />
           <SourceBadge source={deriveLeadSource(c)} size="sm" />
         </div>
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-mantu-yellow px-2 py-0.5 text-[0.6875rem] font-bold text-mantu-yellow-ink">
           <Trophy className="h-3 w-3" aria-hidden />
-          Silver Medalist
+          Runner-up
         </span>
       </div>
 
@@ -460,7 +456,7 @@ function SilverMedalistCard({
 
       <p className="text-xs leading-relaxed text-ink-soft">
         <span className="font-semibold">Why pooled: </span>
-        {c.rejectionReason || "TopGun / A talent who dropped out, kept warm for a future need."}
+        {c.rejectionReason || "Scored 80+ and left the process; kept warm for a future need."}
       </p>
 
       <div className="mt-auto flex items-center justify-between gap-2 pt-1">
@@ -496,13 +492,11 @@ function SilverMedalistCard({
 
 function WarmRow({
   candidate: c,
-  rating,
   now,
   onDraft,
   drafting,
 }: {
   candidate: Candidate;
-  rating: ReturnType<typeof deriveStarRating>;
   now: number;
   onDraft: (c: Candidate) => void;
   drafting: boolean;
@@ -526,7 +520,7 @@ function WarmRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <StarBadge rating={rating} size="sm" />
+        <ScoreBadge score={c.matchScore} size="sm" />
         <SourceBadge source={deriveLeadSource(c)} size="sm" showLabel={false} />
       </div>
 

@@ -16,7 +16,7 @@ import {
   type HireRequest,
 } from "../src/lib/hire-ui";
 import { applyHireTrail, buildHireTrail, hireTrailNotes } from "../src/lib/hire-trail";
-import type { Activity, Campaign, Candidate, HermesState } from "../src/lib/types";
+import type { Activity, Campaign, Candidate, WorkspaceState } from "../src/lib/types";
 
 let pass = 0;
 let fail = 0;
@@ -348,7 +348,7 @@ ok(
     !hireTrailNotes(smartTrail).includes("Odoo"),
 );
 
-function workspace(): HermesState {
+function workspace(): WorkspaceState {
   const candidate = {
     id: "cand-1",
     name: "Ada Lovelace",
@@ -362,7 +362,7 @@ function workspace(): HermesState {
     status: "Interviewing",
     activities: [] as Activity[],
   } as Campaign;
-  return { candidates: [candidate], campaigns: [campaign], activities: [] } as unknown as HermesState;
+  return { candidates: [candidate], campaigns: [campaign], activities: [] } as unknown as WorkspaceState;
 }
 
 const recorded = applyHireTrail(workspace(), {

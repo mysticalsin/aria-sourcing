@@ -2,7 +2,7 @@ import type {
   AgentSkill,
   AgentSkillParams,
   Candidate,
-  HermesState,
+  WorkspaceState,
   OutreachTone,
   ScoringWeights,
   SkillKey,
@@ -123,7 +123,7 @@ export interface OutcomeAnalysis {
   contacted: number;
 }
 
-export function analyzeOutcomes(state: HermesState): OutcomeAnalysis {
+export function analyzeOutcomes(state: WorkspaceState): OutcomeAnalysis {
   const candById = new Map(state.candidates.map((c) => [c.id, c]));
 
   // tone → conversion (a sent message whose candidate later showed positive intent)
@@ -180,7 +180,7 @@ export function analyzeOutcomes(state: HermesState): OutcomeAnalysis {
 
 /* ---- Proposals (concrete, data-backed) ----------------------------------- */
 
-function rankedWinTones(state: HermesState): { tone: OutreachTone; wins: number }[] {
+function rankedWinTones(state: WorkspaceState): { tone: OutreachTone; wins: number }[] {
   const counts = new Map<OutreachTone, number>();
   for (const win of state.wins ?? []) {
     const tone = win.messageTraits.tone;
@@ -192,7 +192,7 @@ function rankedWinTones(state: HermesState): { tone: OutreachTone; wins: number 
     .sort((a, b) => b.wins - a.wins);
 }
 
-function rankedWinPlatforms(state: HermesState): SourcePlatform[] {
+function rankedWinPlatforms(state: WorkspaceState): SourcePlatform[] {
   const counts = new Map<SourcePlatform, number>();
   for (const win of state.wins ?? []) {
     counts.set(win.sourcePlatform, (counts.get(win.sourcePlatform) ?? 0) + 1);
@@ -202,7 +202,7 @@ function rankedWinPlatforms(state: HermesState): SourcePlatform[] {
     .map(([platform]) => platform);
 }
 
-export function proposeSkillUpdates(state: HermesState): SkillUpdate[] {
+export function proposeSkillUpdates(state: WorkspaceState): SkillUpdate[] {
   const a = analyzeOutcomes(state);
   const now = new Date().toISOString();
   const out: SkillUpdate[] = [];
@@ -244,7 +244,7 @@ function mk(skill: SkillKey, title: string, rationale: string, before: string, a
 /* ---- Applying a learning (the feedback into behavior) --------------------- */
 
 /** Compute the empirically-best params for a skill from current outcomes. */
-export function learnedParamsFor(key: SkillKey, state: HermesState): AgentSkillParams {
+export function learnedParamsFor(key: SkillKey, state: WorkspaceState): AgentSkillParams {
   const a = analyzeOutcomes(state);
   const winTones = rankedWinTones(state);
   const bestWinTone = winTones[0]?.wins >= 2 ? winTones[0].tone : null;

@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+/build-metadata.json
 /.localbin/
 /.rocket-fuel/
 /graphify-out/
@@ -36,6 +37,8 @@ backups/
 
 # test artifacts
 .playwright-mcp/
+.playwright-browsers/
+e2e-artifacts/
 *.jpeg
 __pycache__/
 *.py[cod]
@@ -78,3 +81,7 @@ set-admin-password.sh
 # for. Keep this evidence local, or attach it to a review out of band.
 # .dockerignore and scripts/prod-deploy-app.sh already exclude these paths.
 production-readiness/e2e-*/
+
+# Local API secrets (Anthropic key for the AI layer). Never commit.
+.secret
+.secret.*

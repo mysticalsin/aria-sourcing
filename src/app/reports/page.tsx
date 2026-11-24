@@ -83,8 +83,8 @@ export default function ReportsPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Intelligence"
-        title="Weekly reports"
+        eyebrow="Reports"
+        title="Learning loop"
         description="Funnel economics, performance signals, and the self-improvement updates Aria proposes from every campaign it runs."
         actions={
           <Button
@@ -116,11 +116,11 @@ export default function ReportsPage() {
             description="Run an intake to spin up your first sourcing campaign, then generate a weekly report here."
             action={
               <Link
-                href="/intake"
+                href="/campaigns/new"
                 className="inline-flex h-11 items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper shadow-soft transition-all hover:bg-ink/90 active:scale-[0.98]"
               >
                 <Sparkles className="h-4 w-4" aria-hidden />
-                New intake
+                New campaign
               </Link>
             }
           />
@@ -212,7 +212,7 @@ export default function ReportsPage() {
                   description="Generate a report to surface proposed refinements to the sourcing, outreach, scoring, and reply-classification skills."
                 />
               ) : (
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   {skillUpdates.map((s) => (
                     <SkillUpdateCard key={s.id} skillUpdate={s} campaignId={effectiveId} />
                   ))}

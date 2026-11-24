@@ -61,6 +61,8 @@ APP_URL="$(normalize_origin "$APP_URL" 2>/dev/null)" || fail "APP_URL must be a 
 KONG_URL="$(normalize_origin "$KONG_URL" 2>/dev/null)" || fail "KONG_URL must be a credential-free HTTPS origin."
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aria-acceptance.XXXXXX")"
+# Paths embedded in curl config files bypass Git Bash's argument conversion.
+if command -v cygpath >/dev/null 2>&1; then WORK="$(cygpath -m "$WORK")"; fi
 HTTP_CODE=""
 HTTP_BODY=""
 WORKSPACE_ID=""
@@ -530,7 +532,7 @@ jq -n \
         guardrails:{ariaPrompt:"Synthetic acceptance only.",rules:[]},
         notifications:{slack:false,telegram:false,email:false},
         llmProviders:[],savedModels:[],tools:[],mcpServers:[],defaultModels:{},
-        hermesLiveMode:false,hermesApiUrl:"",hermesApiKeyId:"",memoryCapacity:0,hermesWebUrl:""
+        memoryCapacity:0
       },
       seats:[],suppression:[],ledger:[],skills:[],apiKeys:[],chats:[],memory:[],schedules:[],
       ingestedMessageIds:[],chatboxSubmissions:[],activeCampaignId:$campaign

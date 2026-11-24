@@ -9,6 +9,7 @@ export const SETTINGS_SECTION_ORDER = [
   "02",
   "03",
   "04",
+  "20",
   "05",
   "06",
   "07",
@@ -29,6 +30,7 @@ export const SETTINGS_SECTION_ORDER = [
 /** Maps each numbered settings section to the tab it lives under. */
 export const SETTINGS_N_TO_TAB: Record<string, string> = {
   "04": "integrations",
+  "20": "integrations",
   "14": "ai",
   "15": "ai",
   "16": "ai",
@@ -55,6 +57,7 @@ export const SETTINGS_HASH_TO_SECTION: Record<string, string> = {
   "email-connections-panel": "04",
   "linkedin-outreach-stack": "04",
   "integrations-catalog": "04",
+  linkedin: "20",
 };
 
 const SESSION_KEY = "aria.settings.openSection";

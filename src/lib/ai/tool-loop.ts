@@ -15,9 +15,20 @@ import {
   remoteMcpExecutionEnabled,
   type McpTool,
 } from "@/lib/mcp-client";
-import { CLOUD_ENDPOINT, type AiProviderSlug } from "@/lib/ai/provider";
+import {
+  ANTHROPIC_TASK_PROFILE,
+  anthropicCachedSystem,
+  anthropicHeaders,
+  anthropicOutputConfig,
+  cloudStopProblem,
+  anthropicSupportsEffort,
+  type AiProviderSlug,
+} from "@/lib/ai/provider";
+import type { AiTask } from "@/lib/ai/generate";
+import { aiBudgetStatus, recordAiUsage, type AnthropicUsage } from "@/lib/ai/usage";
+import type { AiActivity } from "@/lib/ai/activities";
+import { resolveProviderEndpoint } from "@/lib/ai/endpoint";
 import { BUILTIN_WEB_URL, runWebTool } from "@/lib/ai/web-tools";
-import { BUILTIN_BROWSER_URL, runBrowserTool } from "@/lib/ai/browser-tools";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const MAX_TOTAL_TOOL_DEFINITIONS = 32;
@@ -74,7 +85,7 @@ function isDeadlineError(error: unknown): boolean {
 }
 
 function isRemoteMcpServer(server: ResolvedMcpServer): boolean {
-  return !server.run && server.url !== BUILTIN_WEB_URL && server.url !== BUILTIN_BROWSER_URL;
+  return !server.run && server.url !== BUILTIN_WEB_URL;
 }
 
 function runtimeEligibleServers(servers: ResolvedMcpServer[]): ResolvedMcpServer[] {
@@ -127,11 +138,9 @@ function toolResultForModel(server: ResolvedMcpServer | undefined, output: ToolE
     ? "unavailable_tool"
     : server.url === BUILTIN_WEB_URL
       ? "public_web"
-      : server.url === BUILTIN_BROWSER_URL
-        ? "public_browser"
-        : isRemoteMcpServer(server)
-          ? "remote_mcp"
-          : "in_process_tool";
+      : isRemoteMcpServer(server)
+        ? "remote_mcp"
+        : "in_process_tool";
   const payload = serializedPayload(output.ok ? output.content ?? null : { error: output.error ?? "Tool failed." });
   return JSON.stringify({
     ariaToolResult: {
@@ -173,8 +182,8 @@ export interface ToolCallRecord {
 
 /**
  * Execute one tool call. A server with a `run` override (a stateful in-process
- * tool set) is dispatched directly; the built-in web-research and browser-research
- * servers (the BUILTIN_WEB_URL / BUILTIN_BROWSER_URL sentinels) run in-process;
+ * tool set) is dispatched directly; the built-in web-research
+ * server (the BUILTIN_WEB_URL sentinel) runs in-process;
  * everything else reaches the remote MCP client, whose independent runtime policy
  * denies production and default-off execution. Same {ok, content, error} contract.
  */
@@ -186,7 +195,6 @@ async function execTool(
 ): Promise<ToolExecutionResult> {
   if (server.run) return server.run(name, args, signal);
   if (server.url === BUILTIN_WEB_URL) return runWebTool(name, args, { tavilyKey: server.tavilyKey, signal });
-  if (server.url === BUILTIN_BROWSER_URL) return runBrowserTool(name, args);
   return callMcpTool(server.url, server.token, name, args, { signal });
 }
 
@@ -282,8 +290,16 @@ export async function runAnthropicWithTools(args: {
   maxRounds?: number;
   timeoutMs?: number;
   beforeExternalCall?: () => Promise<boolean>;
+  /** Selects effort and output ceiling on models that support effort. */
+  task?: AiTask;
+  /** Business reason for the cost page; derived from the task when absent. */
+  activity?: AiActivity;
 }): Promise<{ ok: boolean; text?: string; reason?: string; toolCalls: ToolCallRecord[] }> {
   const { model, system, prompt, key, servers } = args;
+  const profile = args.task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[args.task] : undefined;
+  const requestShape = profile
+    ? { max_tokens: profile.maxTokens, output_config: anthropicOutputConfig(profile) }
+    : { max_tokens: 4096 };
   const maxRounds = boundedPositiveInteger(args.maxRounds, 4, MAX_TOOL_ROUNDS);
   const timeoutMs = boundedPositiveInteger(
     args.timeoutMs,
@@ -303,14 +319,27 @@ export async function runAnthropicWithTools(args: {
     if (args.beforeExternalCall && !(await args.beforeExternalCall())) {
       return { ok: false, reason: "Authority changed.", toolCalls };
     }
+    const budget = aiBudgetStatus();
+    if (!budget.ok) return { ok: false, reason: budget.reason, toolCalls };
     let res: Response;
     try {
       res = await withinDeadline(
         (signal) =>
           fetch(ANTHROPIC_URL, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model, max_tokens: 4096, system, messages, tools: toolDefs }),
+            headers: anthropicHeaders(key),
+            // Each round resends tools, system and the whole history. The system
+            // breakpoint keeps the fixed prefix cached across runs; top-level
+            // caching moves a second breakpoint to the end of the history, so
+            // round N+1 reads everything round N already sent.
+            body: JSON.stringify({
+              model,
+              ...requestShape,
+              cache_control: { type: "ephemeral" },
+              system: anthropicCachedSystem(system),
+              messages,
+              tools: toolDefs,
+            }),
             redirect: "manual",
             signal,
           }),
@@ -325,12 +354,12 @@ export async function runAnthropicWithTools(args: {
     }
     if (!res.ok) return { ok: false, reason: `Upstream error ${res.status}`, toolCalls };
 
-    let json: { content?: AnthropicContentBlock[]; stop_reason?: string } | null;
+    let json: { content?: AnthropicContentBlock[]; stop_reason?: string; usage?: AnthropicUsage } | null;
     try {
       json = await withinDeadline(
         async () =>
           (await res.json().catch(() => null)) as
-            | { content?: AnthropicContentBlock[]; stop_reason?: string }
+            | { content?: AnthropicContentBlock[]; stop_reason?: string; usage?: AnthropicUsage }
             | null,
         deadlineAt,
       );
@@ -341,6 +370,9 @@ export async function runAnthropicWithTools(args: {
         toolCalls,
       };
     }
+    if (json?.usage) recordAiUsage({ task: args.task ?? "chat", activity: args.activity, model, usage: json.usage });
+    const stopProblem = cloudStopProblem("anthropic", json);
+    if (stopProblem) return { ok: false, reason: stopProblem, toolCalls };
     const content = json?.content;
     if (!Array.isArray(content)) return { ok: false, reason: "Empty response from provider.", toolCalls };
 
@@ -422,6 +454,7 @@ interface OpenAiMessage {
 /** OpenAI-compatible completion that may call MCP tools, looping to a final answer. */
 export async function runOpenAiWithTools(args: {
   provider: AiProviderSlug;
+  baseUrl?: string;
   model: string;
   system: string;
   prompt: string;
@@ -439,7 +472,9 @@ export async function runOpenAiWithTools(args: {
     MAX_TOOL_LOOP_TIMEOUT_MS,
   );
   const deadlineAt = Date.now() + timeoutMs;
-  const url = CLOUD_ENDPOINT[provider];
+  let url: string;
+  try { url = resolveProviderEndpoint(provider, args.baseUrl); }
+  catch { return { ok: false, reason: "Invalid local provider URL.", toolCalls: [] }; }
   const toolCallLog: ToolCallRecord[] = [];
   let toolCallAttempts = 0;
 
@@ -461,7 +496,7 @@ export async function runOpenAiWithTools(args: {
         (signal) =>
           fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+            headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
             body: JSON.stringify({ model, messages, tools: toolDefs, stream: false }),
             redirect: "manual",
             signal,
@@ -493,6 +528,8 @@ export async function runOpenAiWithTools(args: {
         toolCalls: toolCallLog,
       };
     }
+    const stopProblem = cloudStopProblem(args.provider, json);
+    if (stopProblem) return { ok: false, reason: stopProblem, toolCalls: toolCallLog };
     const choice = json?.choices?.[0];
     const message = choice?.message;
     if (!message) return { ok: false, reason: "Empty response from provider.", toolCalls: toolCallLog };

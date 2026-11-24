@@ -23,12 +23,13 @@ import type { LlmProviderKind, ModelTask, SavedModel } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { BrainCircuit, Plus, Star, Trash2 } from "lucide-react";
 
-const TASKS: ModelTask[] = ["sourcing", "outreach", "classification", "chat"];
+const TASKS: ModelTask[] = ["sourcing", "outreach", "classification", "extraction", "chat"];
 
 const TASK_LABEL: Record<ModelTask, string> = {
   sourcing: "Sourcing",
   outreach: "Outreach",
   classification: "Classification",
+  extraction: "Brief extraction",
   chat: "Chat",
 };
 
@@ -202,7 +203,7 @@ export function ModelsPanel() {
             {adding ? (
               <div className="space-y-3 rounded-2xl border border-dashed border-line p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Add model</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Provider" htmlFor="new-model-prov">
                     <Select
                       id="new-model-prov"

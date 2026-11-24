@@ -32,6 +32,17 @@ export function clearDiscoveryCriteria(
   return { ok: true, clearance: mint(provider, "discovery") };
 }
 
+/** LinkedIn discovery through Claude's web search: the LinkedIn query policy,
+ *  egress only to the Anthropic API. */
+export function clearWebSearchDiscovery(
+  criteria: Record<string, string | string[]>,
+  campaign: CandidateMappingCampaign,
+): ClearanceResult {
+  const policy = validateSourcingCriteria("LinkedIn", criteria, campaign);
+  if (!policy.ok) return policy;
+  return { ok: true, clearance: mint("Anthropic", "discovery") };
+}
+
 export function clearIdentityResolution(
   provider: SourcingProvider,
   criteria: Record<string, string | string[]>,

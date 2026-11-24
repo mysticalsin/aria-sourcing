@@ -5,7 +5,7 @@ import test from "node:test";
 import { buildSeedState } from "../src/lib/seed";
 import { demoStateAllowsCandidatePersistence } from "../src/lib/store/demo-persistence";
 import { loadState } from "../src/lib/store/migrations";
-import type { Candidate, HermesState } from "../src/lib/types";
+import type { Candidate, WorkspaceState } from "../src/lib/types";
 
 const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
 
@@ -27,7 +27,7 @@ test("demo persistence accepts only explicitly synthetic candidate records", () 
   assert.equal(demoStateAllowsCandidatePersistence(seed), true);
 
   for (const provenance of ["live", "manual", undefined] as const) {
-    const unsafe: HermesState = {
+    const unsafe: WorkspaceState = {
       ...seed,
       candidates: [candidateWithProvenance(provenance), ...seed.candidates],
     };
@@ -37,12 +37,12 @@ test("demo persistence accepts only explicitly synthetic candidate records", () 
 
 test("demo hydration purges a legacy localStorage snapshot containing real candidate PII", () => {
   const seed = buildSeedState();
-  const polluted: HermesState = {
+  const polluted: WorkspaceState = {
     ...seed,
     candidates: [candidateWithProvenance("live"), ...seed.candidates],
   };
   const values = new Map<string, string>([
-    ["hermes-sourcing:v1", JSON.stringify(polluted)],
+    ["hermes-sourcing:v1", JSON.stringify(polluted)], // saved before the rename
   ]);
   const removed: string[] = [];
   const previousWindow = globalThis.window;
@@ -62,7 +62,7 @@ test("demo hydration purges a legacy localStorage snapshot containing real candi
     const loaded = loadState();
     assert.equal(demoStateAllowsCandidatePersistence(loaded), true);
     assert.equal(loaded.candidates.some((candidate) => candidate.provenance === "live"), false);
-    assert.deepEqual(removed, ["hermes-sourcing:v1"]);
+    assert.deepEqual(removed, ["aria-sourcing:v1", "hermes-sourcing:v1"]);
   } finally {
     if (previousWindow === undefined) {
       Reflect.deleteProperty(globalThis, "window");

@@ -1,9 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, CalendarCheck, Download, EyeOff, Mail, MousePointerClick, Reply, Target, Timer, Trophy, Users } from "lucide-react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import {
+  BarChart3,
+  CalendarCheck,
+  Clock,
+  Download,
+  EyeOff,
+  FileText,
+  Mail,
+  PiggyBank,
+  Printer,
+  Reply,
+  Target,
+  TrendingUp,
+  Trophy,
+  Users,
+} from "lucide-react";
 import { HydrationGate, PageHeader } from "@/components/app/page-header";
-import { TrendSpark } from "@/components/charts/trend-spark";
+import { inPocScope } from "@/components/app/nav";
 import { Badge, Button, Card, CardContent, CardTitle, EmptyState, Eyebrow, SkeletonCard, useToast } from "@/components/ui";
 import {
   useActivities,
@@ -17,10 +34,25 @@ import {
   useSettings,
   useWins,
 } from "@/lib/store";
-import { deriveExecDashboard, execCanExport, execWinCandidateLabel, type ExecDashboardModel, type ExecFunnelRow } from "@/lib/exec-dashboard";
+import {
+  EXEC_PERIODS,
+  EXEC_PERIOD_LABEL,
+  deriveExecDashboard,
+  execCanExport,
+  execWinCandidateLabel,
+  type ExecDashboardModel,
+  type ExecDecisionReport,
+  type ExecFunnelRow,
+  type ExecPeriod,
+} from "@/lib/exec-dashboard";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { downloadText, formatDateTime, formatNumber, formatPercent, formatTimeAgo, type Tone } from "@/lib/utils";
+import { cn, downloadText, formatCurrency, formatDateTime, formatNumber, formatPercent, formatTimeAgo, round, type Tone } from "@/lib/utils";
+
+const TrendSpark = dynamic(() => import("@/components/charts/trend-spark").then((mod) => mod.TrendSpark), {
+  ssr: false,
+  loading: () => <div className="h-10 w-full" aria-hidden />,
+});
 
 function formatHours(hours: number | null): string {
   return hours == null ? "Not tracked yet" : `${formatNumber(hours)}h`;
@@ -36,11 +68,26 @@ function formatDuration(ms: number | null): string {
 }
 
 function execMarkdown(model: ExecDashboardModel): string {
+  const { report } = model;
   const lines = [
     "# Exec Dashboard",
     "",
     `Generated: ${new Date().toISOString()}`,
+    `Period: ${EXEC_PERIOD_LABEL[report.period]}`,
     `Mode: ${model.demoMode ? "Demo data - synthetic" : "Live"}`,
+    "",
+    "## Recruiting funnel",
+    ...(report.simulated ? ["Contacts are approved dry-run sends: no email left the system.", ""] : []),
+    ...report.conversion.map(
+      (step) =>
+        `${step.label}: ${step.count}${step.rateFromPrevious == null ? "" : ` (${formatPercent(step.rateFromPrevious)} of previous step)`}`,
+    ),
+    "",
+    "## Value of recruiter time saved",
+    `Hours saved: ${round(report.value.hoursSaved, 1)}`,
+    `Value of time saved: ${formatCurrency(report.value.valueSaved)}`,
+    `Annualized saving: ${formatCurrency(report.value.annualSaving)} vs. ${formatCurrency(report.value.annualCost)} annual cost (${round(report.value.multiple, 1)}x)`,
+    `Assumptions: ${formatCurrency(report.value.assumptions.hourlyCost)}/h, ${report.value.assumptions.hoursPerSourced} h per profile, ${report.value.assumptions.hoursPerDraft} h per draft, ${report.value.assumptions.hoursPerBooking} h per booking`,
     "",
     "## KPIs",
     `Candidates sourced: ${model.kpis.candidatesSourced}`,
@@ -50,7 +97,6 @@ function execMarkdown(model: ExecDashboardModel): string {
     `Meetings booked: ${model.kpis.interviewsBooked}`,
     `Time to first interview: ${formatHours(model.kpis.timeToFirstInterviewHours)}`,
     `Average match score: ${model.kpis.avgMatchScore}`,
-    "Open rate: Not tracked yet",
     "",
     "## Recent wins",
   ];
@@ -62,18 +108,153 @@ function execMarkdown(model: ExecDashboardModel): string {
   return `${lines.join("\n")}\n`;
 }
 
+function PeriodPicker({ value, onChange }: { value: ExecPeriod; onChange: (period: ExecPeriod) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Reporting period" className="inline-flex rounded-full bg-ink/[0.05] p-1 print:hidden">
+      {EXEC_PERIODS.map((period) => (
+        <button
+          key={period}
+          type="button"
+          role="radio"
+          aria-checked={value === period}
+          onClick={() => onChange(period)}
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric",
+            value === period ? "bg-surface text-ink shadow-soft" : "text-muted hover:text-ink",
+          )}
+        >
+          {period === "all" ? "All" : period}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ConversionFunnel({ report }: { report: ExecDecisionReport }) {
+  const top = Math.max(1, report.conversion[0]?.count ?? 0);
+  return (
+    <div className="space-y-2.5">
+      {report.conversion.map((step) => (
+        <div key={step.key} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 print:break-inside-avoid">
+          <span className="truncate text-sm font-semibold text-ink-soft">{step.label}</span>
+          <div className="h-3 overflow-hidden rounded-full bg-ink/[0.06]" aria-hidden>
+            <div
+              className="h-full rounded-full bg-tangerine"
+              style={{ width: `${Math.max(step.count > 0 ? 2 : 0, (step.count / top) * 100)}%` }}
+            />
+          </div>
+          <span className="w-28 text-right text-sm tabular-nums">
+            <span className="font-extrabold text-ink">{formatNumber(step.count)}</span>
+            {step.rateFromPrevious != null ? (
+              <span className="ml-1.5 text-xs text-muted">{formatPercent(step.rateFromPrevious)}</span>
+            ) : null}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ValueStat({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface/70 p-4 print:break-inside-avoid">
+      <div className="mb-2 flex items-center gap-2 text-ink-soft">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{label}</span>
+      </div>
+      <p className="text-2xl font-extrabold tabular-nums text-ink">{value}</p>
+      <p className="mt-1 text-xs text-muted">{hint}</p>
+    </div>
+  );
+}
+
+function DecisionReport({ report }: { report: ExecDecisionReport }) {
+  const { value } = report;
+  return (
+    <Card data-tour="exec-report">
+      <CardContent className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Eyebrow>Decision report · {EXEC_PERIOD_LABEL[report.period]}</Eyebrow>
+            <CardTitle className="mt-1 text-lg">From sourcing to interviews, and what it saved</CardTitle>
+          </div>
+          {report.simulated ? (
+            <Badge tone="warning" size="sm" dot>
+              Simulated sends (dry-run): no email left the system
+            </Badge>
+          ) : (
+            <Badge tone="success" size="sm" dot>
+              Real sends only
+            </Badge>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.1fr_1fr]">
+          <div>
+            <p className="mb-3 text-sm font-bold text-ink">Conversion funnel</p>
+            <ConversionFunnel report={report} />
+            <p className="mt-3 text-xs text-muted">Percentages are the share of the previous step.</p>
+          </div>
+          <div>
+            <p className="mb-3 text-sm font-bold text-ink">Value of recruiter time saved</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ValueStat
+                icon={<Clock className="h-4 w-4" aria-hidden />}
+                label="Hours saved"
+                value={`${formatNumber(round(value.hoursSaved, 1))} h`}
+                hint={`Over ${formatNumber(value.spanDays)} day${value.spanDays === 1 ? "" : "s"} of activity.`}
+              />
+              <ValueStat
+                icon={<PiggyBank className="h-4 w-4" aria-hidden />}
+                label="Value of time saved"
+                value={formatCurrency(value.valueSaved)}
+                hint={`At ${formatCurrency(value.assumptions.hourlyCost)}/h recruiter cost.`}
+              />
+              <ValueStat
+                icon={<TrendingUp className="h-4 w-4" aria-hidden />}
+                label="Annualized return"
+                value={`${formatNumber(round(value.multiple, 1))}×`}
+                hint={`${formatCurrency(value.annualSaving)} saved vs. ${formatCurrency(value.annualCost)} cost per year.`}
+              />
+              <ValueStat
+                icon={<CalendarCheck className="h-4 w-4" aria-hidden />}
+                label="Saved per interview"
+                value={value.valuePerBooking == null ? "No interviews yet" : formatCurrency(value.valuePerBooking)}
+                hint="Value of time saved divided by interviews booked."
+              />
+            </div>
+            <p className="mt-3 text-xs text-muted">
+              Estimates use editable assumptions ({value.assumptions.hoursPerSourced} h per profile,{" "}
+              {value.assumptions.hoursPerDraft} h per draft, {value.assumptions.hoursPerBooking} h per booking).{" "}
+              <Link href="/trust" className="font-semibold text-electric hover:underline print:hidden">
+                Adjust them in Trust &amp; ROI
+              </Link>
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** What a figure counts, shown on every tile so two screens never disagree
+ *  silently: real sends, the sourced pool, or campaign timing. */
+type KpiBasis = "Real sends" | "Sourced pool" | "Campaign timing";
+
 function KpiTile({
   icon,
   label,
   value,
   hint,
   tone,
+  basis,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   hint: string;
   tone: Tone;
+  basis: KpiBasis;
 }) {
   return (
     <Card className="h-full">
@@ -83,7 +264,7 @@ function KpiTile({
             {icon}
           </div>
           <Badge tone={tone} size="sm" dot>
-            Canonical
+            {basis}
           </Badge>
         </div>
         <div>
@@ -91,28 +272,6 @@ function KpiTile({
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">{label}</p>
         </div>
         <p className="text-sm text-muted">{hint}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function OpenRateTile() {
-  return (
-    <Card className="h-full">
-      <CardContent className="flex h-full flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/[0.04] text-ink-soft">
-            <MousePointerClick className="h-5 w-5" aria-hidden />
-          </div>
-          <Badge tone="neutral" size="sm">
-            Gap
-          </Badge>
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold text-ink">Not tracked yet</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Open rate</p>
-        </div>
-        <p className="text-sm text-muted">No email-open events exist in the current event model.</p>
       </CardContent>
     </Card>
   );
@@ -182,7 +341,7 @@ function TrendPanel({ model }: { model: ExecDashboardModel }) {
           <Eyebrow>Trends</Eyebrow>
           <CardTitle className="mt-1 text-base">Real activity history</CardTitle>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Spark label="Sourced" data={model.trends.sourced} tone="electric" />
           <Spark label="Contacted" data={model.trends.contacted} tone="tangerine" />
           <Spark label="Replies" data={model.trends.replied} tone="aqua" />
@@ -222,7 +381,7 @@ function WinsFeed({ model, role }: { model: ExecDashboardModel; role: ReturnType
             description="The next accepted meeting will add a structured win record here."
           />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {model.recentWins.map((win) => (
               <div key={win.id} className="rounded-2xl border border-line bg-surface/70 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -265,14 +424,16 @@ export default function ExecPage() {
   const wins = useWins();
   const { toast } = useToast();
   const demoMode = !supabaseEnabled || settings.dryRunMode;
+  const [period, setPeriod] = React.useState<ExecPeriod>("30d");
 
   const model = React.useMemo(
     () =>
       deriveExecDashboard(
         { campaigns, candidates, outreach, replies, bookings, activities, settings, wins },
         demoMode,
+        { period },
       ),
-    [campaigns, candidates, outreach, replies, bookings, activities, settings, wins, demoMode],
+    [campaigns, candidates, outreach, replies, bookings, activities, settings, wins, demoMode, period],
   );
 
   function exportDashboard() {
@@ -289,74 +450,95 @@ export default function ExecPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Executive"
-        title="Exec Dashboard"
-        description="Read-only sourcing performance for leadership, derived from the same canonical real-send metrics used by Mission Control."
+        eyebrow="Reports"
+        title="Overview"
+        description="Recruiting performance and value for leadership: candidates sourced, conversion to interviews, and recruiter time saved."
         actions={
-          exportAllowed ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<Download className="h-4 w-4" aria-hidden />}
-              onClick={exportDashboard}
-              disabled={!hydrated}
-            >
-              Export dashboard
-            </Button>
-          ) : null
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <PeriodPicker value={period} onChange={setPeriod} />
+            {exportAllowed ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Printer className="h-4 w-4" aria-hidden />}
+                  onClick={() => window.print()}
+                  disabled={!hydrated}
+                >
+                  Download PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download className="h-4 w-4" aria-hidden />}
+                  onClick={exportDashboard}
+                  disabled={!hydrated}
+                >
+                  Export Markdown
+                </Button>
+              </>
+            ) : null}
+          </div>
         }
       />
 
       <HydrationGate hydrated={hydrated} fallback={<SkeletonCard className="h-96" />}>
         <div className="space-y-6">
-          {model.demoMode ? (
-            <div className="rounded-2xl border border-tangerine/25 bg-tangerine-soft px-4 py-3 text-sm font-semibold text-tangerine">
-              Demo data - synthetic
-            </div>
-          ) : null}
+          <DecisionReport report={model.report} />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <p className="hidden text-xs text-muted print:block">
+            <FileText className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+            ARIA exec report · {EXEC_PERIOD_LABEL[model.report.period]} · generated {formatDateTime(new Date().toISOString())}
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <KpiTile
               icon={<Users className="h-5 w-5" aria-hidden />}
               label="Candidates sourced"
               value={formatNumber(model.kpis.candidatesSourced)}
               hint="Live mode excludes synthetic candidate records."
               tone="electric"
+              basis="Sourced pool"
             />
             <KpiTile
               icon={<Mail className="h-5 w-5" aria-hidden />}
               label="Contacted"
               value={formatNumber(model.kpis.contacted)}
-              hint="Completed real sends only."
+              hint={
+                model.kpis.contacted === 0 && model.kpis.simulatedContacted > 0
+                  ? `No real send yet. ${formatNumber(model.kpis.simulatedContacted)} simulated in the demo; the funnel above counts pipeline stages.`
+                  : "Completed real sends only."
+              }
               tone="tangerine"
+              basis="Real sends"
             />
             <KpiTile
               icon={<Reply className="h-5 w-5" aria-hidden />}
               label="Reply rate"
-              value={formatPercent(model.kpis.replyRate)}
-              hint="Replies tied to contacted candidates."
+              value={model.kpis.contacted > 0 ? formatPercent(model.kpis.replyRate) : "—"}
+              hint={model.kpis.contacted > 0 ? "Replies from candidates contacted by real send." : "Shown once a real send exists."}
               tone="aqua"
+              basis="Real sends"
             />
             <KpiTile
               icon={<Target className="h-5 w-5" aria-hidden />}
               label="Positive-reply rate"
-              value={formatPercent(model.facts.positiveReplyRate)}
-              hint="Interested or qualified-interest replies."
+              value={model.kpis.contacted > 0 ? formatPercent(model.facts.positiveReplyRate) : "—"}
+              hint={model.kpis.contacted > 0 ? "Interested or qualified-interest replies." : "Shown once a real send exists."}
               tone="success"
+              basis="Real sends"
             />
             <KpiTile
               icon={<CalendarCheck className="h-5 w-5" aria-hidden />}
               label="Meetings booked"
               value={formatNumber(model.kpis.interviewsBooked)}
-              hint="Bookings tied to real contacted candidates."
+              hint={
+                model.kpis.interviewsBooked === 0 && model.kpis.simulatedBooked > 0
+                  ? `None from real sends yet. ${formatNumber(model.kpis.simulatedBooked)} in the demo data.`
+                  : "Bookings tied to real contacted candidates."
+              }
               tone="violet"
-            />
-            <KpiTile
-              icon={<Timer className="h-5 w-5" aria-hidden />}
-              label="Time to first interview"
-              value={formatHours(model.kpis.timeToFirstInterviewHours)}
-              hint="Canonical campaign timing from metrics.ts."
-              tone="neutral"
+              basis="Real sends"
             />
             <KpiTile
               icon={<BarChart3 className="h-5 w-5" aria-hidden />}
@@ -364,13 +546,13 @@ export default function ExecPage() {
               value={formatNumber(model.kpis.avgMatchScore)}
               hint="Average across in-scope sourced candidates."
               tone="electric"
+              basis="Sourced pool"
             />
-            <OpenRateTile />
           </div>
 
           <TrendPanel model={model} />
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <FunnelRows title="By platform" rows={model.platformFunnels} />
             <FunnelRows title="By campaign" rows={model.campaignFunnels} />
           </div>
@@ -382,7 +564,7 @@ export default function ExecPage() {
             </div>
           ) : null}
 
-          <WinsFeed model={model} role={role} />
+          {inPocScope("/winlog") && <WinsFeed model={model} role={role} />}
         </div>
       </HydrationGate>
     </div>

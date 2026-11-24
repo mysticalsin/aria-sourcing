@@ -12,14 +12,11 @@
 //   location  -> candidate.location
 //   company   -> candidate.currentCompany
 //   skills    -> candidate.techStack (union-merged, case-insensitive de-dupe)
-// `experience`, `education` and `languages` have NO dedicated slot on
-// `Candidate` today (see src/lib/types.ts) — only `enrichment.fieldProvenance`
-// + `enrichment.coverage` track that a provider supplied them, so the
-// waterfall correctly stops re-querying for a field it already has. The raw
-// string[] payload for those three fields is intentionally not persisted
-// here: inventing a side-channel (e.g. stuffing it into `candidate.notes`)
-// would surprise every other reader of that field for a gap that belongs to
-// a `Candidate` schema change, not this narrowly-scoped merge module.
+//   experience -> candidate.experience
+//   education  -> candidate.education
+//   languages  -> candidate.languages
+// These arrays are preserved as provider evidence. Free-text work history is
+// deliberately never converted into a fabricated numeric yearsExperience.
 
 import { ENRICHABLE_FIELDS } from "@/lib/types";
 import type { Candidate, CandidateEnrichment, EnrichableField, EnrichmentAttempt, FieldProvenance, SourcePlatform } from "@/lib/types";
@@ -27,7 +24,7 @@ import type { Candidate, CandidateEnrichment, EnrichableField, EnrichmentAttempt
 /** One field's proposed new value from a provider, prior to the merge gate. */
 export interface EnrichedFieldResult {
   value: string | string[];
-  /** 0..1 confidence signal (e.g. Apify's email qualityScore). Absent = unknown/low. */
+  /** 0..1 confidence signal (e.g. a provider's email quality score). Absent = unknown/low. */
   confidence?: number;
 }
 
@@ -44,8 +41,8 @@ const HOMED_FIELDS: ReadonlySet<EnrichableField> = new Set(["email", "phone", "h
  *  directly depends on (email/phone drive every send channel). Deliberately
  *  narrower than the full `ENRICHABLE_FIELDS` set: `company` is never
  *  produced by any registered provider today and `experience`/`education`/
- *  `languages` are Apify-only bonus richness — requiring them would make
- *  "enriched" unreachable via the Apollo/Seamless/Sillage-only paths. */
+ *  `languages` are bonus richness only some providers return — requiring them would make
+ *  "enriched" unreachable via contact-only paths. */
 const COMMON_ENRICHMENT_FIELDS: readonly EnrichableField[] = ["email", "phone"];
 
 /** Fields that merge additively (union of items) rather than overwrite. These

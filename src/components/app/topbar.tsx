@@ -3,17 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Mic, Sparkles, X } from "lucide-react";
+import { Bell, ChevronDown, RotateCcw, ShieldCheck, Check, LogOut, Menu, Plus, Sparkles, X, GraduationCap } from "lucide-react";
+import { useTutorial } from "@/components/tutorial/tutorial";
 import { cn } from "@/lib/utils";
 import { CommandSearch } from "./command-search";
-import { HermesWordmark } from "./logo";
-import { NAV_ITEMS } from "./nav";
-import { VoiceConsole } from "./voice-console";
+import { AriaLockup, AriaWordmark } from "./logo";
+import { NAV_ITEMS, NAV_SECTIONS, NEW_CAMPAIGN_HREF, isNavActive } from "./nav";
 import {
   useActions,
   useActiveCampaign,
   useCampaigns,
-  useHermes,
+  useWorkspaceStateGetter,
   useHydrated,
   useRecommendations,
   useSeats,
@@ -23,7 +23,7 @@ import { useToast, useConfirm } from "@/components/ui";
 import { supabaseEnabled, demoLoginEnabled } from "@/lib/supabase/config";
 import { getCurrentUser, type CurrentUser } from "@/lib/supabase/workspace";
 import { beginAriaLiveRun } from "@/lib/demo/aria-live";
-import { AriaLiveOverlay } from "@/components/demo/aria-live-overlay";
+import { AriaLiveHost } from "@/components/demo/aria-live-host";
 
 /**
  * Keyboard handler shared by both dropdown menus.
@@ -59,9 +59,10 @@ export function TopBar() {
   const active = useActiveCampaign();
   const recommendations = useRecommendations();
   const settings = useSettings();
+  const tutorial = useTutorial();
   const actions = useActions();
   const { setActiveCampaign, resetDemo } = actions;
-  const { state: hermesState } = useHermes();
+  const getWorkspaceState = useWorkspaceStateGetter();
   const hydrated = useHydrated();
   const seats = useSeats();
   const { toast } = useToast();
@@ -70,7 +71,7 @@ export function TopBar() {
   const playAriaLive = React.useCallback(() => {
     const result = beginAriaLiveRun({
       actions,
-      state: hermesState,
+      state: getWorkspaceState(),
       campaigns,
       activeCampaignId: active?.id ?? null,
       seats,
@@ -78,12 +79,11 @@ export function TopBar() {
     if (!result.ok) {
       toast({ title: "Can't start Aria Live", description: result.reason, variant: "warning" });
     }
-  }, [actions, hermesState, campaigns, active, seats, toast]);
+  }, [actions, getWorkspaceState, campaigns, active, seats, toast]);
 
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [userOpen, setUserOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const [voiceOpen, setVoiceOpen] = React.useState(false);
   const [authUser, setAuthUser] = React.useState<CurrentUser | null>(null);
 
   // Close the mobile nav on route change.
@@ -174,7 +174,7 @@ export function TopBar() {
 
   return (
     <>
-    <header className="sticky top-0 z-40 topbar-glass">
+    <header className="sticky top-0 z-40 topbar-glass print:hidden">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
         {/* Mobile / tablet nav trigger — exposes the full nav below lg. */}
         <button
@@ -189,7 +189,7 @@ export function TopBar() {
         </button>
 
         <Link href="/" className="lg:hidden">
-          <HermesWordmark compact />
+          <AriaWordmark compact />
         </Link>
 
         <div className="hidden flex-1 sm:block">
@@ -218,12 +218,23 @@ export function TopBar() {
           </div>
         )}
 
+        {/* The one mode indicator: data source and send mode in a single chip.
+            Pages and the sidebar no longer repeat it. */}
         <span
-          className="hidden items-center gap-1.5 rounded-full bg-success-soft/80 px-3 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:inline-flex"
-          title="Human approval is required for every external message"
+          data-tour="mode-chip"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft/80 px-2.5 py-1.5 text-xs font-bold text-success ring-1 ring-success/15 lg:px-3"
+          title={[
+            supabaseEnabled ? "Live workspace data." : "Synthetic demo data, not real people.",
+            settings.dryRunMode ? "Dry-run: nothing leaves the system." : null,
+            "Human approval is required for every external message.",
+          ].filter(Boolean).join(" ")}
         >
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Approval required
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+          <span className="lg:hidden">{supabaseEnabled ? "Live" : "Demo"}</span>
+          <span className="hidden lg:inline">
+            {supabaseEnabled ? "Live" : "Synthetic demo"}
+            {settings.dryRunMode ? " · dry-run" : " · approval on"}
+          </span>
         </span>
 
         {/* Synthetic demo director — plays the whole hire funnel hands-free
@@ -233,28 +244,14 @@ export function TopBar() {
           <button
             type="button"
             onClick={playAriaLive}
-            className="hidden items-center gap-1.5 rounded-full bg-gradient-to-br from-electric to-violet px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:from-tangerine hover:to-violet focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
+            className="hidden items-center gap-1.5 rounded-full border border-violet/20 bg-surface/80 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:border-violet/40 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
             title="Play the synthetic demo hire funnel (~20s)"
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            Synthetic demo
+            <Sparkles className="h-3.5 w-3.5 text-violet" aria-hidden />
+            Play demo
           </button>
         )}
 
-        {/* Hey Aria — push-to-talk voice console. Reuses the exact same
-            deterministic Aria Command grammar + gated runAriaPlan dispatch
-            as the ⌘K console (see voice-console.tsx); this is just another,
-            hands-free way to reach it. */}
-        <button
-          type="button"
-          onClick={() => setVoiceOpen(true)}
-          disabled={!hydrated}
-          className="hidden items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-ink/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric disabled:opacity-50 lg:inline-flex"
-          title="Hey Aria: push-to-talk voice ops (drafts only)"
-        >
-          <Mic className="h-3.5 w-3.5" />
-          Hey Aria
-        </button>
 
         <div className="relative">
           <button
@@ -416,10 +413,10 @@ export function TopBar() {
           />
           <nav
             ref={mobileNavPanelRef}
-            className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)] animate-fade-in shadow-lift"
+            className="sidebar-glass absolute left-0 top-0 flex h-full w-[17rem] max-w-[82%] flex-col overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))] animate-fade-in shadow-lift"
           >
             <div className="flex items-center justify-between px-5 py-4">
-              <HermesWordmark />
+              <AriaLockup />
               <button
                 type="button"
                 onClick={() => setMobileNavOpen(false)}
@@ -429,14 +426,25 @@ export function TopBar() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {(["Operate", "Analyze", "System"] as const).map((section) => (
+            <div className="px-3 pb-1">
+              <Link
+                href={NEW_CAMPAIGN_HREF}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-tangerine px-3 py-2.5 text-sm font-semibold text-white shadow-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-electric"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                New campaign
+              </Link>
+            </div>
+            {(["Home", ...NAV_SECTIONS] as const).map((section) => (
               <div key={section} className="px-3 py-2">
-                <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
-                  {section}
-                </p>
+                {section !== "Home" && (
+                  <p className="px-3 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">
+                    {section}
+                  </p>
+                )}
                 <ul className="space-y-0.5">
                   {NAV_ITEMS.filter((n) => n.section === section).map((item) => {
-                    const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                    const active = isNavActive(item, pathname);
                     const Icon = item.icon;
                     return (
                       <li key={item.href}>
@@ -457,12 +465,25 @@ export function TopBar() {
                 </ul>
               </div>
             ))}
+            <div className="border-t border-line px-3 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  tutorial.openTutorial();
+                }}
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-ink-soft transition hover:bg-ink/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-electric"
+              >
+                <GraduationCap className="h-5 w-5 shrink-0 text-muted" aria-hidden />
+                <span className="flex-1 text-left">Tutorial</span>
+                <span className="rounded-full bg-electric-soft px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-electric">Learn</span>
+              </button>
+            </div>
           </nav>
         </div>
       )}
     </header>
-    <AriaLiveOverlay />
-    <VoiceConsole open={voiceOpen} onOpenChange={setVoiceOpen} />
+    <AriaLiveHost />
     </>
   );
 }

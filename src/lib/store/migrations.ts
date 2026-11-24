@@ -1,25 +1,65 @@
 import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { HermesState } from "../types";
+import type { WorkspaceState } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
-const STORAGE_KEY = "hermes-sourcing:v1";
+/** Browser key of the synthetic demo workspace. */
+export const WORKSPACE_STORAGE_KEY = "aria-sourcing:v1";
+/** Key used before the product was renamed; still read, removed on the next save. */
+export const LEGACY_WORKSPACE_STORAGE_KEY = "hermes-sourcing:v1";
 
-function withoutLegacyIntegrationAuthority(settings: HermesState["settings"]): HermesState["settings"] {
-  const cleaned = { ...settings } as HermesState["settings"] & { databricks?: unknown; dust?: unknown };
+function forgetStoredWorkspace() {
+  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
+}
+
+/** Settings of the retired external agent runtime, still present in saved workspaces. */
+type RetiredRuntimeSettings = {
+  hermesLiveMode?: unknown;
+  hermesApiUrl?: unknown;
+  hermesApiKeyId?: unknown;
+  hermesWebUrl?: unknown;
+};
+
+function withoutLegacyIntegrationAuthority(settings: WorkspaceState["settings"]): WorkspaceState["settings"] {
+  const cleaned = { ...settings } as WorkspaceState["settings"] & { databricks?: unknown; dust?: unknown } & RetiredRuntimeSettings;
   delete cleaned.databricks;
   delete cleaned.dust;
+  delete cleaned.hermesLiveMode;
+  delete cleaned.hermesApiUrl;
+  delete cleaned.hermesApiKeyId;
+  delete cleaned.hermesWebUrl;
   return cleaned;
 }
 
 /** Fill in any fields added in recent STATE_VERSIONs without wiping existing data. */
-export function migrateToCurrentVersion(parsed: HermesState): HermesState {
+export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState {
   const defs = defaultSettings();
   // STATE_VERSION 12 — the demo moved to Kimi (Kimi Code) via the server env key.
   // Blobs older than 12 have their model layer reset below so returning visitors
   // leave the previous Anthropic default (which would fall back to the mock).
   const preKimi = (parsed.version ?? 0) < 12;
+  // STATE_VERSION 18 — the AI layer moved to Claude with one model tier per task.
+  // Older blobs get the new model layer; a vault key already linked to a
+  // provider is kept so an admin does not have to re-link it.
+  const preClaude = (parsed.version ?? 0) < 18;
+  const linkedKeys = new Map(
+    (parsed.settings?.llmProviders ?? []).filter((p) => p.apiKeyId).map((p) => [p.id, p.apiKeyId]),
+  );
+  const claudeProviders = defs.llmProviders.map((p) =>
+    linkedKeys.has(p.id) ? { ...p, apiKeyId: linkedKeys.get(p.id) } : p,
+  );
+  const resetModels = preKimi || preClaude;
+  // STATE_VERSION 19 — brief extraction got its own task. A kept model layer
+  // routes it to the saved Haiku model when there is one and no choice yet.
+  const keptDefaults = parsed.settings?.defaultModels ?? defs.defaultModels ?? {};
+  const hasHaiku = (parsed.settings?.savedModels ?? []).some((m) => m.id === "model_claude_haiku" && m.enabled);
+  const defaultModels = resetModels
+    ? defs.defaultModels
+    : keptDefaults.extraction || !hasHaiku
+      ? keptDefaults
+      : { ...keptDefaults, extraction: "model_claude_haiku" };
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
   return {
     ...parsed,
@@ -40,16 +80,13 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     bookings: parsed.bookings ?? [],
     wins: parsed.wins ?? [],
     reports: parsed.reports ?? [],
-    // STATE_VERSION 16 — re-sync each stored integration's `real` flag against
-    // the current seed. Roadmap placeholders (`real: false`) also lose any older
-    // fabricated connected/lastSync state; real cards keep their usage history.
+    // STATE_VERSION 20 — stored cards keep their usage history; cards no longer
+    // in the catalogue (the removed roadmap placeholders) are dropped.
+    // STATE_VERSION 21 — the same rule drops the retired Apify cards
+    // (int_apify, int_enrichment; owner, 2026-11-06).
     integrations:
       parsed.integrations && parsed.integrations.length > 0
-        ? parsed.integrations.map((i) => {
-            const seed = defaultIntegrations().find((d) => d.id === i.id);
-            if (!seed) return i;
-            return seed.real ? { ...i, real: true } : { ...i, real: false, status: "not_configured", lastSync: null };
-          })
+        ? parsed.integrations.filter((i) => defaultIntegrations().some((d) => d.id === i.id))
         : defaultIntegrations(),
     activities: parsed.activities ?? [],
     activeCampaignId: parsed.activeCampaignId ?? null,
@@ -74,23 +111,17 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
     interviewers: parsed.interviewers ?? seedInterviewers(),
     settings: {
       ...withoutLegacyIntegrationAuthority(parsed.settings),
-      llmProviders: preKimi ? defs.llmProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
-      savedModels: preKimi ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
+      llmProviders: resetModels ? claudeProviders : (parsed.settings.llmProviders ?? defs.llmProviders),
+      savedModels: resetModels ? defs.savedModels : (parsed.settings.savedModels ?? defs.savedModels),
       tools: parsed.settings.tools ?? defs.tools,
       mcpServers: parsed.settings.mcpServers ?? defs.mcpServers,
       webResearch: parsed.settings.webResearch ?? defs.webResearch,
-      defaultModels: preKimi ? defs.defaultModels : (parsed.settings.defaultModels ?? defs.defaultModels),
-      // STATE_VERSION 8 — live Aria runtime config.
-      hermesLiveMode: parsed.settings.hermesLiveMode ?? defs.hermesLiveMode,
-      hermesApiUrl: parsed.settings.hermesApiUrl ?? defs.hermesApiUrl,
-      hermesApiKeyId: parsed.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
+      defaultModels,
       // D-2: guardrails and notifications fills.
       guardrails: parsed.settings.guardrails ?? defs.guardrails,
       notifications: parsed.settings.notifications ?? defs.notifications,
       // STATE_VERSION 13 — Mantu Star Rating thresholds.
       starRatingThresholds: parsed.settings.starRatingThresholds ?? defs.starRatingThresholds,
-      // STATE_VERSION 11 — Aria management API URL.
-      hermesWebUrl: parsed.settings.hermesWebUrl ?? defs.hermesWebUrl ?? "",
     },
     seats: (parsed.seats ?? []).map((seat) => ({
       ...seat,
@@ -101,7 +132,7 @@ export function migrateToCurrentVersion(parsed: HermesState): HermesState {
   };
 }
 
-export function normalizeHermesState(parsed: HermesState): HermesState {
+export function normalizeWorkspaceState(parsed: WorkspaceState): WorkspaceState {
   if (parsed.version !== STATE_VERSION) return migrateToCurrentVersion(parsed);
   return {
     ...parsed,
@@ -110,25 +141,26 @@ export function normalizeHermesState(parsed: HermesState): HermesState {
   };
 }
 
-export function loadState(): HermesState {
+export function loadState(): WorkspaceState {
   if (typeof window === "undefined") return buildSeedState();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as HermesState;
+      const parsed = JSON.parse(raw) as WorkspaceState;
       if (parsed && parsed.version === STATE_VERSION) {
-        const normalized = normalizeHermesState(parsed);
+        const normalized = normalizeWorkspaceState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
-        window.localStorage.removeItem(STORAGE_KEY);
+        forgetStoredWorkspace();
         return buildSeedState();
       }
       // Migrate ANY prior version rather than wiping all data — migrateToCurrentVersion
       // defensively defaults every field, so it can handle arbitrarily old blobs. Only
       // missing/corrupt/unparseable JSON or a non-numeric version falls through to reseed.
       if (parsed && typeof parsed.version === "number") {
-        const normalized = normalizeHermesState(parsed);
+        const normalized = normalizeWorkspaceState(parsed);
         if (demoStateAllowsCandidatePersistence(normalized)) return normalized;
-        window.localStorage.removeItem(STORAGE_KEY);
+        forgetStoredWorkspace();
         return buildSeedState();
       }
     }

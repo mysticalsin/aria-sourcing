@@ -10,8 +10,10 @@
    ========================================================================== */
 
 import type { LlmProviderKind, ModelTask, SystemSettings } from "@/lib/types";
+import type { AiTask } from "./generate";
+import { INTAKE_OUTPUT_SCHEMA } from "./intake-schema";
 
-export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi";
+export type AiProviderSlug = "anthropic" | "openai" | "groq" | "xai" | "mistral" | "kimi" | "local";
 
 /** Maps LlmProviderKind → AiProviderSlug. Absent = not directly callable. */
 export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
@@ -21,13 +23,13 @@ export const KIND_TO_SLUG: Partial<Record<LlmProviderKind, AiProviderSlug>> = {
   xAI: "xai",
   Mistral: "mistral",
   Kimi: "kimi",
-  // Google, OpenRouter, and "Local/Custom" intentionally absent —
-  // they require different auth schemes or a user-supplied base URL.
+  "Local/Custom": "local",
+  // Google and OpenRouter are not directly callable here.
 };
 
 /** Sensible default model per slug when no SavedModel is configured. */
 export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
-  anthropic: "claude-sonnet-4-6",
+  anthropic: "claude-sonnet-5-5",
   openai: "gpt-4o-mini",
   groq: "llama-3.3-70b-versatile",
   xai: "grok-2-latest",
@@ -35,6 +37,7 @@ export const DEFAULT_MODEL: Record<AiProviderSlug, string> = {
   // Kimi (Moonshot) is OpenAI-compatible. moonshot-v1-8k is the cheap, always-available
   // default; override per-workspace with a SavedModel (e.g. kimi-k2-0711-preview).
   kimi: "moonshot-v1-8k",
+  local: "",
 };
 
 export interface AiResolved {
@@ -42,6 +45,7 @@ export interface AiResolved {
   model: string;
   /** ApiKey.id — the raw secret is NEVER held here. Resolved server-side only. */
   apiKeyId?: string;
+  baseUrl?: string;
 }
 
 export type AiProviderSettings = Pick<
@@ -110,9 +114,9 @@ export function resolveAiProvider(
   const slug = KIND_TO_SLUG[provider.kind];
   if (!slug) return null;
 
-  const model = savedModel?.modelName ?? DEFAULT_MODEL[slug];
+  const model = savedModel?.modelName ?? (slug === "local" ? provider.modelName ?? "" : DEFAULT_MODEL[slug]);
 
-  return { provider: slug, model, apiKeyId: provider.apiKeyId };
+  return { provider: slug, model, apiKeyId: provider.apiKeyId, ...(slug === "local" ? { baseUrl: provider.baseUrl } : {}) };
 }
 
 /** True when at least one enabled provider has a supported slug. */
@@ -139,6 +143,7 @@ export const CLOUD_ENDPOINT: Record<AiProviderSlug, string> = {
   xai: "https://api.x.ai/v1/chat/completions",
   mistral: "https://api.mistral.ai/v1/chat/completions",
   kimi: `${KIMI_BASE}/chat/completions`,
+  local: "",
 };
 
 export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
@@ -148,6 +153,7 @@ export const PROVIDER_ENV: Record<AiProviderSlug, string> = {
   xai: "XAI_API_KEY",
   mistral: "MISTRAL_API_KEY",
   kimi: "KIMI_API_KEY",
+  local: "LOCAL_LLM_API_KEY",
 };
 
 /** Canonical api_keys.provider value for each callable cloud provider. The
@@ -160,7 +166,69 @@ export const VAULT_PROVIDER: Record<AiProviderSlug, string> = {
   xai: "xAI",
   mistral: "Mistral",
   kimi: "Kimi (Moonshot)",
+  local: "Custom",
 };
+
+/* ---- Anthropic request shaping --------------------------------------------
+   Current Claude models think adaptively by default, and thinking tokens count
+   against max_tokens. Each task therefore gets an explicit effort level (how
+   much the model may think) and an output ceiling with room for that thinking.
+   Cheap, high-volume tasks stay at low effort; drafting gets more. */
+
+export interface AnthropicTaskProfile {
+  effort: "low" | "medium" | "high";
+  maxTokens: number;
+  /** Structured output: the answer is constrained to this JSON schema. */
+  outputSchema?: Record<string, unknown>;
+}
+
+export const ANTHROPIC_TASK_PROFILE: Record<AiTask, AnthropicTaskProfile> = {
+  classify: { effort: "low", maxTokens: 2048 },
+  extract: { effort: "low", maxTokens: 4096, outputSchema: INTAKE_OUTPUT_SCHEMA },
+  chat: { effort: "low", maxTokens: 8192 },
+  outreach: { effort: "medium", maxTokens: 8192 },
+  sourcing: { effort: "medium", maxTokens: 16000 },
+};
+
+/** output_config for a task profile: effort, plus the schema when set. */
+export function anthropicOutputConfig(profile: AnthropicTaskProfile): Record<string, unknown> {
+  return {
+    effort: profile.effort,
+    ...(profile.outputSchema ? { format: { type: "json_schema", schema: profile.outputSchema } } : {}),
+  };
+}
+
+/** True for models that accept output_config.effort with low/medium/high.
+ *  Older ids (Sonnet/Haiku 4.5 and before) reject the field, so they keep the
+ *  legacy request shape. */
+export function anthropicSupportsEffort(model: string): boolean {
+  return /^claude-(?:fable|mythos|opus|sonnet|haiku)-5(?:-|$)|^claude-(?:opus|sonnet)-4-[6-9](?:-|$)/.test(model);
+}
+
+/** Messages API headers. A key that is not scoped to an Anthropic workspace
+ *  must name one, read server-side from ANTHROPIC_WORKSPACE_ID. */
+export function anthropicHeaders(key: string): Record<string, string> {
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  return {
+    "content-type": "application/json",
+    "x-api-key": key,
+    "anthropic-version": "2023-06-01",
+    ...(workspaceId ? { "anthropic-workspace-id": workspaceId } : {}),
+  };
+}
+
+export type AnthropicSystemBlock = { type: "text"; text: string; cache_control: { type: "ephemeral" } };
+
+/**
+ * The system prompt as one block with a cache breakpoint, for the tool loop:
+ * its prefix (tool definitions + the fixed task prompt) is the same on every
+ * run, so later runs read it at a tenth of the input price. A prefix under the
+ * model's minimum (512 tokens on the 5.5 models) is simply not cached, at no
+ * extra cost. An empty prompt stays a string: the API rejects empty text blocks.
+ */
+export function anthropicCachedSystem(system: string): string | AnthropicSystemBlock[] {
+  return system ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] : system;
+}
 
 /**
  * Build the fetch args for a cloud provider call.
@@ -177,18 +245,21 @@ export function buildCloudRequest(
   /** Output ceiling. Defaults to 2048 — enough headroom for JSON drafts, CV
    *  analysis and screening-question generation that 1024 silently truncated. */
   maxTokens = 2048,
+  endpoint?: string,
+  /** Anthropic only: selects the effort level and output ceiling. */
+  task?: AiTask,
 ): { url: string; headers: Record<string, string>; body: string } {
   if (provider === "anthropic") {
+    const profile = task && anthropicSupportsEffort(model) ? ANTHROPIC_TASK_PROFILE[task] : undefined;
     return {
       url: CLOUD_ENDPOINT.anthropic,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: anthropicHeaders(key),
       body: JSON.stringify({
         model,
-        max_tokens: maxTokens,
+        max_tokens: profile ? profile.maxTokens : maxTokens,
+        ...(profile ? { output_config: anthropicOutputConfig(profile) } : {}),
+        // No cache breakpoint: every TASK_SYSTEM prompt is far below the
+        // 512-token caching minimum and the user content is unique per call.
         system,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -196,10 +267,10 @@ export function buildCloudRequest(
   }
 
   return {
-    url: CLOUD_ENDPOINT[provider],
+    url: endpoint ?? CLOUD_ENDPOINT[provider],
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${key}`,
+      ...(key ? { authorization: `Bearer ${key}` } : {}),
     },
     body: JSON.stringify({
       model,
@@ -214,14 +285,34 @@ export function buildCloudRequest(
 }
 
 /**
+ * Why a completed response must not be used, or null when it is complete.
+ * A reply cut at the output ceiling would put half a draft in front of a
+ * recruiter, and a declined request has no usable text; both make the caller
+ * fall back to its deterministic path instead.
+ */
+export function cloudStopProblem(provider: AiProviderSlug, json: unknown): string | null {
+  if (provider === "anthropic") {
+    const stop = (json as { stop_reason?: unknown } | null)?.stop_reason;
+    if (stop === "max_tokens") return "Response truncated at the output limit.";
+    if (stop === "refusal") return "The model declined this request.";
+    return null;
+  }
+  const finish = (json as { choices?: { finish_reason?: unknown }[] } | null)?.choices?.[0]?.finish_reason;
+  if (finish === "length") return "Response truncated at the output limit.";
+  if (finish === "content_filter") return "The model declined this request.";
+  return null;
+}
+
+/**
  * Extract the generated text from a cloud provider JSON response.
  * Always returns a string ("" when the expected field is absent).
  */
 export function parseCloudResponse(provider: AiProviderSlug, json: unknown): string {
   if (provider === "anthropic") {
-    return (
-      (json as { content?: { text?: string }[] } | null)?.content?.[0]?.text ?? ""
-    );
+    // Thinking blocks come first and carry no `text`; join the text blocks.
+    const content = (json as { content?: { text?: unknown }[] } | null)?.content;
+    if (!Array.isArray(content)) return "";
+    return content.map((block) => (typeof block?.text === "string" ? block.text : "")).join("");
   }
   return (
     (json as { choices?: { message?: { content?: string } }[] } | null)?.choices?.[0]

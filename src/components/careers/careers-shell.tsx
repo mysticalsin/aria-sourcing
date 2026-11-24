@@ -27,12 +27,13 @@ export function CareersShell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <span className="hidden items-center gap-1.5 text-xs font-semibold text-muted sm:inline-flex">
-            Applications open when careers is online
+            Apply in a short conversation
           </span>
         </div>
       </header>
 
-      <main className="flex-1">{children}</main>
+      {/* Same column as the header and footer, so the chat lines up with them. */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
 
       <footer className="border-t border-violet/10 py-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted sm:flex-row sm:px-6">

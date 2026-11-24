@@ -1,7 +1,7 @@
 /* ============================================================================
    HUMAN-LIKENESS GATE — the last wall between an agent and a candidate.
 
-   Every outbound message (Email / LinkedIn / WhatsApp / SMS) passes through
+   Every outbound message (Email / LinkedIn) passes through
    gateOutbound() before it may enter the send queue. The gate:
 
      1. Runs humanize() (soft transforms: AI-isms → plain phrasing).

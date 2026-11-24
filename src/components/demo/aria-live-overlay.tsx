@@ -7,17 +7,11 @@ import { Badge, Button } from "@/components/ui";
 import { useCountUp } from "@/components/reveal/use-count-up";
 import { lockBodyScroll, unlockBodyScroll } from "@/lib/scroll-lock";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { useActiveCampaignId, useCampaigns, useHermes, useHydrated, useSeats } from "@/lib/store";
 import {
   ARIA_LIVE_CHAPTERS,
-  beginAriaLiveRun,
-  consumeAriaLiveRestartFlag,
   dismissAriaLive,
-  getAriaLiveSnapshot,
   restartAriaLive,
   skipAriaLive,
-  subscribeAriaLive,
-  abandonAriaLiveIfActive,
   type AriaLiveSnapshot,
 } from "@/lib/demo/aria-live";
 
@@ -32,48 +26,14 @@ const CHAPTER_LABELS: Record<string, string> = {
 };
 
 /**
- * The Aria Live (Demo Director) letterbox — mounted once, globally, inside
- * TopBar (see topbar.tsx) so it's present on every route TopBar renders on
- * and renders nothing until a run is actually started from either trigger
- * (the TopBar button or the ⌘K "Play Aria Live" entry — both call
- * beginAriaLiveRun in src/lib/demo/aria-live.ts).
- *
- * Purely a subscriber to that module's tiny pub/sub — it owns no run state
- * itself, so mounting/unmounting it (e.g. crossing into /login or /careers,
- * which app-shell.tsx renders without TopBar) can never desync from the
- * choreography in flight.
+ * The Aria Live (Demo Director) letterbox. Loaded on demand by AriaLiveHost
+ * (aria-live-host.tsx), which owns the run subscription and mounts this only
+ * while a run is active.
  */
-export function AriaLiveOverlay() {
-  const [snapshot, setSnapshot] = React.useState<AriaLiveSnapshot>(() => getAriaLiveSnapshot());
+export function AriaLiveOverlay({ snapshot }: { snapshot: AriaLiveSnapshot }) {
   const reducedMotion = usePrefersReducedMotion();
   const dialogRef = React.useRef<HTMLDialogElement>(null);
   const closeBtnRef = React.useRef<HTMLButtonElement>(null);
-
-  const { state, actions } = useHermes();
-  const hydrated = useHydrated();
-  const campaigns = useCampaigns();
-  const activeCampaignId = useActiveCampaignId();
-  const seats = useSeats();
-
-  React.useEffect(() => subscribeAriaLive(setSnapshot), []);
-
-  // Restart = restore-then-reload (see restartAriaLive) followed by an
-  // automatic relaunch the moment the fresh mount is hydrated again — so
-  // "Restart" reads as an instant replay rather than "now go click Play
-  // again yourself". consumeAriaLiveRestartFlag() is one-shot: it only ever
-  // fires once per Restart click.
-  React.useEffect(() => {
-    if (!hydrated) return;
-    if (!consumeAriaLiveRestartFlag()) return;
-    beginAriaLiveRun({ actions, state, campaigns, activeCampaignId, seats });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
-
-  // Safety net: if this overlay unmounts while a run is still active (the
-  // only route-driven way that happens is AppShell not rendering TopBar on
-  // /login or /careers — app-shell.tsx), restore rather than leave the demo
-  // state mutated. No-ops when no run is active or one already restored.
-  React.useEffect(() => () => abandonAriaLiveIfActive(), []);
 
   React.useEffect(() => {
     if (snapshot.finished) closeBtnRef.current?.focus();

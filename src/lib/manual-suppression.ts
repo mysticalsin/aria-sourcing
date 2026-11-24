@@ -1,6 +1,14 @@
-import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
 
 export type EnforcedSuppressionType = "email" | "domain" | "phone";
+
+/** E.164 digits without the leading "+", or null when the input is not a phone number. */
+function normalizePhoneDigits(raw: string): string | null {
+  if (!/^[+\d\s().-]+$/.test(raw)) return null;
+  const plusIndex = raw.indexOf("+");
+  if (plusIndex > 0 || (plusIndex === 0 && raw.indexOf("+", 1) !== -1)) return null;
+  const digits = raw.replace(/\D/g, "");
+  return /^[1-9]\d{7,14}$/.test(digits) ? digits : null;
+}
 
 export function suppressionDeleteConfirmed(row: unknown): row is { id: string } {
   return Boolean(row && typeof row === "object" && typeof (row as { id?: unknown }).id === "string");
@@ -8,7 +16,7 @@ export function suppressionDeleteConfirmed(row: unknown): row is { id: string } 
 
 export function normalizeSuppressionValue(type: EnforcedSuppressionType, rawValue: string): string | null {
   const raw = rawValue.trim();
-  if (type === "phone") return normalizeWhatsAppAddress(raw);
+  if (type === "phone") return normalizePhoneDigits(raw);
   const value = raw.toLowerCase();
   if (type === "email") {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   groundLiveIntakeFields,
-  parseHermesIntakeJson,
+  parseIntakeJson,
   parseIntakeLive,
 } from "../src/lib/ai/intake";
 import { parseEmailAndJD } from "../src/lib/mock-ai";
@@ -44,7 +44,6 @@ test("missing cloud provider returns the same evidence-grounded incomplete need"
       llmProviders: [],
       savedModels: [],
       defaultModels: {},
-      hermesLiveMode: false,
     },
     { email: minimalNeed },
   );
@@ -57,7 +56,7 @@ test("missing cloud provider returns the same evidence-grounded incomplete need"
 });
 
 test("cloud extraction drops role facts that do not appear in the submitted need", () => {
-  const model = parseHermesIntakeJson(
+  const model = parseIntakeJson(
     JSON.stringify({
       title: "Data Engineer",
       seniority: "Senior",
@@ -109,4 +108,66 @@ test("placeholder whitespace is never accepted as a real title or skill", () => 
   assert.equal(readiness.ready, false);
   assert.ok(readiness.issues.some((issue) => issue.field === "title"));
   assert.ok(readiness.issues.some((issue) => issue.field === "requiredSkills"));
+});
+
+test("brief extraction asks the extract task on Haiku and uses its grounded answer", async () => {
+  const brief = "Senior Backend Engineer, remote. Must have TypeScript and PostgreSQL.";
+  const sent: { task?: string; model?: string; provider?: string }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+    sent.push(JSON.parse(init?.body ?? "{}"));
+    const answer = {
+      title: "Senior Backend Engineer",
+      seniority: "Senior",
+      locationType: "Remote",
+      requiredSkills: ["TypeScript", "PostgreSQL", "Kubernetes"],
+    };
+    return new Response(JSON.stringify({ ok: true, text: JSON.stringify(answer) }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const parsed = await parseIntakeLive(buildSeedState().settings, { email: brief });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]?.task, "extract");
+    assert.equal(sent[0]?.provider, "anthropic");
+    assert.equal(sent[0]?.model, "claude-haiku-5-5");
+    assert.equal(parsed.extractionMode, "cloud");
+    assert.equal(parsed.jobAnalysis.seniority, "Senior");
+    // Grounding still drops a skill the brief never mentions.
+    assert.deepEqual(parsed.jobAnalysis.requiredSkills, ["TypeScript", "PostgreSQL"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("grounding keeps a skill reworded from the brief's own words and drops an invented one", () => {
+  const brief =
+    "Crédit Agricole - Murex Support. MANDATORY: Prior experience working directly with Front Office traders. " +
+    "MANDATORY: Good knowledge of Murex Front Office tools on MX.III (Pricing, Simulation, Market Data, standard reports). " +
+    "Strong knowledge of financial products (vanilla), including valuation principles and risk sensitivities.";
+  const grounded = groundLiveIntakeFields(
+    {
+      requiredSkills: [
+        "Murex MX.III Front Office tools",
+        "Murex Pricing",
+        "Murex Market Data",
+        "Front Office trader experience",
+        "Vanilla financial products valuation",
+        "Risk sensitivities",
+        "Kubernetes",
+        "Murex Kondor",
+      ],
+      niceToHaveSkills: ["Murex Simulation", "Python"],
+    },
+    brief,
+  );
+
+  assert.deepEqual(grounded.requiredSkills, [
+    "Murex MX.III Front Office tools",
+    "Murex Pricing",
+    "Murex Market Data",
+    "Front Office trader experience",
+    "Vanilla financial products valuation",
+    "Risk sensitivities",
+  ]);
+  assert.deepEqual(grounded.niceToHaveSkills, ["Murex Simulation"]);
 });

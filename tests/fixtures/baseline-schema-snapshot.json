@@ -1,0 +1,407 @@
+{
+  "tables": [
+    "agent_conversations",
+    "agent_seats",
+    "agent_specs",
+    "api_keys",
+    "calendar_booking_ledger",
+    "candidate_erasure_obligations",
+    "candidate_erasure_receipts",
+    "candidate_erasure_requests",
+    "candidate_erasure_suppression_tombstones",
+    "candidate_identities",
+    "candidate_legal_holds",
+    "candidate_outcome_events",
+    "candidates",
+    "dust_connection_events",
+    "dust_connections",
+    "email_connection_seat_mismatch_quarantine",
+    "email_connections",
+    "email_delivery_events",
+    "email_ledger_delivery_receipts",
+    "enrichment_budgets",
+    "enrichment_spend_ledger",
+    "inbound_mailbox_routes",
+    "messages_inbound",
+    "messages_outbound",
+    "outreach_approvals",
+    "outreach_ledger",
+    "persons",
+    "profiles",
+    "sourcing_graphify_exports",
+    "sourcing_learning_controls",
+    "sourcing_learning_secrets",
+    "sourcing_lesson_evidence",
+    "sourcing_lesson_reviews",
+    "sourcing_lessons",
+    "sourcing_provider_runs",
+    "sourcing_query_feedback",
+    "sourcing_query_receipts",
+    "sourcing_run_quota",
+    "sourcing_runs",
+    "suppression_list",
+    "workspace_state",
+    "workspaces"
+  ],
+  "forced": [
+    "calendar_booking_ledger",
+    "candidate_erasure_obligations",
+    "candidate_erasure_receipts",
+    "candidate_erasure_requests",
+    "candidate_erasure_suppression_tombstones",
+    "candidate_identities",
+    "candidate_legal_holds",
+    "candidate_outcome_events",
+    "candidates",
+    "dust_connection_events",
+    "dust_connections",
+    "email_connection_seat_mismatch_quarantine",
+    "email_delivery_events",
+    "email_ledger_delivery_receipts",
+    "enrichment_budgets",
+    "enrichment_spend_ledger",
+    "inbound_mailbox_routes",
+    "persons",
+    "sourcing_graphify_exports",
+    "sourcing_learning_controls",
+    "sourcing_learning_secrets",
+    "sourcing_lesson_evidence",
+    "sourcing_lesson_reviews",
+    "sourcing_lessons",
+    "sourcing_provider_runs",
+    "sourcing_query_feedback",
+    "sourcing_query_receipts",
+    "sourcing_run_quota",
+    "sourcing_runs"
+  ],
+  "functionGrants": {
+    "attach_provider_run": [
+      "service_role"
+    ],
+    "begin_provider_run": [
+      "service_role"
+    ],
+    "begin_sourcing_run": [
+      "service_role"
+    ],
+    "claim_and_record": [
+      "service_role"
+    ],
+    "claim_calendar_booking": [
+      "service_role"
+    ],
+    "claim_email_outbound": [
+      "authenticated"
+    ],
+    "claim_email_outbound_queued": [
+      "service_role"
+    ],
+    "claim_enrichment_budget": [
+      "service_role"
+    ],
+    "claim_linkedin_outbound_queued": [
+      "service_role"
+    ],
+    "cleanup_email_ledger_delivery_receipts": [
+      "service_role"
+    ],
+    "cleanup_sourcing_learning_authority": [
+      "service_role"
+    ],
+    "complete_sourcing_run": [
+      "service_role"
+    ],
+    "configure_sourcing_learning": [
+      "service_role"
+    ],
+    "correlate_inbound_email": [
+      "service_role"
+    ],
+    "current_profile_role": [
+      "authenticated"
+    ],
+    "current_workspace_id": [
+      "authenticated"
+    ],
+    "enqueue_email_outbound": [
+      "authenticated"
+    ],
+    "ensure_workspace": [
+      "authenticated"
+    ],
+    "fail_sourcing_run": [
+      "service_role"
+    ],
+    "finalize_email_provider_failure": [
+      "service_role"
+    ],
+    "list_candidate_erasure_requests": [
+      "service_role"
+    ],
+    "list_pending_sourcing_feedback": [
+      "service_role"
+    ],
+    "list_promoted_sourcing_lessons": [
+      "service_role"
+    ],
+    "list_workspace_candidates": [
+      "authenticated"
+    ],
+    "place_candidate_legal_hold": [
+      "service_role"
+    ],
+    "read_candidate_erasure_obligation_authority": [
+      "service_role"
+    ],
+    "reconcile_calendar_booking": [
+      "service_role"
+    ],
+    "reconcile_candidate_erasure_obligation": [
+      "service_role"
+    ],
+    "record_candidate_outcome": [
+      "service_role"
+    ],
+    "record_email_delivery_event": [
+      "service_role"
+    ],
+    "record_email_send_message_id": [
+      "service_role"
+    ],
+    "record_inbound_email": [
+      "service_role"
+    ],
+    "record_linkedin_delivery_outcome": [
+      "service_role"
+    ],
+    "record_outreach_approval": [
+      "authenticated"
+    ],
+    "record_sourcing_query_feedback": [
+      "service_role"
+    ],
+    "release_candidate_legal_hold": [
+      "service_role"
+    ],
+    "release_enrichment_claim": [
+      "service_role"
+    ],
+    "request_candidate_erasure": [
+      "service_role"
+    ],
+    "resolve_inbound_mailbox_route": [
+      "service_role"
+    ],
+    "review_sourcing_lesson": [
+      "service_role"
+    ],
+    "revoke_outreach_approval": [
+      "authenticated"
+    ],
+    "settle_enrichment_spend": [
+      "service_role"
+    ],
+    "settle_provider_run": [
+      "service_role"
+    ],
+    "settle_provider_run_by_external": [
+      "service_role"
+    ]
+  },
+  "tableGrants": {
+    "agent_conversations": {
+      "authenticated": [
+        "SELECT"
+      ]
+    },
+    "agent_seats": {
+      "authenticated": [
+        "ALL"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "agent_specs": {
+      "authenticated": [
+        "DELETE",
+        "INSERT",
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE",
+        "UPDATE(channels)",
+        "UPDATE(guardrails)",
+        "UPDATE(name)",
+        "UPDATE(role_brief)",
+        "UPDATE(seat_id)",
+        "UPDATE(status)",
+        "UPDATE(updated_at)"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "api_keys": {
+      "authenticated": [
+        "DELETE",
+        "INSERT",
+        "SELECT(created_at)",
+        "SELECT(created_by)",
+        "SELECT(id)",
+        "SELECT(last4)",
+        "SELECT(last_tested_at)",
+        "SELECT(name)",
+        "SELECT(provider)",
+        "SELECT(status)",
+        "SELECT(workspace_id)",
+        "UPDATE"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "candidate_outcome_events": {
+      "authenticated": [
+        "SELECT"
+      ]
+    },
+    "dust_connection_events": {
+      "authenticated": [
+        "SELECT"
+      ]
+    },
+    "dust_connections": {
+      "authenticated": [
+        "DELETE",
+        "INSERT",
+        "SELECT",
+        "UPDATE"
+      ],
+      "service_role": [
+        "SELECT"
+      ]
+    },
+    "email_connection_seat_mismatch_quarantine": {
+      "service_role": [
+        "SELECT"
+      ]
+    },
+    "email_connections": {
+      "authenticated": [
+        "DELETE",
+        "INSERT",
+        "SELECT(account_email)",
+        "SELECT(connected_at)",
+        "SELECT(id)",
+        "SELECT(provider)",
+        "SELECT(scope)",
+        "SELECT(seat_id)",
+        "SELECT(updated_at)",
+        "SELECT(workspace_id)",
+        "UPDATE"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "email_delivery_events": {
+      "authenticated": [
+        "SELECT"
+      ],
+      "service_role": [
+        "SELECT"
+      ]
+    },
+    "inbound_mailbox_routes": {
+      "authenticated": [
+        "SELECT"
+      ]
+    },
+    "messages_inbound": {
+      "authenticated": [
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "messages_outbound": {
+      "authenticated": [
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "outreach_approvals": {
+      "authenticated": [
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "outreach_ledger": {
+      "authenticated": [
+        "DELETE",
+        "INSERT",
+        "MAINTAIN",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE",
+        "UPDATE(reason)",
+        "UPDATE(status)"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "profiles": {
+      "authenticated": [
+        "ALL"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "suppression_list": {
+      "authenticated": [
+        "ALL"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "workspace_state": {
+      "authenticated": [
+        "ALL"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    },
+    "workspaces": {
+      "authenticated": [
+        "ALL"
+      ],
+      "service_role": [
+        "ALL"
+      ]
+    }
+  }
+}

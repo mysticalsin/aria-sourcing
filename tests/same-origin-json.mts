@@ -42,15 +42,42 @@ test("JSON-shaped bodies under simple or missing media types are rejected", () =
   }
 });
 
-test("changed spec and compliance mutations use the shared request boundary", () => {
-  const specs = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
+test("compliance mutations use the shared request boundary", () => {
   const compliance = readFileSync(new URL("../src/app/api/compliance/suppress/route.ts", import.meta.url), "utf8");
-  const memories = readFileSync(new URL("../src/app/api/agents/memories/route.ts", import.meta.url), "utf8");
-  assert.match(specs, /classifySameOriginJsonRequest/);
   assert.match(compliance, /classifySameOriginJsonRequest/);
-  assert.match(memories, /classifySameOriginJsonRequest/);
-  for (const source of [specs, compliance, memories]) {
+  for (const source of [compliance]) {
     assert.match(source, /unsupported_media_type/);
     assert.match(source, /unsupported_media_type" \? 415 : 403/);
+  }
+});
+
+test("Docker bind address: the Host the browser addressed wins over nextUrl", () => {
+  // HOSTNAME=0.0.0.0 makes Next build nextUrl from the bind address.
+  const docker = (origin: string, headers: Record<string, string>) => {
+    const request = { headers: new Headers({ "Content-Type": "application/json", Origin: origin, ...headers }), nextUrl: { origin: "http://0.0.0.0:3000" } };
+    return classifySameOriginJsonRequest(request);
+  };
+  const local = { Host: "localhost:3000", "X-Forwarded-Host": "localhost:3000", "X-Forwarded-Proto": "http" };
+  assert.equal(docker("http://localhost:3000", local), "ok");
+  assert.equal(docker("http://127.0.0.1:3000", { Host: "127.0.0.1:3000" }), "ok");
+  assert.equal(docker("https://aria.example", { Host: "app:3000", "X-Forwarded-Host": "aria.example", "X-Forwarded-Proto": "https" }), "ok");
+  for (const origin of ["http://evil.example", "https://localhost:3000", "http://localhost:3001", "null"]) {
+    assert.equal(docker(origin, local), "cross_origin_request");
+  }
+  assert.equal(docker("http://localhost:3000", { Host: "bad host" }), "cross_origin_request");
+});
+
+test("sourcing routes use the shared origin check, not nextUrl.origin", () => {
+  for (const route of [
+    "source/route.ts",
+    "source/campaign/route.ts",
+    "source/enrich/route.ts",
+    "sourcing-agent/route.ts",
+    "sourcing-learning/feedback/route.ts",
+    "careers/route.ts",
+  ]) {
+    const source = readFileSync(new URL(`../src/app/api/${route}`, import.meta.url), "utf8");
+    assert.match(source, /isSameOriginRequest\(req\)/, route);
+    assert.doesNotMatch(source, /nextUrl\.origin/, route);
   }
 });

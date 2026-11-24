@@ -1,77 +1,141 @@
 import {
   LayoutDashboard,
-  MailPlus,
   Target,
   Users,
   Send,
-  MessageSquare,
   MessageSquareReply,
   CalendarDays,
-  LineChart,
   Settings,
-  Bot,
-  Brain,
-  Building2,
-  Database,
   BarChart3,
-  Sparkles,
-  History,
-  FolderSearch,
   Workflow,
-  Inbox,
-  Bookmark,
-  Network,
-  Rocket,
-  Rewind,
-  ShieldCheck,
-  Trophy,
-  Wand2,
+  Mail,
+  History,
+  Brain,
+  Coins,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
+
+export type NavSection = "Home" | "Recruit" | "Engage" | "Analyze" | "System";
 
 export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  section: "Operate" | "Analyze" | "System";
+  section: NavSection;
   description: string;
+  /** Other routes that belong to this entry (its tabs), so it stays lit there. */
+  match?: string[];
 }
 
-export const NAV_ITEMS: NavItem[] = [
-  // Operate — day-to-day sourcing & recruiting work
-  { href: "/", label: "Command Center", icon: LayoutDashboard, section: "Operate", description: "Live operations overview" },
-  { href: "/funnel", label: "Funnel", icon: Workflow, section: "Operate", description: "TAnIA hiring funnel" },
-  { href: "/intake", label: "Intake", icon: MailPlus, section: "Operate", description: "Email + JD parser" },
-  { href: "/launch", label: "Launch", icon: Rocket, section: "Operate", description: "Multi-role batch launch" },
-  { href: "/campaigns", label: "Campaigns", icon: Target, section: "Operate", description: "Sourcing campaigns" },
-  { href: "/applicants", label: "Applicants", icon: Inbox, section: "Operate", description: "Chatbox applicant inbox" },
-  { href: "/candidates", label: "Candidates", icon: Users, section: "Operate", description: "Talent intelligence" },
-  { href: "/vivier", label: "#Vivier", icon: Bookmark, section: "Operate", description: "Talent pool" },
-  { href: "/outreach", label: "Outreach", icon: Send, section: "Operate", description: "Approval queue" },
-  { href: "/replies", label: "Replies", icon: MessageSquareReply, section: "Operate", description: "Reply classification" },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Operate", description: "Interview bookings" },
-  { href: "/fleet", label: "Agent Fleet", icon: Bot, section: "Operate", description: "Multi-agent coordination" },
-  { href: "/floor", label: "Ops Floor", icon: Building2, section: "Operate", description: "Live agent floor" },
-  { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
-  // Analyze — hindsight, metrics & compliance posture
-  { href: "/replay", label: "Replay", icon: Rewind, section: "Analyze", description: "Scrub the agents' whole day" },
-  { href: "/exec", label: "Exec", icon: BarChart3, section: "Analyze", description: "Leadership KPI dashboard" },
-  { href: "/winlog", label: "Winlog", icon: Trophy, section: "Analyze", description: "Booked-win learning records" },
-  { href: "/reports", label: "Reports", icon: LineChart, section: "Analyze", description: "Learning loop" },
-  { href: "/sessions", label: "Sessions", icon: History, section: "Analyze", description: "Chat & activity history" },
-  { href: "/trust", label: "Trust & ROI", icon: ShieldCheck, section: "Analyze", description: "ROI calculator & compliance posture" },
-  // System — agent architecture, config & platform internals
-  { href: "/studio", label: "Agent Studio", icon: Wand2, section: "System", description: "Build & tune sourcing agents" },
-  { href: "/architecture", label: "Architecture", icon: Network, section: "System", description: "TAnIA agent org & guardrails" },
+/** The one way to create a campaign, for one role or several. */
+export const NEW_CAMPAIGN_HREF = "/campaigns/new";
+
+/** Sections with a heading, in order. Home sits above them on its own. */
+export const NAV_SECTIONS = ["Recruit", "Engage", "Analyze", "System"] as const;
+
+/**
+ * Live POC scope (owner, 2026-11-12). These pages need something this install
+ * does not run (sender mailboxes, a calendar, an email inbox, the careers
+ * site) or data that only those produce, so the navigation, the tabs and the
+ * search leave them out. The routes still work by URL. Empty the set to bring
+ * them all back.
+ */
+export const OUT_OF_POC_SCOPE: ReadonlySet<string> = new Set([
+  "/applicants", // careers-site chatbox applications
+  "/vivier", // talent pool: fed by closed roles and applicants
+  "/replies", // email replies; LinkedIn replies live in the candidate's conversation
+  "/calendar", // needs Microsoft Graph / Teams
+  "/reports", // learning loop: needs reply and booking outcomes
+  "/winlog", // booked wins: needs bookings
+  "/trust", // ROI calculator and compliance posture
+  "/fleet", // sender mailboxes (email seats)
+  "/skills", // playbooks and their learning loop
+]);
+
+export const inPocScope = (href: string) => !OUT_OF_POC_SCOPE.has(href);
+
+/** Pages reached through one nav entry and switched with tabs (see SectionTabs). */
+export const CANDIDATE_TABS = [
+  { href: "/candidates", label: "All candidates" },
+  { href: "/applicants", label: "Applicants" },
+  { href: "/vivier", label: "Talent pool" },
+];
+
+export const REPORT_TABS = [
+  { href: "/exec", label: "Overview" },
+  { href: "/reports", label: "Learning loop" },
+  { href: "/winlog", label: "Wins" },
+  { href: "/trust", label: "Trust & ROI" },
+];
+
+/** Tab groups as shown: in-scope tabs only, and no tab bar for a lone page. */
+export const SECTION_TABS = [CANDIDATE_TABS, REPORT_TABS]
+  .map((tabs) => tabs.filter((t) => inPocScope(t.href)))
+  .filter((tabs) => tabs.length > 1);
+
+// Grouped around the recruiter's day: find people, talk to them, then measure.
+const ALL_NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Home", icon: LayoutDashboard, section: "Home", description: "Today's action queue" },
+  { href: "/campaigns", label: "Campaigns", icon: Target, section: "Recruit", description: "Sourcing campaigns" },
+  {
+    href: "/candidates",
+    label: "Candidates",
+    icon: Users,
+    section: "Recruit",
+    description: "All candidates, applicants and the talent pool",
+    match: CANDIDATE_TABS.map((t) => t.href),
+  },
+  { href: "/funnel", label: "Pipeline", icon: Workflow, section: "Recruit", description: "Hiring pipeline by stage" },
+  { href: "/demo/hire", label: "Synthetic hire", icon: UserCheck, section: "Recruit", description: "Fixture sourcing through hired on the fake Odoo" },
+  { href: "/outreach", label: "Outreach", icon: Send, section: "Engage", description: "Messages awaiting approval" },
+  { href: "/replies", label: "Replies", icon: MessageSquareReply, section: "Engage", description: "Candidate replies" },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Engage", description: "Interview bookings" },
+  {
+    href: "/exec",
+    label: "Reports",
+    icon: BarChart3,
+    section: "Analyze",
+    description: "KPIs, learning loop, wins and ROI",
+    match: REPORT_TABS.map((t) => t.href),
+  },
+  { href: "/costs", label: "AI costs", icon: Coins, section: "Analyze", description: "What Claude costs, by activity" },
+  { href: "/fleet", label: "Mailboxes", icon: Mail, section: "System", description: "Sender mailboxes & suppression" },
   { href: "/skills", label: "Skills", icon: Brain, section: "System", description: "Learned playbooks" },
-  { href: "/memory", label: "Memory", icon: Database, section: "System", description: "Agent long-term memory" },
-  { href: "/curator", label: "Files", icon: FolderSearch, section: "System", description: "Aria files & curator" },
-  { href: "/soul", label: "Soul", icon: Sparkles, section: "System", description: "Agent personas & brain" },
+  { href: "/sessions", label: "History", icon: History, section: "System", description: "Candidate journeys & audit pack" },
   { href: "/settings", label: "Settings", icon: Settings, section: "System", description: "Integrations & compliance" },
 ];
 
-/** Bottom-nav subset for small screens. The full nav is reachable via the
- *  hamburger drawer in the top bar (see TopBar) — this is the quick-access row. */
-export const MOBILE_NAV: NavItem[] = ["/", "/funnel", "/applicants", "/candidates", "/settings"]
+export const NAV_ITEMS: NavItem[] = ALL_NAV_ITEMS
+  .filter((item) => inPocScope(item.href))
+  .map((item) => (item.match ? { ...item, match: item.match.filter(inPocScope) } : item));
+
+function underRoute(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function isNavActive(item: NavItem, pathname: string): boolean {
+  if (item.href === "/") return pathname === "/";
+  return [item.href, ...(item.match ?? [])].some((href) => underRoute(pathname, href));
+}
+
+/** The tab group the current page belongs to, if any. */
+export function sectionTabsFor(pathname: string) {
+  return SECTION_TABS.find((tabs) => tabs.some((t) => underRoute(pathname, t.href)));
+}
+
+/** Bottom-nav subset for small screens: the daily work queues. The full nav is
+ *  reachable via the hamburger drawer in the top bar (see TopBar). */
+export const MOBILE_NAV: NavItem[] = ["/", "/campaigns", "/candidates", "/outreach", "/replies"]
   .map((href) => NAV_ITEMS.find((n) => n.href === href))
   .filter((n): n is NavItem => Boolean(n));
+
+/** Every page the command search can open: nav entries, their tabs and the
+ *  new-campaign flow. */
+export const SEARCH_PAGES: { href: string; label: string; description: string }[] = [
+  { href: NEW_CAMPAIGN_HREF, label: "New campaign", description: "One role or several, from a brief or an email" },
+  ...NAV_ITEMS,
+  ...SECTION_TABS.flat()
+    .filter((tab) => !NAV_ITEMS.some((n) => n.href === tab.href))
+    .map((tab) => ({ ...tab, description: NAV_ITEMS.find((n) => n.match?.includes(tab.href))?.label ?? "" })),
+];

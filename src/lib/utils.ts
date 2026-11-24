@@ -202,7 +202,7 @@ export function formatTimeAgo(iso: string, now: number = Date.now()): string {
   else if (mins < 60) label = `${mins}m`;
   else if (hours < 24) label = `${hours}h`;
   else if (days < 30) label = `${days}d`;
-  else label = formatDate(iso);
+  else return formatDate(iso);
   if (label === "just now") return label;
   return future ? `in ${label}` : `${label} ago`;
 }

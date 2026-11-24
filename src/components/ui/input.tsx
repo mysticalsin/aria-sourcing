@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 
 const baseField =
   "w-full rounded-2xl border border-violet/10 bg-surface/80 backdrop-blur-sm px-4 py-2.5 text-sm text-ink placeholder:text-muted " +
-  "transition focus:border-electric focus:outline-none focus:ring-4 focus:ring-electric/15 disabled:opacity-60";
+  "transition focus:border-electric focus:outline-none focus-visible:outline-none focus:ring-4 focus:ring-electric/15 disabled:opacity-60";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (

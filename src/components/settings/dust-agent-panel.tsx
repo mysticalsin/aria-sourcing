@@ -136,7 +136,7 @@ export function DustAgentPanel() {
             <p className="text-xs text-muted">Admins only. Contact your workspace admin to connect Dust.</p>
           ) : (
             <div className="space-y-3">
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field label="Workspace ID" htmlFor="dust-workspace">
                   <Input
                     id="dust-workspace"
@@ -236,7 +236,7 @@ export function DustAgentPanel() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
               Reconnect / rotate key
             </p>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
               <Field label="Workspace ID" htmlFor="dust-workspace-reconnect">
                 <Input id="dust-workspace-reconnect" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} />
               </Field>

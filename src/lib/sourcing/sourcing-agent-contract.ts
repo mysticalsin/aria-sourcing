@@ -115,22 +115,8 @@ export const SourcingAgentRequestSchema = z
   .object({
     campaignId: bounded(100).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/),
     count: z.number().int().min(1).max(8).default(5),
-    agentFrameworkRunId: z.string().uuid().optional(),
-    agentFrameworkCapabilityToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
-    agentFrameworkQuery: z.string().trim().min(3).max(256).optional(),
   })
-  .strict()
-  .refine(
-    (request) => {
-      const fields = [
-        request.agentFrameworkRunId,
-        request.agentFrameworkCapabilityToken,
-        request.agentFrameworkQuery,
-      ];
-      return fields.every(Boolean) || fields.every((value) => value === undefined);
-    },
-    { message: "Framework run, capability, and reviewed query must be supplied together." },
-  );
+  .strict();
 
 const LlmProviderSchema = z
   .object({
@@ -138,6 +124,7 @@ const LlmProviderSchema = z
     kind: z.enum(LLM_PROVIDERS),
     label: bounded(200),
     baseUrl: bounded(2_048).optional(),
+    modelName: bounded(200).optional(),
     apiKeyId: bounded(100).min(1).optional(),
     enabled: z.boolean(),
     isDefault: z.boolean().optional(),
@@ -148,13 +135,13 @@ const SavedModelSchema = z
   .object({
     id: bounded(100).min(1),
     providerId: bounded(100).min(1),
-    modelName: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/),
+    modelName: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/),
     label: bounded(200),
     contextWindow: z.number().int().positive().max(10_000_000).optional(),
     enabled: z.boolean(),
     defaultForTask: z
-      .array(z.enum(["sourcing", "outreach", "classification", "chat"]))
-      .max(4)
+      .array(z.enum(["sourcing", "outreach", "classification", "extraction", "chat"]))
+      .max(5)
       .optional(),
   })
   .strict();
@@ -180,6 +167,15 @@ export type SourcingAgentWorkspace = {
   fingerprint: string;
 };
 
+// Keys are sorted so the browser's object (key order follows edit history) and
+// the server's schema-parsed copy (key order follows the schema) agree.
+function sortedKeys(_key: string, value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
+
 export function sourcingAgentCampaignFingerprint(
   campaign: SourcingAgentCampaign,
 ): string {
@@ -192,7 +188,7 @@ export function sourcingAgentCampaignFingerprint(
       excludedCompanies: campaign.sourcingStrategy.excludedCompanies,
       githubQueries: campaign.sourcingStrategy.githubQueries,
     },
-  });
+  }, sortedKeys);
 }
 
 type ProjectionResult =
@@ -344,16 +340,10 @@ const SourcingAgentSuccessResponseSchema = z
     requestId: bounded(100).regex(/^[A-Za-z0-9._:-]{1,100}$/),
     idempotencyKey: z.string().uuid(),
     sourcingRunId: z.string().uuid(),
-    agentFrameworkRunId: z.string().uuid().optional(),
-    agentFrameworkResultSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     appliedLessonIds: z.array(z.string().uuid()).max(100),
     feedbackReceipts: z.array(SourcingFeedbackReceiptDtoSchema).min(1).max(20),
   })
-  .strict()
-  .refine(
-    (response) => Boolean(response.agentFrameworkRunId) === Boolean(response.agentFrameworkResultSha256),
-    { message: "Framework run and staged result receipt must be supplied together." },
-  );
+  .strict();
 
 export type SourcingAgentSuccessResponse = z.infer<
   typeof SourcingAgentSuccessResponseSchema
@@ -434,13 +424,11 @@ export function parseSourcingAgentSuccessResponse(
   value: unknown,
   campaignId: string,
   maxCount: number,
-  expectedAgentFrameworkRunId?: string,
 ): SourcingAgentSuccessResponse | null {
   const parsed = SourcingAgentSuccessResponseSchema.safeParse(value);
   if (
     !parsed.success ||
-    parsed.data.campaignId !== campaignId ||
-    parsed.data.agentFrameworkRunId !== expectedAgentFrameworkRunId
+    parsed.data.campaignId !== campaignId
   ) return null;
   const candidates = parseSourcingAgentCandidates(
     parsed.data.candidates,

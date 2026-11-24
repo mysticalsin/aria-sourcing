@@ -3,14 +3,12 @@
  *
  * Verifies:
  *  - ChatMessage and ChatThread types are exported from types.ts
- *  - HermesState.chats defaults to [] in buildSeedState (STATE_VERSION 10)
+ *  - WorkspaceState.chats defaults to [] in buildSeedState (STATE_VERSION 10)
  *  - migration fills chats: [] on old-shaped state
  *  - createChatThread / appendChatMessage / updateChatMessage logic (pure functions)
- *  - sendChat falls back to a mock reply when hermesAvailable returns false (no network)
  */
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.js";
-import { hermesAvailable } from "../src/lib/ai/hermes.js";
-import type { ChatMessage, ChatThread, HermesState, SystemSettings } from "../src/lib/types.js";
+import type { ChatMessage, ChatThread, WorkspaceState, SystemSettings } from "../src/lib/types.js";
 import { genId } from "../src/lib/utils.js";
 import { readFileSync } from "node:fs";
 
@@ -45,16 +43,11 @@ const oldState = {
   chats: undefined as unknown as ChatThread[],
 };
 const defs = defaultSettings();
-const migrated: HermesState = {
+const migrated: WorkspaceState = {
   ...oldState,
   version: STATE_VERSION,
   chats: oldState.chats ?? [],
-  settings: {
-    ...oldState.settings,
-    hermesLiveMode: oldState.settings.hermesLiveMode ?? defs.hermesLiveMode,
-    hermesApiUrl: oldState.settings.hermesApiUrl ?? defs.hermesApiUrl,
-    hermesApiKeyId: oldState.settings.hermesApiKeyId ?? defs.hermesApiKeyId,
-  },
+  settings: oldState.settings,
 };
 ok("migration fills chats from undefined", Array.isArray(migrated.chats) && migrated.chats.length === 0);
 
@@ -110,51 +103,6 @@ const t4 = updateMessage(t3, pendingId, { content: "Done!", pending: false });
 ok("updateChatMessage sets content", t4.messages[2].content === "Done!");
 ok("updateChatMessage clears pending", t4.messages[2].pending === false);
 ok("other messages untouched", t4.messages[0].content === userMsg.content);
-
-/* ---- 7. hermesAvailable returns false by default (no live config) ------- */
-
-const defaultSetts = defaultSettings();
-ok("hermesAvailable false when liveMode off", !hermesAvailable(defaultSetts));
-
-const liveSetts: SystemSettings = { ...defaultSetts, hermesLiveMode: true, hermesApiUrl: "" };
-ok("hermesAvailable false when url empty", !hermesAvailable(liveSetts));
-
-const configuredSetts: SystemSettings = {
-  ...defaultSetts,
-  hermesLiveMode: true,
-  hermesApiUrl: "http://127.0.0.1:8642",
-};
-ok("hermesAvailable true when liveMode + url set", hermesAvailable(configuredSetts));
-
-/* ---- 8. sendChat mock fallback (no network call needed) ----------------- */
-
-// Simulate the mock path: hermesAvailable returns false → we expect a demo reply.
-// We can't call the real sendChat (it needs the React context), so we test the logic
-// that gates the mock directly: when hermesAvailable(settings) === false the mock fires.
-const mockSettings = defaultSettings();
-const mockPath = !hermesAvailable(mockSettings);
-ok("sendChat takes mock path when live mode off", mockPath === true);
-
-const chatPage = readFileSync(new URL("../src/app/chat/page.tsx", import.meta.url), "utf8");
-ok(
-  "Chat records live runtime polling failures as unavailable",
-  chatPage.includes("sessionsError") && /catch\s*\(\s*\([^)]*\)\s*=>/s.test(chatPage),
-);
-ok(
-  "Chat exposes a retry control for unavailable live sessions",
-  chatPage.includes("Retry sessions") && chatPage.includes("loadHermesSessions"),
-);
-ok(
-  "Chat does not show a green Live badge when live session polling fails",
-  (/sessionsError\s*\?\s*\(\s*<Badge[^>]*tone="danger"/s.test(chatPage) ||
-    /live\s*&&\s*sessionsError\s*\?\s*\(\s*<Badge[^>]*tone="danger"/s.test(chatPage)) &&
-    chatPage.indexOf('tone="danger"') < chatPage.indexOf('tone="success"') &&
-    chatPage.includes(">Live</Badge>"),
-);
-ok(
-  "Chat unavailable copy replaces the misleading no-sessions empty state on polling failure",
-  chatPage.includes("Aria runtime unavailable") && chatPage.includes("No sessions on the runtime yet."),
-);
 
 /* ---- summary ------------------------------------------------------------ */
 

@@ -5,25 +5,18 @@ import { Badge, Button, Card, CardContent, Field, Input, Select, EmptyState, use
 import { useActions, useApiKeys, useRole } from "@/lib/store";
 import { API_KEY_PROVIDERS, type ApiKeyProvider } from "@/lib/types";
 import { can } from "@/lib/rbac";
-import { experimentalPaidSourcingEnabled } from "@/lib/supabase/config";
 import { formatTimeAgo, type Tone } from "@/lib/utils";
 import { KeyRound, Plus, ShieldAlert, Trash2, Zap } from "lucide-react";
 
 const STATUS_TONE: Record<string, Tone> = { valid: "success", invalid: "danger", untested: "neutral" };
 
-const SELECTABLE_API_KEY_PROVIDERS = experimentalPaidSourcingEnabled
-  ? API_KEY_PROVIDERS
-  : API_KEY_PROVIDERS.filter((provider) => provider !== "Sillage" && provider !== "Seamless");
+const SELECTABLE_API_KEY_PROVIDERS = API_KEY_PROVIDERS;
 
-// Provider-specific format hints for the API key value field. Most providers
-// rely on the generic placeholder below; Apify's token shape is distinctive
-// enough (and easy to confuse with a project/actor id) to call out explicitly.
-const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {
-  Apify: "Personal API token from the Apify console (Settings → Integrations), format apify_api_…",
-};
-const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {
-  Apify: "apify_api_…  (stored server-side, never shown again)",
-};
+// Provider-specific format hints for the API key value field. Every provider
+// uses the generic placeholder for now; add an entry when a token shape is
+// easy to get wrong.
+const KEY_VALUE_HINT: Partial<Record<ApiKeyProvider, string>> = {};
+const KEY_VALUE_PLACEHOLDER: Partial<Record<ApiKeyProvider, string>> = {};
 
 export function ApiKeysPanel() {
   const keys = useApiKeys();
@@ -94,7 +87,7 @@ export function ApiKeysPanel() {
         )}
 
         {isAdmin && (
-          <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Field label="Label" htmlFor="key-name">
               <Input id="key-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anthropic (primary)" />
             </Field>

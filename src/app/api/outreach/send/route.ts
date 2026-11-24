@@ -14,8 +14,6 @@ import { safeLog } from "@/lib/log-redact";
 import { gateOutbound } from "@/lib/gate";
 import { getOutboundChannelPolicy } from "@/lib/linkedin-policy";
 import { approvalHash, approvalScopeHash, sanitizeOutreachSubject } from "@/lib/outreach-content";
-import { normalizeWhatsAppAddress } from "@/lib/whatsapp-policy";
-import { dispatchDue } from "@/lib/dispatch-outbound";
 import { PUBLIC_DEMO_DRY_RUN_DETAIL, publicDemoSideEffectsDisabled } from "@/lib/server/demo-side-effects";
 import { detectInjection, disclosureInternalFromCampaignLike, validateCandidateBoundText } from "@/lib/agent-disclosure-policy";
 
@@ -28,8 +26,7 @@ const OutreachSendSchema = z.object({
   campaignId: z.string().min(1).max(120),
   subject: z.string().min(1).max(255),
   body: z.string().min(1).max(50_000),
-  channel: z.enum(["Email", "LinkedIn", "WhatsApp", "SMS"]).default("Email"),
-  phone: z.string().max(40).optional(),
+  channel: z.enum(["Email", "LinkedIn"]).default("Email"),
   confirmLive: z.boolean().default(false),
 });
 
@@ -45,9 +42,7 @@ function record(value: unknown): Record<string, unknown> | null {
  *   2. The caller has an authenticated session.
  *   3. The named seat belongs to the caller's workspace, is `live`, and has a
  *      verified domain. The From address is taken from the SEAT, never the body.
- *   4. Email clears `claim_email_outbound`; WhatsApp is written to the durable
- *      outbox and clears `claim_whatsapp_outbound` before the dispatcher sends.
- *      SMS remains disabled before any database or provider work.
+ *   4. Email clears `claim_email_outbound`. LinkedIn stays assisted-manual.
  *   5. `confirmLive` is explicitly true.
  * Anything else degrades to dry-run. In DEMO mode there is no enforcement
  * backend, so the route NEVER sends — it always returns dry-run.
@@ -76,15 +71,6 @@ export async function POST(req: NextRequest) {
   if (!channelPolicy.ok) {
     return NextResponse.json(
       { status: "manual-required", detail: channelPolicy.reason },
-      { status: 409 },
-    );
-  }
-  if (channel === "SMS") {
-    return NextResponse.json(
-      {
-        status: "manual-required",
-        detail: "Live SMS delivery is disabled until recorded consent, opt-out, suppression, and durable dispatch controls are implemented.",
-      },
       { status: 409 },
     );
   }
@@ -155,7 +141,7 @@ export async function POST(req: NextRequest) {
   const approvedScopeHash = approvalScopeHash({
     candidateId,
     channel,
-    recipient: channel === "WhatsApp" ? payload.phone ?? "" : candidateEmail,
+    recipient: candidateEmail,
   });
   if (!approvedScopeHash) {
     return NextResponse.json({ status: "error", detail: "Invalid approved recipient." }, { status: 400 });
@@ -193,121 +179,6 @@ export async function POST(req: NextRequest) {
 
   if (!seatId) {
     return NextResponse.json({ status: "error", detail: "Missing seatId." }, { status: 400 });
-  }
-
-  // WhatsApp never calls Meta from this request handler. The approved message
-  // becomes a durable outbox row, then the service-only dispatcher re-checks
-  // consent, DNC, window/template, and the human approval inside one DB claim.
-  // This prevents a raw client payload from bypassing the delivery policy.
-  if (channel === "WhatsApp") {
-    const phone = (payload.phone ?? "").trim();
-    if (!phone) {
-      return NextResponse.json({ status: "skipped", detail: "No phone number on file for this candidate." });
-    }
-    const recipientE164 = normalizeWhatsAppAddress(phone);
-    if (!recipientE164) {
-      return NextResponse.json({ status: "error", detail: "A valid E.164 WhatsApp number is required." }, { status: 400 });
-    }
-    const { data: phoneSeat } = await supabase
-      .from("agent_seats")
-      .select("id, provider, status, mode")
-      .eq("id", seatId)
-      .maybeSingle();
-    if (!phoneSeat) {
-      return NextResponse.json({ status: "error", detail: "Seat not found in your workspace." }, { status: 403 });
-    }
-    if (phoneSeat.status !== "active") {
-      return NextResponse.json({ status: "skipped", detail: "Seat is not active." });
-    }
-    if (phoneSeat.mode !== "live") {
-      return NextResponse.json({ status: "dry-run", detail: "Seat not live, nothing sent." });
-    }
-    if (phoneSeat.provider !== "WhatsApp Cloud") {
-      return NextResponse.json({ status: "skipped", detail: "Seat is not a WhatsApp Cloud sender." });
-    }
-
-    if (publicDemoSideEffectsDisabled()) {
-      return NextResponse.json({ status: "dry-run", detail: PUBLIC_DEMO_DRY_RUN_DETAIL });
-    }
-
-    const { data: queuedData, error: queueErr } = await supabase.rpc("enqueue_whatsapp_outbound", {
-      p_message_id: payload.messageId,
-      p_candidate_id: candidateId,
-      p_campaign_id: campaignId,
-      p_seat_id: seatId,
-      p_recipient: recipientE164,
-      p_type: "candidate_reply",
-      p_subject: subject,
-      p_body: body,
-      p_template_id: null,
-      p_template_parameters: [],
-    });
-    const queued = queuedData as { ok?: boolean; status?: string; id?: string; reason?: string } | null;
-    if (queueErr || queued?.ok !== true || queued.status !== "queued" || !queued.id) {
-      if (queued?.reason === "duplicate") {
-        return NextResponse.json({ status: "skipped", detail: "This WhatsApp message is already queued or was sent." });
-      }
-      safeLog("whatsapp outbox queue error", {
-        message: queueErr?.message ?? queued?.reason ?? "no result",
-        code: queueErr?.code,
-      });
-      return NextResponse.json({ status: "error", detail: "Could not queue the WhatsApp message." }, { status: 500 });
-    }
-    const dispatcher = getServiceSupabase();
-    if (dispatcher) {
-      try {
-        await dispatchDue(dispatcher, 1, queued.id);
-      } catch (err) {
-        safeLog("whatsapp immediate dispatch error", { message: err instanceof Error ? err.message : "unknown" });
-      }
-
-      // A worker can intentionally leave an accepted provider request in
-      // `dispatching` when its durable acceptance record failed.  That state is
-      // not queued and must never invite a client retry, which could double-send.
-      const { data: dispatched, error: dispatchedErr } = await dispatcher
-        .from("messages_outbound")
-        .select("status")
-        .eq("id", queued.id)
-        .maybeSingle();
-      if (dispatched?.status === "sent") {
-        return NextResponse.json({ status: "sent", detail: "Sent through the policy-checked WhatsApp dispatcher." });
-      }
-      if (dispatched?.status === "blocked") {
-        return NextResponse.json({ status: "skipped", detail: "WhatsApp policy blocked this message before delivery." });
-      }
-      if (dispatched?.status === "failed") {
-        return NextResponse.json({ status: "error", detail: "WhatsApp delivery failed after the policy checks." }, { status: 502 });
-      }
-      if (dispatched?.status === "dispatching") {
-        return NextResponse.json(
-          {
-            status: "reconciliation-required",
-            delivery: "whatsapp-reconciliation-required",
-            messageId: queued.id,
-            detail: "WhatsApp provider acceptance is not yet reconciled. Do not retry this message.",
-          },
-          { status: 502 },
-        );
-      }
-      if (dispatchedErr || !dispatched || dispatched.status !== "queued") {
-        safeLog("whatsapp immediate dispatch state unavailable", { message: dispatchedErr?.message ?? "no outbox row" });
-        return NextResponse.json(
-          {
-            status: "reconciliation-required",
-            delivery: "whatsapp-reconciliation-required",
-            messageId: queued.id,
-            detail: "WhatsApp delivery state could not be confirmed. Do not retry this message.",
-          },
-          { status: 502 },
-        );
-      }
-    }
-    return NextResponse.json({
-      status: "queued",
-      delivery: "whatsapp-delivery-queued",
-      messageId: queued.id,
-      detail: "Queued for policy-checked WhatsApp delivery. No message was sent by this request.",
-    }, { status: 202 });
   }
 
   // 3. Seat must belong to the caller's workspace (RLS) and be live. Domain

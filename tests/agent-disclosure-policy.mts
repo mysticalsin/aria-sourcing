@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import {
   candidateDisclosureContextForCampaignLike,
   detectInjection,
+  hasTemplatePlaceholder,
   isSafeCompResponse,
   mentionsCompensationTopic,
   sanitizeCandidateText,
@@ -184,24 +185,13 @@ const allowed =
 ok("validate passes allowed skills/seniority and asks candidate target", validateCandidateBoundText(allowed, internal).safe);
 
 const sourceFiles = [
-  "src/lib/whatsapp-inbound.ts",
-  "src/lib/agents/graph.ts",
-  "src/app/api/agents/run/route.ts",
   "src/app/api/sourcing-agent/route.ts",
   "src/lib/store.ts",
-  "src/lib/ai/hermes.ts",
+  "src/lib/ai/generate.ts",
 ];
 const sourceText = sourceFiles.map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).join("\n");
 ok("drift: no state.brief JSON serialization", !/JSON\.stringify\(state\.brief\)/.test(sourceText));
 ok("drift: no roleSummary raw JSON serialization", !/roleSummary:\s*JSON\.stringify/.test(sourceText));
-ok("drift: WhatsApp inbound uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8")));
-ok("drift: agent graph uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/lib/agents/graph.ts", import.meta.url), "utf8")));
-ok(
-  "drift: framework run route has no caller candidate, provider, model, or direct delivery surface",
-  !/runGraph|apiKeyId|existing\s*:|provider:\s*z\.|model:\s*z\.|send_message/.test(
-    readFileSync(new URL("../src/app/api/agents/run/route.ts", import.meta.url), "utf8"),
-  ),
-);
 ok("drift: sourcing agent uses disclosure context", /candidateDisclosureContextForCampaignLike/.test(readFileSync(new URL("../src/app/api/sourcing-agent/route.ts", import.meta.url), "utf8")));
 
 const storeText = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
@@ -212,7 +202,6 @@ ok("drift: every store buildOutreachPrompt call passes policy context", outreach
 for (const file of [
   "src/app/api/outreach/approve/route.ts",
   "src/app/api/outreach/send/route.ts",
-  "src/app/api/outreach/whatsapp-review/route.ts",
   "src/lib/dispatch-outbound.ts",
   "src/lib/store.ts",
 ]) {
@@ -228,10 +217,26 @@ ok(
   "drift: send route validates even when campaign context is unresolved",
   /validateCandidateBoundText\(body,\s*disclosureInternalFromCampaignLike\(campaign\)\)/.test(readFileSync(new URL("../src/app/api/outreach/send/route.ts", import.meta.url), "utf8")),
 );
-ok("drift: email inbound injection is a human-review signal", /const inboundInjection = detectInjection\(input\.text\)/.test(storeText));
+// The guard lives in one helper; both reply paths (ingestion and preparing a
+// missing draft) must pass it the candidate's inbound text.
 ok(
-  "drift: WhatsApp inbound injection is a human-review signal",
-  /detectInjection\(body\)\.flagged/.test(readFileSync(new URL("../src/lib/whatsapp-inbound.ts", import.meta.url), "utf8")),
+  "drift: email inbound injection is a human-review signal",
+  /function guardReplyClassification\([\s\S]*?const inboundInjection = detectInjection\(inboundText\)/.test(storeText) &&
+    /guardReplyClassification\([\s\S]{0,400}?campaign,\s*input\.text,\s*\)/.test(storeText) &&
+    /guardReplyClassification\([\s\S]{0,400}?campaign,\s*reply\.body,\s*\)/.test(storeText),
+);
+
+ok(
+  "unfilled template slots are detected; ordinary brackets in prose are short enough to matter only as slots",
+  hasTemplatePlaceholder("I'm free on [Day 1] at [Time].") &&
+    hasTemplatePlaceholder("Grab a slot here: [scheduling link]") &&
+    hasTemplatePlaceholder("Hi {{first_name}}") &&
+    !hasTemplatePlaceholder("Would Tuesday or Wednesday suit you? Happy to send a calendar invite.") &&
+    !hasTemplatePlaceholder("Go (Golang), Kubernetes; see https://example.com/x?y=1"),
+);
+ok(
+  "drift: a reply draft with a slot keeps the deterministic draft",
+  /parsed\.draftResponse && !hasTemplatePlaceholder\(parsed\.draftResponse\)/.test(storeText),
 );
 
 console.log(`RESULT agent-disclosure-policy: ${pass} passed, ${fail} failed`);

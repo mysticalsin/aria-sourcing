@@ -12,12 +12,13 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { ReplyClassifier } from "@/components/replies/reply-classifier";
 import { ReplyCard } from "@/components/replies/reply-card";
-import { WhatsAppReviewQueue } from "@/components/replies/whatsapp-review-queue";
-import { useHydrated, useReplies, useActions, useRole } from "@/lib/store";
+import { useHydrated, useReplies, useActions, useRole, useOutreach } from "@/lib/store";
 import { REPLY_INTENTS, type ReplyIntent } from "@/lib/types";
 import { can } from "@/lib/rbac";
-import { Inbox, Flame, Filter, AlarmClock, RefreshCw } from "lucide-react";
+import { Inbox, Flame, Filter, AlarmClock, RefreshCw, ClipboardPaste } from "lucide-react";
 import type { InboundMessage } from "@/lib/email-sync";
+import { runMission } from "@/lib/agents/mission";
+import { inboxTriagePlan, type InboxFetchResult } from "@/lib/agents/inbox-mission";
 
 const INTENT_LABELS: Record<ReplyIntent, string> = {
   INTERESTED: "Interested",
@@ -31,7 +32,7 @@ const INTENT_LABELS: Record<ReplyIntent, string> = {
 
 const HOT_INTENTS: ReplyIntent[] = ["INTERESTED", "QUALIFIED_INTEREST"];
 
-// ── Inbox sync button ────────────────────────────────────────────────────────
+// ── Inbox triage button ──────────────────────────────────────────────────────
 
 type SyncApiResponse = {
   ok: boolean;
@@ -41,84 +42,84 @@ type SyncApiResponse = {
   errors?: string[];
 };
 
-function SyncInboxButton() {
+async function fetchInbox(): Promise<InboxFetchResult> {
+  let res: Response;
+  try {
+    res = await fetch("/api/email/sync", { method: "POST", signal: AbortSignal.timeout(60_000) });
+  } catch (err) {
+    throw new Error(
+      err instanceof Error && err.name === "TimeoutError" ? "Sync timed out. Try again." : "Couldn't reach the mailbox sync.",
+    );
+  }
+  const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+  if (!res.ok || !json.ok) throw new Error("Couldn't reach the mailbox sync.");
+  // The public demo has no mailbox: triage still drafts the waiting replies.
+  if (json.status === "dry-run") return { messages: [], skipped: 0, note: json.detail ?? "Public demo only." };
+  return { messages: json.messages ?? [], skipped: (json.errors ?? []).length };
+}
+
+/**
+ * Runs the inbox triage mission: sync the mailbox, classify each new reply
+ * (Haiku, three at a time), then queue a response draft for every reply that
+ * needs one. Drafts wait for approval; reply actions stay on the cards.
+ */
+function TriageInboxButton() {
   const actions = useActions();
+  const replies = useReplies();
+  const outreach = useOutreach();
   const { toast } = useToast();
   const role = useRole();
-  const [syncing, setSyncing] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
 
   if (!can(role, "source")) return null;
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleTriage() {
+    setRunning(true);
     try {
-      const res = await fetch("/api/email/sync", {
-        method: "POST",
-        signal: AbortSignal.timeout(60_000),
+      const plan = inboxTriagePlan({
+        fetchInbox,
+        classify: async (m) =>
+          (
+            await actions.classifyAndStoreReply({
+              text: m.body,
+              fromAddress: m.from,
+              messageId: m.messageId,
+              inboxThreadId: m.threadId,
+              externalReceivedAt: m.receivedAt,
+            })
+          ).reply,
+        pending: replies,
+        outreach,
+        draftResponse: can(role, "outreach") ? actions.draftReplyResponse : undefined,
+        prepareResponse: actions.prepareReplyResponse,
       });
-      const json = (await res.json().catch(() => ({ ok: false }))) as SyncApiResponse;
+      const report = await runMission(plan, { concurrency: 3 });
+      const fetched = report.results.fetch as InboxFetchResult | undefined;
+      // The mailbox step falls back instead of failing; its note says why.
+      const mailboxDown = report.steps.fetch?.status === "degraded";
 
-      if (!res.ok || !json.ok) {
-        toast({
-          title: "Couldn't reach the mailbox sync.",
-          description: "Check your connection settings and try again.",
-          variant: "error",
-        });
-        return;
-      }
+      const classify = report.steps.classify;
+      const respond = report.steps.respond;
+      const drafted = respond ? respond.succeeded : 0;
+      const parts: string[] = [];
+      if (classify && classify.runs > 0) parts.push(`${classify.succeeded} synced`);
+      if (classify && classify.failed > 0) parts.push(`${classify.failed} failed`);
+      if (fetched && fetched.skipped > 0) parts.push(`${fetched.skipped} skipped`);
+      parts.push(drafted === 1 ? "1 response drafted for approval" : `${drafted} responses drafted for approval`);
+      if (respond && respond.failed > 0) parts.push(`${respond.failed} left for your review`);
 
-      if (json.status === "dry-run") {
-        toast({ title: "Public demo only", description: json.detail, variant: "info" });
-        return;
-      }
-
-      const msgs = json.messages ?? [];
-      const errs = json.errors ?? [];
-
-      if (msgs.length === 0 && errs.length === 0) {
-        toast({ title: "No new mail to sync." });
-        return;
-      }
-
-      let clientFailed = 0;
-      for (const m of msgs) {
-        try {
-          await actions.classifyAndStoreReply({
-            text: m.body,
-            fromAddress: m.from,
-            messageId: m.messageId,
-            inboxThreadId: m.threadId,
-            externalReceivedAt: m.receivedAt,
-          });
-        } catch {
-          // One bad message doesn't abort the rest.
-          clientFailed++;
-        }
-      }
-
-      const synced = msgs.length - clientFailed;
-      const parts: string[] = [`${synced} synced`];
-      if (clientFailed > 0) parts.push(`${clientFailed} failed`);
-      if (errs.length > 0) parts.push(`${errs.length} skipped`);
-      const errDetail = errs.slice(0, 2).join("; ");
-
+      const didWork = Boolean(classify?.runs || respond?.runs);
       toast({
-        title: parts.join(", ") + ".",
-        description: errDetail || undefined,
-      });
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "TimeoutError";
-      toast({
-        title: isTimeout
-          ? "Sync timed out. Try again."
-          : "Couldn't reach the mailbox sync.",
-        description: isTimeout
-          ? undefined
-          : "Check your connection settings and try again.",
-        variant: "error",
+        title: didWork
+          ? parts.join(", ") + "."
+          : mailboxDown
+            ? "Couldn't reach the mailbox sync."
+            : "No new mail and no reply waiting for a response.",
+        description: fetched?.note,
+        variant: mailboxDown && !didWork ? "error" : fetched?.note ? "info" : undefined,
       });
     } finally {
-      setSyncing(false);
+      setRunning(false);
     }
   }
 
@@ -126,11 +127,13 @@ function SyncInboxButton() {
     <Button
       variant="outline"
       size="sm"
-      loading={syncing}
+      loading={running}
       leftIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
-      onClick={handleSync}
+      onClick={handleTriage}
+      data-tour="triage-inbox"
+      title="Sync the mailbox, classify new replies and draft responses for approval"
     >
-      {syncing ? "Syncing..." : "Sync inbox"}
+      {running ? "Triaging..." : "Triage inbox"}
     </Button>
   );
 }
@@ -141,6 +144,7 @@ export default function RepliesPage() {
   const hydrated = useHydrated();
   const replies = useReplies();
   const [intentFilter, setIntentFilter] = React.useState<string>("all");
+  const [classifierOpen, setClassifierOpen] = React.useState(false);
 
   const filtered = replies.filter(
     (r) => intentFilter === "all" || r.intent === intentFilter,
@@ -171,8 +175,8 @@ export default function RepliesPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Reply triage"
-        title="Inbound replies"
+        eyebrow="Engage"
+        title="Replies"
         description="Classify intent, honour SLAs and respond fast. Hot replies surface first; negatives are escalated. Drafts are never sent automatically."
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -187,7 +191,7 @@ export default function RepliesPage() {
                 {negative} negative
               </Badge>
             )}
-            <SyncInboxButton />
+            <TriageInboxButton />
           </div>
         }
       />
@@ -197,7 +201,7 @@ export default function RepliesPage() {
         fallback={
           <div className="space-y-6">
             <SkeletonCard />
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SkeletonCard />
               <SkeletonCard />
             </div>
@@ -205,12 +209,8 @@ export default function RepliesPage() {
         }
       >
         <div className="space-y-8">
-          <WhatsAppReviewQueue />
-
-          {/* Classifier — full width */}
-          <ReplyClassifier />
-
-          {/* Filter bar */}
+          {/* Filter bar. The work queue comes first; the manual classifier
+              is a tool, opened on demand. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span
@@ -224,7 +224,7 @@ export default function RepliesPage() {
                 {filtered.length}
               </Badge>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <label
                 htmlFor="reply-intent-filter"
                 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"
@@ -240,14 +240,30 @@ export default function RepliesPage() {
                 aria-label="Filter replies by intent"
                 className="w-52"
               />
+              <Button
+                variant={classifierOpen ? "subtle" : "outline"}
+                size="sm"
+                leftIcon={<ClipboardPaste className="h-3.5 w-3.5" aria-hidden />}
+                onClick={() => setClassifierOpen((v) => !v)}
+                aria-expanded={classifierOpen}
+                aria-controls="reply-classifier-panel"
+              >
+                {classifierOpen ? "Hide classifier" : "Paste a reply"}
+              </Button>
             </div>
           </div>
+
+          {classifierOpen && (
+            <div id="reply-classifier-panel">
+              <ReplyClassifier />
+            </div>
+          )}
 
           {replies.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-6 w-6" aria-hidden />}
               title="No replies yet"
-              description="Once outreach lands and candidates respond, classified replies appear here. Paste a reply above to try the triage engine."
+              description="Once outreach lands and candidates respond, classified replies appear here. Use Paste a reply to try the triage engine."
             />
           ) : filtered.length === 0 ? (
             <EmptyState
@@ -272,7 +288,7 @@ export default function RepliesPage() {
                       {sla.length}
                     </Badge>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {sla.map((r) => (
                       <ReplyCard key={r.id} reply={r} />
                     ))}
@@ -297,7 +313,7 @@ export default function RepliesPage() {
                       </Badge>
                     </div>
                   )}
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {rest.map((r) => (
                       <ReplyCard key={r.id} reply={r} />
                     ))}

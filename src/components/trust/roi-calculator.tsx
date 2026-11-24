@@ -27,6 +27,7 @@ import {
 import { Calculator, Sparkles, Info } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle, Eyebrow, Drawer, EmptyState, Button } from "@/components/ui";
 import { useCandidates, useOutreach, useBookings } from "@/lib/store";
+import { DEFAULT_ROI_ASSUMPTIONS, activitySpanDays, estimateRoi } from "@/lib/roi";
 import { formatCurrency, formatNumber, round } from "@/lib/utils";
 
 interface Assumption {
@@ -66,13 +67,6 @@ function AssumptionSlider({ a }: { a: Assumption }) {
   );
 }
 
-function spanDaysFrom(dates: string[]): number {
-  const ts = dates.map((d) => new Date(d).getTime()).filter((n) => Number.isFinite(n));
-  if (ts.length === 0) return 1;
-  const spanMs = Math.max(...ts) - Math.min(...ts);
-  return Math.max(1, round(spanMs / 86_400_000, 1));
-}
-
 export function RoiCalculator() {
   const candidates = useCandidates();
   const outreach = useOutreach();
@@ -81,11 +75,11 @@ export function RoiCalculator() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   // ---- Editable assumptions (buyer-tunable; illustrative defaults) --------
-  const [hourlyCost, setHourlyCost] = React.useState(60);
-  const [hoursPerSourced, setHoursPerSourced] = React.useState(0.25);
-  const [hoursPerDraft, setHoursPerDraft] = React.useState(0.2);
-  const [hoursPerBooking, setHoursPerBooking] = React.useState(1.5);
-  const [monthlyCost, setMonthlyCost] = React.useState(1500);
+  const [hourlyCost, setHourlyCost] = React.useState(DEFAULT_ROI_ASSUMPTIONS.hourlyCost);
+  const [hoursPerSourced, setHoursPerSourced] = React.useState(DEFAULT_ROI_ASSUMPTIONS.hoursPerSourced);
+  const [hoursPerDraft, setHoursPerDraft] = React.useState(DEFAULT_ROI_ASSUMPTIONS.hoursPerDraft);
+  const [hoursPerBooking, setHoursPerBooking] = React.useState(DEFAULT_ROI_ASSUMPTIONS.hoursPerBooking);
+  const [monthlyCost, setMonthlyCost] = React.useState(DEFAULT_ROI_ASSUMPTIONS.monthlyCost);
 
   // ---- Real, auditable counts ---------------------------------------------
   const sourcedCount = candidates.length;
@@ -95,7 +89,7 @@ export function RoiCalculator() {
 
   const spanDays = React.useMemo(
     () =>
-      spanDaysFrom([
+      activitySpanDays([
         ...candidates.map((c) => c.createdAt),
         ...outreach.map((m) => m.createdAt),
         ...bookings.map((b) => b.createdAt),
@@ -116,12 +110,16 @@ export function RoiCalculator() {
   }, [candidates, outreach, bookings]);
 
   // ---- Live computation: assumption x count, nothing hardcoded ------------
-  const totalHoursSaved = sourcedCount * hoursPerSourced + draftedCount * hoursPerDraft + bookedCount * hoursPerBooking;
-  const totalDollarSaved = totalHoursSaved * hourlyCost;
-  const dailyRate = totalDollarSaved / spanDays;
-  const annualSaving = dailyRate * 365;
-  const annualCost = monthlyCost * 12;
-  const multiple = annualCost > 0 ? annualSaving / annualCost : 0;
+  const {
+    hoursSaved: totalHoursSaved,
+    valueSaved: totalDollarSaved,
+    annualSaving,
+    annualCost,
+    multiple,
+  } = estimateRoi(
+    { sourced: sourcedCount, drafted: draftedCount, booked: bookedCount, spanDays },
+    { hourlyCost, hoursPerSourced, hoursPerDraft, hoursPerBooking, monthlyCost },
+  );
 
   const chartData = [
     { name: "Your assumed annual cost", value: Math.round(annualCost) },

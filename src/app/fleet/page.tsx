@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
   CardTitle,
   Eyebrow,
-  SectionNumeral,
   Button,
   Field,
   Select,
@@ -90,6 +90,7 @@ export default function FleetPage() {
   const activeId = useActiveCampaignId();
   const actions = useActions();
   const { toast } = useToast();
+  const router = useRouter();
   const maxAgents = useSettings().fleet.maxAgents || 300;
   const role = useRole();
   const canManage = hydrated && can(role, "manage_fleet");
@@ -189,6 +190,7 @@ export default function FleetPage() {
       return;
     }
 
+    if (supabaseEnabled) { router.push(`/campaigns/${campaignId}#campaign-sourcing`); return; }
     setSourcing(true);
     try {
       const result = await actions.sourceNextBatch(campaignId);
@@ -290,8 +292,8 @@ export default function FleetPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Agent fleet"
-        title="An army of agents. One set of rules."
+        eyebrow="System"
+        title="Mailboxes"
         description="Coordinated multi-agent sourcing and outreach that never double-contacts a candidate and stays inside every account's official API limits. No scraping, no LinkedIn automation."
         actions={canManage ? (
           <Button
@@ -335,7 +337,7 @@ export default function FleetPage() {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {GUARDRAILS.map((g) => {
                   const Icon = g.icon;
                   return (
@@ -412,7 +414,6 @@ export default function FleetPage() {
           <section>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div className="flex items-start gap-3">
-                <SectionNumeral n="04" />
                 <div>
                   <Eyebrow>The roster</Eyebrow>
                   <CardTitle>Agents · {seats.length}/{maxAgents}</CardTitle>
@@ -476,11 +477,11 @@ export default function FleetPage() {
               />
             ) : (
               <>
-                <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
                   <Field label="Search" htmlFor="roster-search">
                     <div className="relative">
                       <Search
-                        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                        className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted"
                         aria-hidden
                       />
                       <Input
@@ -541,7 +542,7 @@ export default function FleetPage() {
                       Showing {visibleSeats.length} of {filteredSeats.length}
                       {filteredSeats.length !== seats.length ? ` (filtered from ${seats.length})` : ""}
                     </p>
-                    <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
                       {visibleSeats.map((seat) => (
                         <SeatCard key={seat.id} seat={seat} />
                       ))}
@@ -617,7 +618,7 @@ export default function FleetPage() {
             />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Provider" htmlFor={providerId}>
               <Select
                 id={providerId}

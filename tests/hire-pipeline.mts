@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
+import { odooExecuteResponse } from "../src/lib/fake-odoo";
 import { envForHireRequest, resetOdooHiredStageLookup, runSourcingThroughHired } from "../src/lib/mcp-client";
+import { runSyntheticHireDemo } from "../src/lib/synthetic-hire-demo";
 
 let pass = 0;
 let fail = 0;
@@ -28,17 +30,12 @@ const input = {
 type OdooRpc = { params?: { method?: string; args?: unknown[] } };
 
 function odooFakeResponse(body: OdooRpc, nextId: () => number, stage?: { id: number; name: string }[]) {
-  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-  const kw = body.params?.args?.[6];
-  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-  }
   if (body.params?.args?.[3] === "hr.recruitment.stage" && body.params?.args?.[4] === "search_read") {
     if (stage) return jsonResponse(200, { result: stage });
     const id = nextId();
     return jsonResponse(200, { result: [{ id, name: "Hired" }] });
   }
-  return jsonResponse(200, { result: nextId() });
+  return odooExecuteResponse(body, nextId);
 }
 
 function executeKw(entries: { init?: RequestInit }[]) {
@@ -127,7 +124,20 @@ ok(
   "hire write closes that job instead of sending hired true",
   hireWrite.params.args[3] === "hr.job" &&
     hireWrite.params.args[4] === "write" &&
-    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(positional(hireWrite)) === JSON.stringify([[11], { no_of_recruitment: 0 }]),
+);
+const rejectedState = await odooExecuteResponse(
+  {
+    params: {
+      method: "execute_kw",
+      args: ["mantu", 7, "secret", "hr.job", "write", [[11], { state: "open", no_of_recruitment: 0 }], {}],
+    },
+  },
+  () => 0,
+).json();
+ok(
+  "the fake Odoo rejects an unknown hr.job field before a hire can succeed",
+  (rejectedState as { error?: { message?: string } }).error?.message === "ValueError: Invalid field 'state' on model 'hr.job'",
 );
 
 calls.length = 0;
@@ -155,8 +165,8 @@ ok(
     closedJobs.length === 2 &&
     JSON.stringify(createdJobs[0]?.params.args[5]) === JSON.stringify([[{ name: "Need Alpha" }]]) &&
     JSON.stringify(createdJobs[1]?.params.args[5]) === JSON.stringify([[{ name: "Need Beta" }]]) &&
-    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { state: "open", no_of_recruitment: 0 }]) &&
-    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[15], { state: "open", no_of_recruitment: 0 }]),
+    JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[15], { no_of_recruitment: 0 }]),
 );
 
 const stagedCalls: { url: string; init?: RequestInit }[] = [];
@@ -506,6 +516,52 @@ ok(
     missedAgain.steps[2]?.skipped === true &&
     missedAgain.steps[2]?.reason === "not written" &&
     !executeKw(missCalls).some((body) => body.params.args[4] === "search_read"),
+);
+const synthetic = await runSyntheticHireDemo();
+ok(
+  "synthetic fixture hire closes that vacancy with no_of_recruitment only",
+  synthetic.hired.ok === true &&
+    synthetic.hired.erp === "odoo" &&
+    synthetic.hired.linkedIn === true &&
+    synthetic.fixture.applicantName === "Fixture Candidate North" &&
+    synthetic.fixture.provenance === "synthetic" &&
+    JSON.stringify(synthetic.vacancyClose) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    !JSON.stringify(synthetic.vacancyClose).includes("state"),
+);
+ok(
+  "synthetic demo talks only to the in-repo fake Odoo",
+  synthetic.odooHosts.length > 0 && synthetic.odooHosts.every((url) => url === "https://odoo.example.test/jsonrpc"),
+);
+ok(
+  "unset connector on the synthetic fixture returns erp skipped and linkedIn true",
+  synthetic.unset.ok === true &&
+    synthetic.unset.erp === "skipped" &&
+    synthetic.unset.linkedIn === true &&
+    synthetic.unset.steps.length === 0 &&
+    synthetic.unset.fetchCount === 0,
+);
+function linkedInUrlCount(source: string): number {
+  let count = 0;
+  for (const match of source.matchAll(/https?:\/\/[^\s"'`<>)]+/g)) {
+    let host = "";
+    try {
+      host = new URL(match[0]).hostname;
+    } catch {
+      continue;
+    }
+    const labels = host.split(".").filter((label) => label.length > 0);
+    if (labels.slice(-2).join(".") === "linkedin.com") count += 1;
+  }
+  return count;
+}
+const demoSource = readFileSync(new URL("../src/lib/synthetic-hire-demo.ts", import.meta.url), "utf8");
+const demoPage = readFileSync(new URL("../src/app/demo/hire/page.tsx", import.meta.url), "utf8");
+ok(
+  "the synthetic hire demo does not call LinkedIn",
+  linkedInUrlCount(demoSource) === 0 &&
+    linkedInUrlCount(demoPage) === 0 &&
+    linkedInUrlCount('fetch("https://api.linkedin.com/v2/me")') === 1 &&
+    linkedInUrlCount('fetch("https://linkedin.com.evil.test/in/fixture")') === 0,
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);

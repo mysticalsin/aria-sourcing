@@ -230,7 +230,7 @@ function CoordinatorCard() {
               {COORDINATOR.mission}
             </p>
 
-            <ul className="mt-5 grid gap-2 sm:grid-cols-3">
+            <ul className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {COORDINATOR.principles.map((p) => (
                 <li
                   key={p}
@@ -306,7 +306,7 @@ export function AgentOrg() {
         <span className="h-px flex-1 bg-line" aria-hidden />
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {MANAGERS.map((m) => (
           <ManagerCard key={m.id} m={m} />
         ))}
@@ -338,17 +338,17 @@ export function GuardrailsPanel() {
           <div className="min-w-0">
             <Eyebrow className="text-electric">Guardrails</Eyebrow>
             <h2 id="guardrails-title" className="display mt-1 text-2xl text-ink sm:text-3xl">
-              TAnIA never does these alone
+              Aria never does these alone
             </h2>
             <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-ink-soft">
-              Six actions are always recruiter-gated. TAnIA prepares the work and waits: a human
+              Six actions are always recruiter-gated. Aria prepares the work and waits: a human
               makes the call.
             </p>
           </div>
         </div>
 
         {/* The six gated actions */}
-        <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {NEVER_ALONE.map((rule, i) => (
             <li
               key={rule.action}

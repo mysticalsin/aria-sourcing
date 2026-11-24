@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,17 +27,19 @@ import {
   type TabItem,
 } from "@/components/ui";
 import { HydrationGate } from "@/components/app/page-header";
+import { inPocScope } from "@/components/app/nav";
+import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
+
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StagePipeline } from "@/components/shared/stage-pipeline";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
-import { ScoreDistribution } from "@/components/charts/score-distribution";
 import { CandidateTable } from "@/components/candidates/candidate-table";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-dialog";
-import { SourceSillageButton } from "@/components/candidates/source-sillage-dialog";
-import { SourceApolloButton } from "@/components/candidates/source-apollo-dialog";
-import { SourceSeamlessButton } from "@/components/candidates/source-seamless-dialog";
-import { SourceApifyButton } from "@/components/candidates/source-apify-dialog";
+import { CampaignSourcingPanel } from "@/components/run/campaign-sourcing-panel";
+import { CampaignAutopilotCard } from "@/components/agents/campaign-autopilot-card";
+import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
+import { supabaseEnabled } from "@/lib/supabase/config";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
 import { OutreachMessageCard } from "@/components/outreach/outreach-message-card";
@@ -54,11 +57,13 @@ import {
   useCampaign,
   useCampaignCandidates,
   useCampaignOutreach,
-  useHermes,
+  useEnrichmentBudgetUnits,
+  useEnrichmentSpend,
   useHydrated,
   useReplies,
   useReportForCampaign,
   useRole,
+  useSettings,
 } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
@@ -89,6 +94,9 @@ import {
   type ScoringWeights,
   type ValidationWarning,
 } from "@/lib/types";
+
+/** Campaign tabs that belong to a page outside the live POC scope. */
+const TAB_SCOPE: Record<string, string> = { replies: "/replies", booking: "/calendar", learning: "/reports" };
 
 function mergeSourcingFeedbackReceipts(
   ...groups: SourcingFeedbackReceipt[][]
@@ -129,14 +137,16 @@ import {
   Zap,
 } from "lucide-react";
 
+const ScoreDistribution = dynamic(
+  () => import("@/components/charts/score-distribution").then((mod) => mod.ScoreDistribution),
+  { ssr: false, loading: () => <div className="h-[220px] w-full" aria-hidden /> },
+);
+
 /** Core contact/richness fields the "Enrich all" panel reports coverage % for
  *  — mirrors `DEFAULT_ENRICH_FIELDS` in store.ts (enrichCandidate/
  *  enrichCampaign's default `want` when the caller doesn't specify one), kept
  *  as a local constant here since that const isn't exported. */
 const ENRICH_ALL_WANT_FIELDS: EnrichableField[] = ["email", "phone", "skills", "experience", "headline"];
-/** Mirrors store.ts's DEFAULT_ENRICHMENT_BUDGET_UNITS fallback for when
- *  `state.enrichmentBudgetUnits` hasn't been configured. */
-const DEFAULT_ENRICHMENT_BUDGET_UNITS = 1000;
 
 const STATUS_TONE: Record<CampaignStatus, Tone> = {
   Intake: "neutral",
@@ -242,7 +252,7 @@ function JdEditForm({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Seniority" htmlFor="jd-seniority">
           <Select
             id="jd-seniority"
@@ -313,7 +323,7 @@ function WeightsEditForm({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {(Object.keys(draft) as (keyof ScoringWeights)[]).map((key) => (
           <Field key={key} label={WEIGHT_LABELS[key]} htmlFor={`weight-${key}`}>
             <Input
@@ -349,7 +359,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const report = useReportForCampaign(id);
   const actions = useActions();
   const role = useRole();
-  const hermesState = useHermes().state;
+  const settings = useSettings();
+  const enrichmentSpend = useEnrichmentSpend();
+  const enrichmentBudget = useEnrichmentBudgetUnits();
   const { toast } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -380,6 +392,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   // "Watch Aria Work" panel — remounted (via runToken as its key) on every
   // "Run Aria" click so each click starts a genuinely fresh, replayable run.
   const [runOpen, setRunOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (window.location.hash === "#campaign-sourcing") setRunOpen(true);
+  }, []);
   const [runToken, setRunToken] = React.useState(0);
 
   React.useEffect(() => {
@@ -481,10 +496,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             (candidates.length * ENRICH_ALL_WANT_FIELDS.length)) *
             100,
         );
-  // Workspace-wide (not per-campaign): the server enforces one shared budget
-  // across every candidate/campaign, so the meter reports that same total.
-  const enrichmentSpend = (hermesState?.enrichmentLedger ?? []).reduce((sum, e) => sum + e.units, 0);
-  const enrichmentBudget = hermesState?.enrichmentBudgetUnits ?? DEFAULT_ENRICHMENT_BUDGET_UNITS;
 
   const tabs: TabItem[] = [
     { value: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -495,7 +506,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     { value: "replies", label: "Replies", icon: <MessageSquare className="h-4 w-4" />, count: campaignReplies.length },
     { value: "booking", label: "Booking", icon: <CalendarCheck className="h-4 w-4" />, count: campaignBookings.length },
     { value: "learning", label: "Learning", icon: <GraduationCap className="h-4 w-4" /> },
-  ];
+  ].filter((t) => inPocScope(TAB_SCOPE[t.value] ?? ""));
 
   const idBase = `campaign-${c.id}`;
 
@@ -668,6 +679,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   const handleOpenRun = () => {
     setRunOpen(true);
+    if (supabaseEnabled) requestAnimationFrame(() => document.getElementById("campaign-sourcing")?.scrollIntoView({ behavior: "smooth", block: "center" }));
     setRunToken((k) => k + 1);
   };
 
@@ -900,7 +912,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[55%] lg:justify-end">
-            <Button
+            {!supabaseEnabled && <><Button
               variant="secondary"
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={handleSource}
@@ -919,18 +931,16 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             >
               {agentRunning ? "Agent working…" : "Run sourcing agent"}
             </Button>
-            <SourceSillageButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApolloButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceSeamlessButton campaignId={c.id} disabled={!liveSourcingAllowed} />
-            <SourceApifyButton campaignId={c.id} disabled={!liveSourcingAllowed} />
+            </>}
             <Button
               variant="primary"
               leftIcon={<PlayCircle className="h-4 w-4" />}
               onClick={handleOpenRun}
-              disabled={!liveSourcingAllowed}
+              data-tour="run-aria"
+              disabled={!liveSourcingAllowed || !can(role, "source")}
               title={!liveSourcingAllowed ? "Move the campaign to Sourcing or Outreach to run Aria" : undefined}
             >
-              Run Aria
+              {supabaseEnabled ? "Run sourcing" : "Run Aria"}
             </Button>
             <Button
               variant="outline"
@@ -1023,7 +1033,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         </Card>
       )}
 
-      {runOpen && (
+      {!supabaseEnabled && runOpen && (
         <AgentRunStream
           key={runToken}
           campaignId={c.id}
@@ -1033,6 +1043,14 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         />
       )}
 
+      {supabaseEnabled && <CampaignSourcingPanel key={c.id} campaignId={c.id} open={runOpen} onClose={() => setRunOpen(false)} onCandidate={openCandidate} onCandidates={() => {
+        setTab("candidates");
+        requestAnimationFrame(() => document.getElementById(`${idBase}-candidates`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }} />}
+      {supabaseEnabled && can(role, "outreach") && (
+        <CampaignAutopilotCard key={`autopilot-${c.id}`} campaignId={c.id} candidateName={(cid) => { const found = candidates.find((x) => x.id === cid); return found ? applyConfidentiality(found, { confidentialityMode: Boolean(settings.confidentialityMode), reveal: hasOutreachPurpose(found.stage) }).name : "Candidate"; }} />
+      )}
+
       <Tabs items={tabs} value={tab} onValueChange={setTab} idBase={idBase} className="mb-6" />
 
       {/* Overview */}
@@ -1040,13 +1058,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="space-y-6">
           <StagePipeline metrics={m} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {overviewMetrics.map((mc) => (
               <MetricCard key={mc.label} label={mc.label} value={mc.value} hint={mc.hint} icon={mc.icon} tone={mc.tone} />
             ))}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader>
                 <Eyebrow>Match quality</Eyebrow>
@@ -1107,7 +1125,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* JD Analysis */}
       <TabPanel value="jd" active={tab === "jd"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader className="flex items-center justify-between gap-3">
               <div>
@@ -1163,7 +1181,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </Card>
 
           <Card className="lg:col-span-3">
-            <CardBody className="grid gap-6 sm:grid-cols-2">
+            <CardBody className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className="space-y-2.5">
                 <Eyebrow>Required skills</Eyebrow>
                 <Chips items={jd.requiredSkills} label="Required skills" />
@@ -1227,7 +1245,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {strategy.githubQueries.map((gq, i) => (
               <Card key={`${gq.label}-${i}`}>
                 <CardBody className="space-y-3">
@@ -1278,7 +1296,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card>
               <CardBody className="space-y-2.5">
                 <Eyebrow>Stack Overflow tags</Eyebrow>
@@ -1363,7 +1381,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           )}
 
           <Card>
-            <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Stage" htmlFor="cand-stage">
                 <Select
                   id="cand-stage"
@@ -1390,6 +1408,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </CardBody>
           </Card>
 
+          {/* No enrichment provider is registered since Apify was retired. */}
+          {ENRICHMENT_PROVIDERS.length > 0 && (
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1426,6 +1446,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <Meter label="Workspace enrichment spend" used={enrichmentSpend} limit={enrichmentBudget} tone="electric" />
             </CardBody>
           </Card>
+          )}
 
           <Card className="overflow-x-auto">
             <CardBody>
@@ -1437,7 +1458,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Outreach */}
       <TabPanel value="outreach" active={tab === "outreach"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
           <div className="space-y-6">
             {outreach.length === 0 ? (
               <EmptyState
@@ -1493,7 +1514,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Replies */}
       <TabPanel value="replies" active={tab === "replies"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.2fr]">
           <div className="lg:sticky lg:top-6 lg:self-start">
             <ReplyClassifier campaignId={c.id} />
           </div>
@@ -1513,7 +1534,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Booking */}
       <TabPanel value="booking" active={tab === "booking"} idBase={idBase}>
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-6">
             <Card>
               <CardHeader className="flex items-center justify-between gap-2">
@@ -1605,7 +1626,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 outreach, and scoring skills.
               </p>
             ) : (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 {c.skillUpdates.map((su) => (
                   <SkillUpdateCard key={su.id} skillUpdate={su} campaignId={c.id} />
                 ))}

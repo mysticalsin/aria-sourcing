@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
-import { getAriaLiveRunPolicy } from "../src/lib/demo/aria-live-policy";
+import { getAriaLiveRunPolicy, pickAriaLiveCampaign } from "../src/lib/demo/aria-live-policy";
+import type { Campaign, CampaignStatus } from "../src/lib/types";
 
 let pass = 0;
 let fail = 0;
@@ -18,15 +19,24 @@ const livePolicy = getAriaLiveRunPolicy(true);
 ok("Aria Live is blocked for connected workspaces", livePolicy.ok === false);
 ok("live-mode refusal explains the isolation requirement", !livePolicy.ok && /local demo|isolated/i.test(livePolicy.reason));
 
+// The run starts by sourcing, so it plays on a campaign sourcing accepts.
+const campaign = (id: string, status: CampaignStatus) => ({ id, status }) as Campaign;
+const seeded = [campaign("backend", "Interviewing"), campaign("frontend", "Outreach"), campaign("design", "Sourcing")];
+ok("an active campaign open for sourcing is kept", pickAriaLiveCampaign(seeded, "design")?.id === "design");
+ok("an active campaign past sourcing gives way to the first open one", pickAriaLiveCampaign(seeded, "backend")?.id === "frontend");
+ok("no active campaign falls back to the first open one", pickAriaLiveCampaign(seeded, null)?.id === "frontend");
+ok(
+  "no campaign open for sourcing means no run",
+  pickAriaLiveCampaign([campaign("a", "Paused"), campaign("b", "Filled"), campaign("c", "Intake")], "a") === null,
+);
+
 const director = readFileSync(new URL("../src/lib/demo/aria-live.ts", import.meta.url), "utf8");
 const overlay = readFileSync(new URL("../src/components/demo/aria-live-overlay.tsx", import.meta.url), "utf8");
 const topbar = readFileSync(new URL("../src/components/app/topbar.tsx", import.meta.url), "utf8");
 const settingsPage = readFileSync(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
-const specsRoute = readFileSync(new URL("../src/app/api/agents/specs/route.ts", import.meta.url), "utf8");
-const studioPage = readFileSync(new URL("../src/app/studio/page.tsx", import.meta.url), "utf8");
-const specsRouteBanner = specsRoute.slice(0, specsRoute.indexOf("const CreateSpecSchema"));
 
 ok("director applies the live-mode policy before starting a run", /getAriaLiveRunPolicy\(supabaseEnabled\)/.test(director));
+ok("the director picks its campaign through the shared rule", /pickAriaLiveCampaign\(opts\.campaigns, opts\.activeCampaignId\)/.test(director));
 ok("overlay uses a native dialog", overlay.includes("<dialog") && overlay.includes("ref={dialogRef}"));
 ok("overlay opens the dialog modally", overlay.includes("showModal()"));
 ok("overlay locks and unlocks document scrolling", overlay.includes("lockBodyScroll()") && overlay.includes("unlockBodyScroll()"));
@@ -58,27 +68,6 @@ ok(
   topbar.includes("Synthetic demo reset") &&
     settingsPage.includes("Synthetic demo reset") &&
     !/variant:\s*"success"[^)]*Synthetic demo reset/s.test(`${topbar}\n${settingsPage}`),
-);
-ok(
-  "agent specs route truthfully describes run-history storage with no delivery authority",
-  specsRouteBanner.includes("run history") &&
-    specsRouteBanner.includes("no delivery authority") &&
-    !/autopilot|canary/i.test(specsRouteBanner),
-);
-ok(
-  "Agent Studio exposes only the channel its runtime can execute",
-  /const SUPPORTED_CHANNELS = \["Email"\] as const/.test(studioPage) &&
-    !/const (?:ALL|SUPPORTED)_CHANNELS = \[[^\]]*(?:WhatsApp|LinkedIn|SMS)/.test(studioPage),
-);
-ok(
-  "Agent Studio distinguishes runnable and legacy-blocked specs without claiming an approval queue",
-  studioPage.includes("runtime_eligible") &&
-    studioPage.includes("Approved Flowise workflow") &&
-    studioPage.includes("DeerFlow") &&
-    studioPage.includes("Run approved agent") &&
-    studioPage.includes("No delivery authority") &&
-    studioPage.includes("Execution blocked") &&
-    !/wait(?:s|ing)? (?:in|for) (?:named )?human review|awaiting approval/i.test(studioPage),
 );
 
 console.log(`RESULT aria-live: ${pass} passed, ${fail} failed`);

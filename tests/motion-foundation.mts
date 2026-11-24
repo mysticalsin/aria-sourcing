@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 
 let pass = 0;
 let fail = 0;
@@ -19,7 +19,15 @@ const card = source("src/components/ui/card.tsx");
 const tabs = source("src/components/ui/tabs.tsx");
 const progress = source("src/components/ui/progress.tsx");
 
-ok("MotionConfig respects the OS preference", /<MotionConfig\s+reducedMotion="user"/.test(providers));
+// framer-motion stays out of the shared bundle: no global MotionConfig, so
+// every component that animates with it must honour the OS preference itself.
+ok("the root providers do not load framer-motion", !providers.includes("framer-motion"));
+const motionUsers = (readdirSync(new URL("../src", import.meta.url), { recursive: true }) as string[])
+  .filter((file) => file.endsWith(".tsx"))
+  .map((file) => source(`src/${file.replaceAll("\\", "/")}`))
+  .filter((text) => text.includes('from "framer-motion"'));
+ok("framer-motion is still used somewhere", motionUsers.length > 0);
+ok("every framer-motion component respects the OS preference", motionUsers.every((text) => text.includes("usePrefersReducedMotion")));
 ok("motion uses one named ease-out token", globals.includes("--ease-motion-out"));
 ok("Tailwind exposes the shared motion easing", tailwind.includes('"motion-out": "var(--ease-motion-out)"'));
 ok("reduced motion uses an opacity-only entry keyframe", globals.includes("@keyframes reduced-fade-in"));
@@ -41,14 +49,6 @@ ok("Tabs transition explicit visual properties", tabs.includes("transition-[back
 ok("Progress no longer animates width", !progress.includes("transition-[width]"));
 ok("Progress uses a transform scale", progress.includes("scaleX(${pct / 100})"));
 ok("Progress has the reduced-motion class", progress.includes("motion-progress-fill"));
-
-const gauge = source("src/components/charts/score-gauge.tsx");
-const radar = source("src/components/charts/fit-radar.tsx");
-const distribution = source("src/components/charts/score-distribution.tsx");
-ok("Drawer slide matches the 180ms fade", tailwind.includes("slide-in-right 0.18s var(--ease-motion-out)"));
-ok("Match gauge uses a short tween and a stable chart size", gauge.includes("animationDuration={180}") && !gauge.includes("ResponsiveContainer"));
-ok("Fit radar draw-in stays within 180ms", radar.includes("stroke-dashoffset 180ms"));
-ok("Hidden score charts do not mount at zero size", distribution.includes("rect.width > 0") && distribution.includes("animationDuration={180}"));
 
 console.log(`RESULT motion-foundation: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

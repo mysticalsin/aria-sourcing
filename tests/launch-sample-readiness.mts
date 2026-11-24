@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SAMPLE_LAUNCH_BRIEF } from "../src/lib/launch/sample-brief";
-import { parseEmailAndJD } from "../src/lib/mock-ai";
+import { parseEmailAndJD, SAMPLE_INTAKE_EMAIL, SAMPLE_INTAKE_JD } from "../src/lib/mock-ai";
 import { evaluateNeedReadiness } from "../src/lib/needs/readiness";
+
+test("the labelled intake sample explicitly supplies every required sourcing fact", () => {
+  const parsed = parseEmailAndJD({ email: SAMPLE_INTAKE_EMAIL, jd: SAMPLE_INTAKE_JD });
+  assert.equal(parsed.jobAnalysis.employmentType, "Full-time");
+  assert.deepEqual(evaluateNeedReadiness(parsed.jobAnalysis), { ready: true, issues: [] });
+});
 
 test("every labelled launch sample role is complete enough for sourcing", () => {
   const roles = SAMPLE_LAUNCH_BRIEF.split(/^\s*-{3,}\s*$/m).map((role) => role.trim()).filter(Boolean);

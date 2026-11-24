@@ -11,12 +11,12 @@
    ---------------------------------------------------------------------
    There is no store action that can delete a candidate / outreach draft /
    reply / booking / report once created (by design — see store.ts's
-   HermesActions), so the only way to guarantee the run leaves ZERO trace is
+   WorkspaceActions), so the only way to guarantee the run leaves ZERO trace is
    a full-state snapshot + full-state restore, not a per-entity undo.
 
-   The store (HermesProvider in store.ts) keeps its state in a plain
+   The store (WorkspaceProvider in store.ts) keeps its state in a plain
    `useState`, mounted once at the app root (see providers.tsx) and persisted
-   to `localStorage["hermes-sourcing:v1"]` on a 600ms debounce (flushed
+   to `localStorage["aria-sourcing:v1"]` on a 600ms debounce (flushed
    immediately on `beforeunload`). There is no exposed action to replace that
    state wholesale with an arbitrary snapshot (`resetDemo` exists but always
    reseeds to `buildSeedState()`, not to "whatever the user had a moment
@@ -27,18 +27,18 @@
    pattern TopBar's own "Reset to defaults" flow already relies on
    (`resetDemo(); window.location.href = "/"`): write the desired bytes to
    localStorage, then force a real navigation. A real navigation remounts
-   HermesProvider, which re-hydrates from localStorage on mount (store.ts
+   WorkspaceProvider, which re-hydrates from localStorage on mount (store.ts
    ~511-529) — that mount-time read is the only "rehydrate" entry point that
    exists, so a hard reload is how this module "triggers" it.
 
-   The one subtlety that makes this safe rather than racy: HermesProvider's
+   The one subtlety that makes this safe rather than racy: WorkspaceProvider's
    own `beforeunload` listener (registered at app boot) flushes whatever the
    LATEST in-memory state is to localStorage the moment a real navigation
    starts — which, at the end of an Aria Live run, is the run's *mutated*
    state, not the pre-run snapshot. Left alone that flush would clobber our
    restore. Browsers fire `beforeunload` listeners in registration order, and
    this module's own listener is only ever registered once a run starts
-   (i.e. strictly after HermesProvider's, which is registered at boot) — so
+   (i.e. strictly after WorkspaceProvider's, which is registered at boot) — so
    ours always fires second and its write is always the one left standing
    right before the page actually unloads. That guarantee holds whether the
    reload is one we trigger ourselves (Skip / Dismiss / unmount) or a
@@ -46,15 +46,16 @@
    ========================================================================== */
 
 import { pickResponderIndex } from "@/lib/floor3d";
-import type { HermesActions } from "@/lib/store";
-import type { AgentSeat, Campaign, HermesState } from "@/lib/types";
+import type { WorkspaceActions } from "@/lib/store";
+import type { AgentSeat, Campaign, WorkspaceState } from "@/lib/types";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { getAriaLiveRunPolicy } from "@/lib/demo/aria-live-policy";
+import { getAriaLiveRunPolicy, pickAriaLiveCampaign } from "@/lib/demo/aria-live-policy";
+import { WORKSPACE_STORAGE_KEY } from "@/lib/store/migrations";
 
-/** Must match store.ts's STORAGE_KEY exactly — read/write only, never edited here. */
-const STORAGE_KEY = "hermes-sourcing:v1";
+/** The store's own key — read/write only, never edited here. */
+const STORAGE_KEY = WORKSPACE_STORAGE_KEY;
 /** Session-only flag: "the user clicked Restart, relaunch after the reload." */
-const RESTART_FLAG_KEY = "hermes-sourcing:aria-live-restart";
+const RESTART_FLAG_KEY = "aria-sourcing:aria-live-restart";
 
 export const ARIA_LIVE_CHAPTERS = [
   "sourcing",
@@ -171,7 +172,7 @@ function safeSetItem(key: string, value: string) {
 }
 
 /** Writes the pre-run snapshot back and forces a real reload — the only way
- *  to make HermesProvider re-hydrate (see the file banner above). Idempotent:
+ *  to make WorkspaceProvider re-hydrate (see the file banner above). Idempotent:
  *  safe to call from Skip, Dismiss, and an unmount cleanup without risking a
  *  double-reload. */
 function triggerRestore() {
@@ -184,7 +185,7 @@ function triggerRestore() {
 
 /** Best-effort safety net for an abrupt real navigation (tab close, address
  *  bar navigation) that happens mid-run without Skip/Dismiss ever firing.
- *  Registered once a run starts, so it is always added AFTER HermesProvider's
+ *  Registered once a run starts, so it is always added AFTER WorkspaceProvider's
  *  own beforeunload listener — browsers dispatch same-event listeners in
  *  registration order, so this one's write is always the last one standing. */
 function armBeforeUnloadGuard() {
@@ -212,7 +213,7 @@ function publish(patch: Partial<AriaLiveSnapshot>) {
   snapshotChannel.set({ ...snapshotChannel.get(), active: true, ...patch });
 }
 
-async function runSequence(actions: HermesActions, campaign: Campaign, seats: AgentSeat[]) {
+async function runSequence(actions: WorkspaceActions, campaign: Campaign, seats: AgentSeat[]) {
   const kpis: AriaLiveKpis = { ...ZERO_KPIS };
   const chapterAt = (chapter: AriaLiveChapter) => ARIA_LIVE_CHAPTERS.indexOf(chapter);
   // Index 0 is the CEO by convention (src/lib/floor3d.ts) — everyone else is
@@ -236,6 +237,9 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   };
 
   directorChannel.set({ establishing: true });
+  // The run may play on another campaign than the selected one (see
+  // pickAriaLiveCampaign); show that one. The restore puts the selection back.
+  actions.setActiveCampaign(campaign.id);
   setChapter("sourcing", "Scanning the Talent Pool for a match…");
   await sleep(900);
   if (restoring) return;
@@ -276,6 +280,22 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
   setChapter("drafting", `Draft ready: "${msg.subject}"`, candidate.name);
   await sleep(1600);
   if (restoring) return;
+
+  // Approval requires an operator-recorded lawful basis (rules.ts). The demo
+  // plays the recruiter's step on this synthetic profile, through the same
+  // action as the drawer's Contact basis form.
+  setChapter("approving", `Recording the contact basis for ${candidate.name}…`, candidate.name);
+  const basis = await actions.recordCandidateEvidence(candidate.id, {
+    email: candidate.email,
+    linkedinUrl: candidate.linkedinUrl,
+    lawfulBasis: "legitimate_interest",
+    source: "Aria Live demo: the recruiter records legitimate interest for a synthetic profile.",
+  });
+  if (restoring) return;
+  if (!basis.ok) {
+    fail(`Couldn't record a contact basis for ${candidate.name}: ${basis.error ?? "unknown error"}.`);
+    return;
+  }
 
   setChapter("approving", `Approving the draft for ${candidate.name}…`, candidate.name);
   await sleep(500);
@@ -331,8 +351,8 @@ async function runSequence(actions: HermesActions, campaign: Campaign, seats: Ag
 /** Starts a run. No-op (returns false) if one is already active — callers
  *  (TopBar, CommandSearch) should treat that as "already playing". */
 export function startAriaLive(
-  actions: HermesActions,
-  state: HermesState,
+  actions: WorkspaceActions,
+  state: WorkspaceState,
   campaign: Campaign,
   seats: AgentSeat[],
 ): boolean {
@@ -354,8 +374,8 @@ export function startAriaLive(
  *  campaign to run against and validates preconditions in one place so
  *  TopBar and CommandSearch can't drift out of sync. */
 export function beginAriaLiveRun(opts: {
-  actions: HermesActions;
-  state: HermesState | null;
+  actions: WorkspaceActions;
+  state: WorkspaceState | null;
   campaigns: Campaign[];
   activeCampaignId: string | null;
   seats: AgentSeat[];
@@ -364,8 +384,13 @@ export function beginAriaLiveRun(opts: {
   if (!policy.ok) return policy;
   if (!opts.state) return { ok: false, reason: "Still loading the workspace…" };
   if (getAriaLiveSnapshot().active) return { ok: false, reason: "Aria Live is already running." };
-  const campaign = opts.campaigns.find((c) => c.id === opts.activeCampaignId) ?? opts.campaigns[0];
-  if (!campaign) return { ok: false, reason: "Create a campaign first. Aria Live needs one to run against." };
+  if (opts.campaigns.length === 0) {
+    return { ok: false, reason: "Create a campaign first. Aria Live needs one to run against." };
+  }
+  const campaign = pickAriaLiveCampaign(opts.campaigns, opts.activeCampaignId);
+  if (!campaign) {
+    return { ok: false, reason: "Aria Live needs a campaign in Sourcing or Outreach. Move one back to Sourcing first." };
+  }
   startAriaLive(opts.actions, opts.state, campaign, opts.seats);
   return { ok: true };
 }

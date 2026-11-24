@@ -93,7 +93,7 @@ export function CompliancePanel() {
 
         <div>
           <Eyebrow>Data retention</Eyebrow>
-          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {RETENTION.map((r) => (
               <Field key={r.key} label={r.label} htmlFor={`retention-${r.key}`} hint={r.hint}>
                 <Input

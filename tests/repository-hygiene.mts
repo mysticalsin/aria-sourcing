@@ -26,8 +26,6 @@ ok("raw agent execution directory is ignored", /^\/\.rocket-fuel\/$/m.test(gitig
 ok("generated Graphify output is ignored", /^\/graphify-out\/$/m.test(gitignore));
 
 const setupSources = [
-  "DEPLOY_VERCEL_DEMO.md",
-  "production-readiness/LOCAL_SETUP.md",
   "scripts/local-supabase-up.sh",
 ].map((path) => readFileSync(path, "utf8")).join("\n");
 

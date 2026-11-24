@@ -5,7 +5,7 @@
 
 import { buildSeedState, defaultSettings, STATE_VERSION } from "../src/lib/seed.ts";
 import { migrateToCurrentVersion } from "../src/lib/store.ts";
-import type { HermesState, MemoryEntry, MemoryKind } from "../src/lib/types.ts";
+import type { WorkspaceState, MemoryEntry, MemoryKind } from "../src/lib/types.ts";
 import { MEMORY_KINDS } from "../src/lib/types.ts";
 
 let pass = 0;
@@ -27,11 +27,11 @@ function genId(prefix: string): string {
 }
 
 function addMemoryToState(
-  s: HermesState,
+  s: WorkspaceState,
   seatId: string,
   kind: MemoryKind,
   content: string,
-): { state: HermesState; entry: MemoryEntry } {
+): { state: WorkspaceState; entry: MemoryEntry } {
   const now = new Date().toISOString();
   const entry: MemoryEntry = {
     id: genId("mem"),
@@ -46,10 +46,10 @@ function addMemoryToState(
 }
 
 function updateMemoryInState(
-  s: HermesState,
+  s: WorkspaceState,
   id: string,
   patch: Partial<Pick<MemoryEntry, "kind" | "content" | "pinned">>,
-): HermesState {
+): WorkspaceState {
   return {
     ...s,
     memory: s.memory.map((m) =>
@@ -58,11 +58,11 @@ function updateMemoryInState(
   };
 }
 
-function removeMemoryFromState(s: HermesState, id: string): HermesState {
+function removeMemoryFromState(s: WorkspaceState, id: string): WorkspaceState {
   return { ...s, memory: s.memory.filter((m) => m.id !== id) };
 }
 
-function togglePinInState(s: HermesState, id: string): HermesState {
+function togglePinInState(s: WorkspaceState, id: string): WorkspaceState {
   return {
     ...s,
     memory: s.memory.map((m) =>
@@ -131,14 +131,14 @@ ok("togglePinMemory toggles back to false", s6.memory.find((m) => m.id === e1.id
 /* ---- migration fill ------------------------------------------------------ */
 
 // Simulate a state object from STATE_VERSION 9 (missing the memory field).
-const legacyState = { ...seed, version: 9, memory: undefined } as unknown as HermesState;
+const legacyState = { ...seed, version: 9, memory: undefined } as unknown as WorkspaceState;
 const migrated = migrateToCurrentVersion(legacyState);
 ok("migration fills missing memory array", Array.isArray(migrated.memory));
 ok("migration fills memory as empty array", migrated.memory.length === 0);
 ok("migration bumps version to current", migrated.version === STATE_VERSION);
 
 // State that already has memory should keep it.
-const withMemory = { ...seed, version: 9, memory: [{ id: "mem_x", seatId: "seat_maya", kind: "fact" as MemoryKind, content: "test", pinned: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] } as HermesState;
+const withMemory = { ...seed, version: 9, memory: [{ id: "mem_x", seatId: "seat_maya", kind: "fact" as MemoryKind, content: "test", pinned: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] } as WorkspaceState;
 const migratedWithMemory = migrateToCurrentVersion(withMemory);
 ok("migration preserves existing memory entries", migratedWithMemory.memory.length === 1);
 
@@ -150,7 +150,7 @@ ok("seed has seats", seed.seats.length > 0);
 
 if (firstSeat) {
   const newPersona = "Technical, data-driven, brief. Lead with GitHub metrics.";
-  const seatUpdated: HermesState = {
+  const seatUpdated: WorkspaceState = {
     ...seed,
     seats: seed.seats.map((x) =>
       x.id === firstSeat.id ? { ...x, persona: newPersona } : x,

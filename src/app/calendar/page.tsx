@@ -297,8 +297,8 @@ export default function CalendarPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Scheduling"
-        title="Interview calendar"
+        eyebrow="Engage"
+        title="Calendar"
         description="Confirmed and proposed interviews as an agenda, plus interested candidates ready to book. Teams / calendar links are attached once a live calendar integration is connected."
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -315,7 +315,7 @@ export default function CalendarPage() {
       <HydrationGate
         hydrated={hydrated}
         fallback={
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <SkeletonCard />
             </div>
@@ -326,10 +326,10 @@ export default function CalendarPage() {
           </div>
         }
       >
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Agenda */}
           <div className="lg:col-span-2">
-            <Card>
+            <Card data-tour="calendar">
               <CardHeader className="flex items-start justify-between gap-3">
                 <div>
                   <Eyebrow>Agenda</Eyebrow>

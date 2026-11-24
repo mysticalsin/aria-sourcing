@@ -94,6 +94,11 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Without a domain allow-list the gate has nothing to enforce on an API call:
+  // the handler authenticates (and refreshes the session) itself, so skip the
+  // extra GoTrue round trip here.
+  if (apiRequest && !ALLOWED_EMAIL_DOMAIN) return NextResponse.next();
+
   let res = NextResponse.next({ request: req });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -159,6 +164,6 @@ export const config = {
   // bypass the organization gate. Static assets and image files stay excluded.
   matcher: [
     "/api/:path*",
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2)$).*)",
   ],
 };

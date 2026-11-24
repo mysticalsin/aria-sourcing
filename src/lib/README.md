@@ -43,5 +43,4 @@ boundary is enforced by `tests/module-boundaries.mts`.
 - Find the matching negative test before changing authentication, tenant scope,
   provider access, approvals, delivery, persistence, or candidate privacy.
 
-See [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) for system flow and
-[`docs/OWNERSHIP.md`](../../docs/OWNERSHIP.md) for verified responsibility roles.
+See [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) for system flow.

@@ -4,7 +4,6 @@ import type { ConnectionTestResult } from "../integrations";
 import type { ReplyClassification } from "../mock-ai";
 import type { Recommendation } from "../recommendations";
 import type { ApprovalResult } from "../rules";
-import type { ApifyProfileSearchInput } from "../sourcing/apify";
 import type { SourceResult } from "../sourcing/candidate-mappers";
 import type { SourcingFeedbackReceiptDto } from "../sourcing/sourcing-agent-contract";
 import type { WorkspaceStatus } from "../workspace-status";
@@ -18,6 +17,7 @@ import type {
   Campaign,
   CandidateStage,
   CandidateLawfulBasis,
+  CompanyStage,
   ChatboxSubmission,
   ChatboxSubmissionStatus,
   ChatMessage,
@@ -28,7 +28,7 @@ import type {
   DustRegion,
   DustTask,
   EnrichableField,
-  HermesState,
+  WorkspaceState,
   IntegrationStatus,
   Interviewer,
   InterviewKind,
@@ -83,11 +83,10 @@ export type SourceNextBatchResult =
       ok: false;
       error: string;
       source: SourceNextBatchErrorSource;
-      retryable?: "agent_framework_reconcile";
     };
 
 export type CandidateIntakeResult =
-  | { ok: true; added: number; skipped: number; skipReason?: string }
+  | { ok: true; added: number; skipped: number; skipReason?: string; candidateIds?: string[] }
   | { ok: false; error: string };
 
 export type CandidateErasureStatus =
@@ -126,20 +125,7 @@ export type SourcingFeedbackReceipt = SourcingFeedbackReceiptDto;
 
 export type SourcingFeedbackVerdict = "useful" | "dead_end" | "corrected";
 
-export type ApolloEnrichmentErrorCode =
-  | "APOLLO_TARGET_NOT_FOUND"
-  | "APOLLO_ENRICHMENT_IN_PROGRESS"
-  | "APOLLO_RECONCILIATION_REQUIRED"
-  | "APOLLO_CONFIRMATION_INVALID"
-  | "APOLLO_IDEMPOTENCY_CONFLICT"
-  | "APOLLO_RETRY_REQUIRES_NEW_CONFIRMATION"
-  | "APOLLO_QUOTA_EXCEEDED"
-  | "APOLLO_NOT_CONFIGURED"
-  | "APOLLO_AUTHORITY_UNAVAILABLE"
-  | "APOLLO_RECEIPT_UNAVAILABLE"
-  | "APOLLO_OUTCOME_UNKNOWN";
-
-export interface HermesActions {
+export interface WorkspaceActions {
   // campaigns
   setActiveCampaign: (id: string | null) => void;
   createCampaignFromAnalysis: (
@@ -155,7 +141,6 @@ export interface HermesActions {
     opts?: {
       platform?: SourcePlatform;
       count?: number;
-      agentFramework?: { runId: string; capabilityToken: string; query: string };
     },
   ) => Promise<SourceNextBatchResult>;
   /** Searches real provider results and drafts for human review. Cloud mode uses
@@ -194,6 +179,9 @@ export interface HermesActions {
     input: {
       name: string;
       title?: string;
+      company?: string;
+      /** A LinkedIn profile URL: stored as the candidate's LinkedIn. */
+      linkedinUrl?: string;
       skills?: string[];
       profileUrl?: string;
       email?: string;
@@ -202,122 +190,13 @@ export interface HermesActions {
       lawfulBasis: CandidateLawfulBasis;
     },
   ) => Promise<CandidateIntakeResult>;
-  /** Sillage Account Mapping (third real sourcing channel): resolves a company
-   *  (domain or LinkedIn URL) into real enriched employee profiles. Enrichment is
-   *  async — this kicks off the job server-side and returns a requestId to poll
-   *  with checkSillageMapping. Requires a stored Sillage key (Settings). */
-  startSillageMapping: (
-    campaignId: string,
-    identifier: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Sillage mapping job. While processing: {ok:true, status:"processing"}.
-   *  On completion: maps + scores + dedupes the real profiles exactly like
-   *  sourceNextBatch, commits the accepted candidates, logs an activity entry, and
-   *  updates campaign metrics. Never backfills a failed/empty result with synthetic
-   *  profiles. */
-  checkSillageMapping: (
-    campaignId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; added: number; company: string }
-    | { ok: false; error: string }
-  >;
-  /** Real Apollo.io search (fourth real sourcing channel) — free, synchronous,
-   *  no mock fallback: Apollo is a real channel, so an unconfigured key
-   *  surfaces honestly as "not_configured" rather than synthesizing fake
-   *  candidates. Requires a stored Apollo key (Settings). */
-  sourceFromApollo: (
-    campaignId: string,
-    filters: {
-      titles?: string[];
-      seniorities?: string[];
-      locations?: string[];
-      organizationDomains?: string[];
-      keywords?: string;
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "apollo" | "not_configured" | "error"; error?: string }>;
-  /** Creates a short-lived, server-bound confirmation for one Apollo email
-   *  reveal. This performs no provider call and must precede the human modal. */
-  prepareApolloEnrichment: (
-    candidateId: string,
-  ) => Promise<
-    | { ok: true; confirmationNonce: string; expiresAt: string }
-    | { ok: false; error: string; code?: ApolloEnrichmentErrorCode }
-  >;
-  /** Commits one previously prepared Apollo email reveal. The server owns the
-   *  provider id, idempotency, quota, replay, and ambiguity boundaries. */
-  enrichApolloCandidate: (
-    candidateId: string,
-    confirmationNonce: string,
-  ) => Promise<
-    | { ok: true; revealed: boolean; detail: string }
-    | { ok: false; revealed: false; detail: string; code?: ApolloEnrichmentErrorCode }
-  >;
-  /** Real Seamless.AI search (fifth real sourcing channel) — synchronous, no
-   *  mock fallback. Requires a stored Seamless key (Settings). */
-  sourceFromSeamless: (
-    campaignId: string,
-    filters: {
-      jobTitles?: string[];
-      seniorities?: string[];
-      departments?: string[];
-      industries?: string[];
-      countries?: string[];
-      states?: string[];
-      companyNames?: string[];
-      companyDomains?: string[];
-      count?: number;
-    },
-  ) => Promise<SourceResult & { source: "seamless" | "not_configured" | "error"; error?: string }>;
-  /** Explicit, confirmed, single-candidate Seamless contact reveal. Async
-   *  (research → poll) — kicks off the job and returns a requestId to poll
-   *  with checkSeamlessResearch. Never call this for a whole batch. */
-  startSeamlessResearch: (
-    candidateId: string,
-  ) => Promise<{ ok: true; requestId: string } | { ok: false; error: string }>;
-  /** Polls one Seamless research job. On completion, patches the candidate's
-   *  email/phone in place (same PII convention as enrichApolloCandidate) and
-   *  never fabricates contact info on failure. */
-  checkSeamlessResearch: (
-    candidateId: string,
-    requestId: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; revealed: boolean }
-    | { ok: false; error: string }
-  >;
-  /** Real Apify search (harvestapi/linkedin-profile-search — sixth real
-   *  sourcing channel): third-party public LinkedIn profile data, not a
-   *  first-party scrape (see sourcing/apify.ts). Enrichment is async — this
-   *  kicks off the actor run server-side and returns a runId + datasetId to
-   *  poll with checkApifyRun. Requires a stored Apify key (Settings). */
-  startApifyRun: (
-    campaignId: string,
-    criteria: ApifyProfileSearchInput,
-  ) => Promise<{ ok: true; runId: string; datasetId: string } | { ok: false; error: string }>;
-  /** Polls one Apify actor run. While processing: {ok:true, status:"processing"}.
-   *  On completion: maps + scores + dedupes the real profiles exactly like
-   *  checkSillageMapping, commits the accepted candidates, logs an activity
-   *  entry, and updates campaign metrics. Never backfills a failed/empty
-   *  result with synthetic profiles. */
-  checkApifyRun: (
-    campaignId: string,
-    runId: string,
-    datasetId: string,
-    query: string,
-  ) => Promise<
-    | { ok: true; status: "processing" }
-    | { ok: true; status: "completed"; added: number }
-    | { ok: false; error: string }
-  >;
-  /** Unified cross-provider enrichment orchestrator (docs/superpowers/plans/
-   *  2026-07-15-enrichment-orchestrator.md) — a candidate discovered by ANY
-   *  provider can be enriched by every OTHER configured provider (Apify
-   *  dev_fusion, Apollo, Seamless, Sillage). Calls /api/source/enrich, which
+  /** Unified enrichment orchestrator — a candidate discovered by ANY
+   *  provider can be enriched by every configured enrichment provider
+   *  (none since Apify was retired). Saves current workspace edits, then calls
+   *  /api/source/enrich with only candidateId and requested fields; the server
+   *  resolves profile ownership and scoring evidence from the saved workspace,
    *  runs the cost-ordered waterfall server-side, then merges the returned
-   *  patch (email/phone/headline/location/company/skills/enrichment/
+   *  patch (email/phone/headline/location/company/skills/experience/education/languages/enrichment/
    *  externalIds/matchScore) into the candidate and logs one Activity
    *  summarizing which provider filled what. Respects
    *  `state.enrichmentBudgetUnits` (generous default when unset); a
@@ -362,9 +241,11 @@ export interface HermesActions {
    *  mock. Status is still set by the human approval gate — never auto-sent. */
   regenerateOutreach: (messageId: string, tone?: OutreachTone) => Promise<void>;
   approveOutreach: (messageId: string) => Promise<ApprovalResult>;
-  confirmManualSend: (messageId: string) => { ok: boolean; error?: string };
+  /** Record that an approved LinkedIn message left: copied by hand ("manual")
+   *  or sent from the user's own LinkedIn by the ARIA extension ("bridge"). */
+  confirmManualSend: (messageId: string, via?: "manual" | "bridge") => { ok: boolean; error?: string };
   /** The deliberate gated send for a live-approved email — calls the server send route. */
-  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
+  sendApprovedOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   rejectOutreach: (messageId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Drafts the next sequence-step follow-up for a candidate who has gone quiet
    *  past the configured gap (see deriveFollowUpsDue). Lands in the approval
@@ -393,6 +274,11 @@ export interface HermesActions {
    *  for threading when present. Returns null when the reply/candidate can't
    *  be resolved or there's no draft text to send. */
   draftReplyResponse: (replyId: string) => OutreachMessage | null;
+  /** Fills in a missing draftResponse on a reply: classify task (model first,
+   *  rule-based fallback), behind the same disclosure and injection checks as
+   *  ingestion. Leaves the reply alone and returns null when the model now
+   *  reads a different intent, so a recruiter decides. */
+  prepareReplyResponse: (replyId: string) => Promise<ClassifiedReply | null>;
 
   // bookings
   createBookingFor: (
@@ -420,6 +306,7 @@ export interface HermesActions {
   /** One commit: Hired stage, the activity trail, and vacancy status when the connector already closed it. */
   recordHiredCandidate: (candidateId: string, trail: HireTrail) => void;
   setCandidatePhone: (id: string, phone: string) => void;
+  recordCandidateEvidence: (id: string, input: { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; location?: string; industryExperience?: string[]; companyStageExperience?: CompanyStage[]; lawfulBasis?: CandidateLawfulBasis }) => Promise<{ ok: boolean; error?: string }>;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */
   addCandidateNote: (candidateId: string, text: string) => void;
@@ -587,13 +474,14 @@ export interface HermesActions {
   updateInterviewer: (id: string, patch: Partial<Omit<Interviewer, "id">>) => void;
   removeInterviewer: (id: string) => void;
 }
-export interface HermesContextValue {
-  state: HermesState | null;
+export interface WorkspaceContextValue {
+  state: WorkspaceState | null;
   hydrated: boolean;
   workspaceStatus: WorkspaceStatus;
   retryWorkspace: () => Promise<void>;
+  flushWorkspace: () => Promise<boolean>;
   retrySave: () => Promise<void>;
-  actions: HermesActions;
+  actions: WorkspaceActions;
   /** Computed once per state change (not per consumer) — the TopBar bell and
    *  the dashboard AttentionPanel both read this instead of independently
    *  re-running deriveRecommendations on every render. */

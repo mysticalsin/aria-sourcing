@@ -66,9 +66,9 @@ insert into public.agent_seats (
 ) values (
   '51000000-0000-4000-8000-000000000001',
   '11111111-1111-4111-8111-111111111111',
-  'Workspace A WhatsApp sender',
+  'Workspace A Email sender',
   'sender-a@example.test',
-  'WhatsApp Cloud',
+  'Resend',
   'active',
   'live',
   true
@@ -79,62 +79,6 @@ insert into public.agent_specs (id,workspace_id,owner_id,name,role_brief,seat_id
   ('61000000-0000-4000-8000-000000000001','11111111-1111-4111-8111-111111111111','a1000000-0000-4000-8000-000000000001','Owner A Agent','{"title":"Owner A role"}','51000000-0000-4000-8000-000000000001','active'),
   ('62000000-0000-4000-8000-000000000002','11111111-1111-4111-8111-111111111111','a2000000-0000-4000-8000-000000000002','Owner B Agent','{"title":"Owner B role"}','51000000-0000-4000-8000-000000000001','active'),
   ('63000000-0000-4000-8000-000000000003','22222222-2222-4222-8222-222222222222','b1000000-0000-4000-8000-000000000001','Foreign Agent','{"title":"Foreign private role"}',null,'active');
-
-\echo seed:whatsapp-sender
-insert into public.whatsapp_senders (
-  id, workspace_id, seat_id, meta_phone_number_id, status
-) values (
-  '81000000-0000-4000-8000-000000000001',
-  '11111111-1111-4111-8111-111111111111',
-  '51000000-0000-4000-8000-000000000001',
-  'meta-phone-a',
-  'active'
-);
-
-\echo seed:whatsapp-template
-insert into public.whatsapp_templates (
-  id, workspace_id, sender_id, meta_name, language, category, status,
-  parameter_schema, body_parameter_count, approved_at
-) values (
-  '82000000-0000-4000-8000-000000000001',
-  '11111111-1111-4111-8111-111111111111',
-  '81000000-0000-4000-8000-000000000001',
-  'candidate_intro',
-  'en_US',
-  'utility',
-  'approved',
-  '[]'::jsonb,
-  0,
-  now()
-);
-
-\echo seed:approvals
-insert into public.outreach_approvals (
-  workspace_id, message_id, body_hash, approval_scope_hash, approved_by,
-  approved_at, approval_source
-) values
-  (
-    '11111111-1111-4111-8111-111111111111',
-    'approved-reply',
-    encode(extensions.digest('Approved reply' || E'\n' || 'Hello candidate', 'sha256'), 'hex'),
-    encode(extensions.digest('candidate-a' || E'\n' || 'WhatsApp' || E'\n' || '14165550199', 'sha256'), 'hex'),
-    'a1000000-0000-4000-8000-000000000001',
-    now(),
-    'human'
-  ),
-  (
-    '11111111-1111-4111-8111-111111111111',
-    'approved-template',
-    encode(extensions.digest(
-      'WhatsApp approved-template dispatch' || E'\n' ||
-      '{"audit_version":1,"kind":"meta_approved_whatsapp_template","template":{"id":"82000000-0000-4000-8000-000000000001","sender_id":"81000000-0000-4000-8000-000000000001","meta_name":"candidate_intro","language":"en_US","version":1},"parameters":[]}',
-      'sha256'
-    ), 'hex'),
-    encode(extensions.digest('candidate-a' || E'\n' || 'WhatsApp' || E'\n' || '14165550199', 'sha256'), 'hex'),
-    'a1000000-0000-4000-8000-000000000001',
-    now(),
-    'human'
-  );
 
 create schema aria_conversation_authority_test;
 revoke all on schema aria_conversation_authority_test from public;
@@ -199,12 +143,12 @@ select aria_conversation_authority_test.set_claims(
 );
 set local role authenticated;
 select aria_conversation_authority_test.assert_sqlstate(
-  'viewer cannot forge a WhatsApp STOP event',
+  'viewer cannot forge an inbound provider event',
   $$insert into public.messages_inbound(
-      workspace_id, channel, from_address, body, provider_id, whatsapp_sender_id
+      workspace_id, channel, from_address, body, provider_id
     ) values (
-      '11111111-1111-4111-8111-111111111111','WhatsApp','14165550199','STOP',
-      'forged-viewer-stop','81000000-0000-4000-8000-000000000001'
+      '11111111-1111-4111-8111-111111111111','Email','candidate-a@example.test','unsubscribe',
+      'forged-viewer-event'
     )$$,
   array['42501']
 );
@@ -218,7 +162,7 @@ select aria_conversation_authority_test.assert_sqlstate(
       '63000000-0000-4000-8000-000000000003',
       'candidate-forged',
       '51000000-0000-4000-8000-000000000001',
-      'WhatsApp','14165550199','candidate_reply','forged binding','composed',repeat('a',64)
+      'Email','candidate-a@example.test','candidate_reply','forged binding','composed',repeat('a',64)
     )$$,
   array['42501']
 );
@@ -233,13 +177,13 @@ select aria_conversation_authority_test.set_claims(
 );
 set local role authenticated;
 select aria_conversation_authority_test.assert_sqlstate(
-  'member cannot bypass the authenticated enqueue RPC',
+  'member cannot write the outbox directly',
   $$insert into public.messages_outbound(
       workspace_id, candidate_id, seat_id, channel, to_address,
       type, body, status, dedupe_hash
     ) values (
       '11111111-1111-4111-8111-111111111111','candidate-a',
-      '51000000-0000-4000-8000-000000000001','WhatsApp','14165550199',
+      '51000000-0000-4000-8000-000000000001','Email','candidate-a@example.test',
       'candidate_reply','direct member write','queued',repeat('b',64)
     )$$,
   array['42501']
@@ -257,179 +201,53 @@ select aria_conversation_authority_test.assert_sqlstate(
 rollback;
 SQL
 
-# The only browser-facing write is the narrow enqueue RPC. It locks live actor,
-# workspace, candidate, approval, sender, and optional template authority.
+# Seed one trusted conversation for owner A as the schema owner (the role the
+# service-only RPCs run as): conversation, accepted outbound message, bound reply.
 psql_stdin <<'SQL'
 begin;
-select aria_conversation_authority_test.set_claims(
-  'a4000000-0000-4000-8000-000000000004',
-  'authenticated'
-);
-set local role authenticated;
-select aria_conversation_authority_test.assert_scalar(
-  'viewer cannot call the enqueue authority',
-  $$select public.enqueue_whatsapp_outbound(
-      'approved-reply','candidate-a','campaign-a',
-      '51000000-0000-4000-8000-000000000001','14165550199',
-      'candidate_reply','Approved reply','Hello candidate',null,'[]'::jsonb
-    )->>'reason'$$,
-  'insufficient-permissions'
-);
-rollback;
 
-begin;
-select aria_conversation_authority_test.set_claims(
-  'a1000000-0000-4000-8000-000000000001',
-  'authenticated'
-);
-set local role authenticated;
-select aria_conversation_authority_test.assert_scalar(
-  'member queues an exact approved reply through the RPC',
-  $$select public.enqueue_whatsapp_outbound(
-      'approved-reply','candidate-a','campaign-a',
-      '51000000-0000-4000-8000-000000000001','14165550199',
-      'candidate_reply','Approved reply','Hello candidate',null,'[]'::jsonb
-    )->>'status'$$,
-  'queued'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'queued reply is stamped with the actor owner and no agent spec',
-  $$select concat(owner_id,':',spec_id is null) from public.messages_outbound
-     where approval_message_id='approved-reply'$$,
-  'a1000000-0000-4000-8000-000000000001:t'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'enqueue replay is blocked by the durable dedupe key',
-  $$select public.enqueue_whatsapp_outbound(
-      'approved-reply','candidate-a','campaign-a',
-      '51000000-0000-4000-8000-000000000001','14165550199',
-      'candidate_reply','Approved reply','Hello candidate',null,'[]'::jsonb
-    )->>'reason'$$,
-  'duplicate'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'wrong campaign cannot claim the candidate',
-  $$select public.enqueue_whatsapp_outbound(
-      'approved-reply','candidate-a','campaign-other',
-      '51000000-0000-4000-8000-000000000001','14165550199',
-      'candidate_reply','Approved reply','Hello candidate',null,'[]'::jsonb
-    )->>'reason'$$,
-  'candidate-campaign-mismatch'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'approved template queues through the same authority RPC',
-  $$select public.enqueue_whatsapp_outbound(
-      'approved-template','candidate-a',null,
-      '51000000-0000-4000-8000-000000000001','14165550199',
-      'approved_template','WhatsApp approved-template dispatch',
-      '{"audit_version":1,"kind":"meta_approved_whatsapp_template","template":{"id":"82000000-0000-4000-8000-000000000001","sender_id":"81000000-0000-4000-8000-000000000001","meta_name":"candidate_intro","language":"en_US","version":1},"parameters":[]}',
-      '82000000-0000-4000-8000-000000000001','[]'::jsonb
-    )->>'status'$$,
-  'queued'
-);
-commit;
-SQL
-
-# Service ingestion remains valid, including signed STOP. The recovery claim
-# returns the exact persisted STOP text; browser-originated forgery was denied.
-psql_stdin <<'SQL'
-begin;
-select aria_conversation_authority_test.set_claims(null, 'service_role');
-set local role service_role;
-insert into public.messages_inbound(
-  id, workspace_id, channel, from_address, body, provider_id, whatsapp_sender_id
+insert into public.agent_conversations(
+  id, workspace_id, owner_id, spec_id, candidate_id, channel, provider_thread_key
 ) values (
-  '93000000-0000-4000-8000-000000000001',
-  '11111111-1111-4111-8111-111111111111',
-  'WhatsApp','14165550199','STOP','signed-stop',
-  '81000000-0000-4000-8000-000000000001'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'signed STOP remains claimable by the service worker',
-  $$select public.claim_whatsapp_inbound_processing(
-      '93000000-0000-4000-8000-000000000001',
-      '81000000-0000-4000-8000-000000000001'
-    )->>'body'$$,
-  'STOP'
-);
-commit;
-SQL
-
-# A composed row has no provider receipt and cannot establish conversation
-# authority. A provider-accepted sent row with an exact owner/spec binding can.
-psql_stdin <<'SQL'
-begin;
-select aria_conversation_authority_test.set_claims(null, 'service_role');
-set local role service_role;
-
-insert into public.messages_outbound(
-  id, workspace_id, owner_id, spec_id, candidate_id, seat_id, channel,
-  to_address, recipient_e164, type, body, status, dedupe_hash
-) values (
-  '92000000-0000-4000-8000-000000000001',
+  '95000000-0000-4000-8000-000000000001',
   '11111111-1111-4111-8111-111111111111',
   'a1000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000001',
-  'candidate-a','51000000-0000-4000-8000-000000000001',
-  'WhatsApp','14165550199','14165550199','candidate_reply',
-  'unaccepted draft','composed',repeat('c',64)
-);
-
-insert into public.messages_inbound(
-  id, workspace_id, channel, from_address, body, provider_id, whatsapp_sender_id
-) values (
-  '93000000-0000-4000-8000-000000000002',
-  '11111111-1111-4111-8111-111111111111',
-  'WhatsApp','14165550199','Tell me more','signed-normal',
-  '81000000-0000-4000-8000-000000000001'
-);
-
-select public.claim_whatsapp_inbound_processing(
-  '93000000-0000-4000-8000-000000000002',
-  '81000000-0000-4000-8000-000000000001'
-);
-select aria_conversation_authority_test.assert_scalar(
-  'unaccepted composed rows cannot establish conversation authority',
-  $$select public.resolve_whatsapp_inbound_conversation(
-      '93000000-0000-4000-8000-000000000002',
-      processing_claim_id
-    )->>'reason'
-    from public.messages_inbound
-    where id='93000000-0000-4000-8000-000000000002'$$,
-  'no-conversation'
+  'candidate-a','Email','<thread-a@example.test>'
 );
 
 insert into public.messages_outbound(
-  id, workspace_id, owner_id, spec_id, candidate_id, seat_id, channel,
-  to_address, recipient_e164, type, body, status, dedupe_hash,
+  id, workspace_id, owner_id, spec_id, conversation_id, candidate_id, seat_id, channel,
+  to_address, type, body, status, dedupe_hash,
   delivery_attempt_id, provider_message_id, sent_at
 ) values (
   '92000000-0000-4000-8000-000000000002',
   '11111111-1111-4111-8111-111111111111',
   'a1000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000001',
+  '95000000-0000-4000-8000-000000000001',
   'candidate-a','51000000-0000-4000-8000-000000000001',
-  'WhatsApp','14165550199','14165550199','candidate_reply',
+  'Email','candidate-a@example.test','candidate_reply',
   'provider accepted message','sent',repeat('d',64),
-  '94000000-0000-4000-8000-000000000001','meta-accepted-message',now()
+  '94000000-0000-4000-8000-000000000001','<accepted-a@example.test>',now()
+);
+
+insert into public.messages_inbound(
+  id, workspace_id, owner_id, conversation_id, candidate_id, channel, from_address, body, provider_id
+) values (
+  '93000000-0000-4000-8000-000000000002',
+  '11111111-1111-4111-8111-111111111111',
+  'a1000000-0000-4000-8000-000000000001',
+  '95000000-0000-4000-8000-000000000001',
+  'candidate-a','Email','candidate-a@example.test','Tell me more','<reply-a@example.test>'
 );
 
 select aria_conversation_authority_test.assert_scalar(
-  'provider receipt establishes exact owner and spec conversation authority',
-  $$select concat(
-      public.resolve_whatsapp_inbound_conversation(
-        '93000000-0000-4000-8000-000000000002',
-        processing_claim_id
-      )->>'owner_id',
-      ':',
-      public.resolve_whatsapp_inbound_conversation(
-        '93000000-0000-4000-8000-000000000002',
-        processing_claim_id
-      )->>'spec_id'
-    )
+  'the inbound reply carries the exact owner and conversation authority',
+  $$select concat(owner_id, ':', conversation_id)
     from public.messages_inbound
     where id='93000000-0000-4000-8000-000000000002'$$,
-  'a1000000-0000-4000-8000-000000000001:61000000-0000-4000-8000-000000000001'
+  'a1000000-0000-4000-8000-000000000001:95000000-0000-4000-8000-000000000001'
 );
 
 select aria_conversation_authority_test.assert_sqlstate(
@@ -442,7 +260,7 @@ select aria_conversation_authority_test.assert_sqlstate(
       'b1000000-0000-4000-8000-000000000001',
       '63000000-0000-4000-8000-000000000003',
       'candidate-forged','51000000-0000-4000-8000-000000000001',
-      'WhatsApp','14165550199','candidate_reply','foreign binding','composed',repeat('e',64)
+      'Email','candidate-forged@example.test','candidate_reply','foreign binding','composed',repeat('e',64)
     )$$,
   array['23503','23514']
 );
@@ -480,7 +298,7 @@ select aria_conversation_authority_test.assert_scalar(
   '1'
 );
 select aria_conversation_authority_test.assert_scalar(
-  'owner sees resolved inbound only, not ownerless signed STOP audit data',
+  'owner sees exactly their bound inbound reply',
   $$select count(*)::text from public.messages_inbound$$,
   '1'
 );
@@ -523,32 +341,30 @@ select aria_conversation_authority_test.assert_scalar(
 rollback;
 SQL
 
-# Re-applying the migration is a required contract. Trusted owner bindings and
-# service privileges must survive without multiplying or weakening authority.
-psql_stdin < supabase/migrations/0028_conversation_authority_hardening.sql >/dev/null
+# Trusted owner bindings and service privileges hold after the scenario.
 psql_stdin <<'SQL'
 select aria_conversation_authority_test.assert_scalar(
-  'migration reapply preserves the trusted conversation owner',
+  'the trusted conversation owner is preserved',
   $$select owner_id::text from public.agent_conversations$$,
   'a1000000-0000-4000-8000-000000000001'
 );
 select aria_conversation_authority_test.assert_scalar(
-  'authenticated retains no inbound insert privilege after reapply',
+  'authenticated retains no inbound insert privilege',
   $$select has_table_privilege('authenticated','public.messages_inbound','insert')::text$$,
   'false'
 );
 select aria_conversation_authority_test.assert_scalar(
-  'authenticated retains no outbound update privilege after reapply',
+  'authenticated retains no outbound update privilege',
   $$select has_table_privilege('authenticated','public.messages_outbound','update')::text$$,
   'false'
 );
 select aria_conversation_authority_test.assert_scalar(
-  'service retains inbound insert privilege after reapply',
+  'service retains inbound insert privilege',
   $$select has_table_privilege('service_role','public.messages_inbound','insert')::text$$,
   'true'
 );
 select aria_conversation_authority_test.assert_scalar(
-  'service retains outbound update privilege after reapply',
+  'service retains outbound update privilege',
   $$select has_table_privilege('service_role','public.messages_outbound','update')::text$$,
   'true'
 );

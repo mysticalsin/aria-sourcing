@@ -6,13 +6,13 @@ import {
   SENIORITY_LEVELS,
   URGENCY_LEVELS,
 } from "../types";
-import type { CampaignUpdate, HermesActions } from "./contracts";
+import type { CampaignUpdate, WorkspaceActions } from "./contracts";
 import type {
   Activity,
   AgentSkill,
   Campaign,
   Candidate,
-  HermesState,
+  WorkspaceState,
   JobAnalysis,
   MatchBreakdownItem,
   ScoringWeights,
@@ -21,7 +21,7 @@ import type {
 import { evaluateNeedReadiness } from "../needs/readiness";
 
 export type CampaignActions = Pick<
-  HermesActions,
+  WorkspaceActions,
   | "setActiveCampaign"
   | "createCampaignFromAnalysis"
   | "updateCampaign"
@@ -33,18 +33,18 @@ export type ActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 };
 
 export interface CampaignActionDependencies {
-  commit: (update: (state: HermesState) => HermesState) => boolean;
+  commit: (update: (state: WorkspaceState) => WorkspaceState) => boolean;
   buildCampaign: (
     jobAnalysis: JobAnalysis,
     meta: { hiringManager: string; hiringManagerEmail: string },
   ) => Campaign;
   makeActivity: (activity: ActivityDraft) => Activity;
   withActivity: (
-    state: HermesState,
+    state: WorkspaceState,
     activity: Activity,
     campaignId: string | null,
-  ) => HermesState;
-  recomputeMetrics: (state: HermesState, campaignId: string) => HermesState;
+  ) => WorkspaceState;
+  recomputeMetrics: (state: WorkspaceState, campaignId: string) => WorkspaceState;
   effectiveWeights: (
     weights: ScoringWeights,
     skills: AgentSkill[],
@@ -55,7 +55,7 @@ export interface CampaignActionDependencies {
     weights: ScoringWeights,
   ) => { score: number; breakdown: MatchBreakdownItem[] };
   campaignMutationAllowed: () => boolean;
-  currentState: () => HermesState | null;
+  currentState: () => WorkspaceState | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -257,7 +257,7 @@ export function createCampaignActions({
     if (!evaluateNeedReadiness(jobAnalysis).ready) return null;
     const campaign = buildCampaign(jobAnalysis, meta);
     const applied = commit((state) => {
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...state,
         campaigns: [campaign, ...state.campaigns],
         activeCampaignId: campaign.id,
@@ -294,7 +294,7 @@ export function createCampaignActions({
       if (!existing) return state;
 
       const merged: Campaign = { ...existing, ...editablePatch };
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...state,
         campaigns: state.campaigns.map((campaign) =>
           campaign.id === id ? merged : campaign,

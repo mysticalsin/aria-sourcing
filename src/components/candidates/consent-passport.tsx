@@ -23,12 +23,8 @@ interface ConsentBasis {
   tone: Tone;
 }
 
-/** Derives a source + lawful-basis pair from persisted provenance/source data.
- *  Referral and Talent Pool leads are modeled as
- *  consent-based (the person opted in / was introduced); everything else with
- *  a public sourceUrl is modeled as legitimate interest over public profile
- *  data; anything without a sourceUrl falls back to a generic sourced-outreach
- *  legitimate-interest basis. */
+/** Source provenance does not establish a contact basis. Display the same
+ * complete operator receipt that the outreach approval gate checks. */
 function deriveConsentBasis(
   candidate: Pick<
     Candidate,
@@ -40,46 +36,23 @@ function deriveConsentBasis(
     | "lawfulBasisSource"
   >,
 ): ConsentBasis {
-  if (candidate.provenance === "manual") {
-    const recordedBasis = recordedCandidateLawfulBasis(candidate);
-    if (recordedBasis === "consent") {
-      return {
-        sourceLabel: "Manual entry",
-        basisLabel: "Consent (operator recorded)",
-        tone: "violet",
-      };
-    }
-    if (recordedBasis === "legitimate_interest") {
-      return {
-        sourceLabel: "Manual entry",
-        basisLabel: "Legitimate interest (operator recorded)",
-        tone: "aqua",
-      };
-    }
+  const sourceLabel = candidate.provenance === "manual" ? "Manual entry" : candidate.sourcePlatform;
+  const recordedBasis = recordedCandidateLawfulBasis(candidate);
+  if (recordedBasis === "consent") {
     return {
-      sourceLabel: "Manual entry",
-      basisLabel: "Lawful basis not recorded",
-      tone: "warning",
+      sourceLabel,
+      basisLabel: "Consent (operator recorded)",
+      tone: "violet",
     };
   }
-  if (candidate.sourcePlatform === "Referral") {
-    return { sourceLabel: "Referral", basisLabel: "Consent (referral introduction)", tone: "violet" };
-  }
-  if (candidate.sourcePlatform === "Talent Pool") {
-    return { sourceLabel: "Talent pool", basisLabel: "Consent (opted-in pool)", tone: "violet" };
-  }
-  if (candidate.sourceUrl) {
+  if (recordedBasis === "legitimate_interest") {
     return {
-      sourceLabel: `${candidate.sourcePlatform} · public profile`,
-      basisLabel: "Legitimate interest (public data)",
+      sourceLabel,
+      basisLabel: "Legitimate interest (operator recorded)",
       tone: "aqua",
     };
   }
-  return {
-    sourceLabel: candidate.sourcePlatform,
-    basisLabel: "Legitimate interest (sourced outreach)",
-    tone: "aqua",
-  };
+  return { sourceLabel, basisLabel: "Lawful basis not recorded", tone: "warning" };
 }
 
 /** Small provenance chip for candidate rows — same derivation as the passport,

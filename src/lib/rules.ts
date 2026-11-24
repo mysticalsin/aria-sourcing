@@ -123,21 +123,13 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
 
   // LinkedIn assisted-manual: we cannot send automatically, but we can draft
   // the message and ask the operator to paste it on the candidate's profile.
-  if (message.channel === "SMS") {
-    const detail = "SMS delivery is disabled until recorded consent, opt-out, suppression, and durable dispatch controls are implemented.";
-    blockers.push(detail);
-    checks.push({ rule: "Channel policy", status: "block", detail });
-  } else if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
+  if (message.channel === "LinkedIn" && !candidate.linkedinUrl.trim()) {
     const detail = "LinkedIn profile URL is required to send a LinkedIn message.";
     blockers.push(detail);
     checks.push({ rule: "Contact info", status: "block", detail });
   } else if (message.channel === "Email" && !candidate.email.trim()) {
     // Mirror of the LinkedIn check above: an Email message needs somewhere to go.
     const detail = "Candidate has no email on file. An Email message requires one.";
-    blockers.push(detail);
-    checks.push({ rule: "Contact info", status: "block", detail });
-  } else if (message.channel === "WhatsApp" && !(candidate.phone ?? "").trim()) {
-    const detail = "Candidate has no phone number on file. A WhatsApp message requires one.";
     blockers.push(detail);
     checks.push({ rule: "Contact info", status: "block", detail });
   } else {
@@ -147,11 +139,7 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
       detail:
         message.channel === "LinkedIn"
           ? "LinkedIn profile URL on file."
-          : message.channel === "Email"
-            ? "Email address on file."
-            : message.channel === "WhatsApp"
-              ? "WhatsApp phone number on file."
-              : `${message.channel} channel: no contact-detail rule required.`,
+          : "Email address on file.",
     });
   }
 
@@ -230,6 +218,18 @@ export type CandidateDedupeIdentity = Pick<
   "email" | "linkedinUrl" | "githubUrl" | "sourceUrl" | "lastContactedAt"
 >;
 
+/** Provider links often differ only by tracking parameters, www or a trailing
+ * slash. Those variants must not create another person on a sourcing rerun. */
+export function candidateProfileIdentity(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return value.trim().toLowerCase();
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = url.pathname.replace(/\/+$/, "").toLowerCase();
+    return `${host}${path}${["linkedin.com", "github.com"].includes(host) ? "" : url.search}`;
+  } catch { return value.trim().toLowerCase(); }
+}
+
 export function dedupeCandidates(
   incoming: Candidate[],
   existing: CandidateDedupeIdentity[],
@@ -238,17 +238,17 @@ export function dedupeCandidates(
   const accepted: Candidate[] = [];
   const skipped: { name: string; reason: string }[] = [];
 
-  const seenEmail = new Set(existing.map((c) => c.email.toLowerCase()));
-  const seenLinkedin = new Set(existing.map((c) => c.linkedinUrl.toLowerCase()).filter(Boolean));
-  const seenGithub = new Set(existing.map((c) => c.githubUrl.toLowerCase()).filter(Boolean));
-  const seenSourceUrl = new Set(existing.map((c) => (c.sourceUrl ?? "").toLowerCase()).filter(Boolean));
+  const seenEmail = new Set(existing.map((c) => c.email.trim().toLowerCase()));
+  const seenLinkedin = new Set(existing.map((c) => candidateProfileIdentity(c.linkedinUrl)).filter(Boolean));
+  const seenGithub = new Set(existing.map((c) => candidateProfileIdentity(c.githubUrl)).filter(Boolean));
+  const seenSourceUrl = new Set(existing.map((c) => candidateProfileIdentity(c.sourceUrl ?? "")).filter(Boolean));
   const excluded = new Set(opts.excludedCompanies.map((c) => c.toLowerCase()));
 
   for (const cand of incoming) {
-    const email = cand.email.toLowerCase();
-    const li = cand.linkedinUrl.toLowerCase();
-    const gh = cand.githubUrl.toLowerCase();
-    const su = (cand.sourceUrl ?? "").toLowerCase();
+    const email = cand.email.trim().toLowerCase();
+    const li = candidateProfileIdentity(cand.linkedinUrl);
+    const gh = candidateProfileIdentity(cand.githubUrl);
+    const su = candidateProfileIdentity(cand.sourceUrl ?? "");
     const company = cand.currentCompany.toLowerCase();
 
     // Only treat a non-blank email as a dedupe key. Real sourced profiles (e.g.
@@ -321,7 +321,8 @@ export function campaignHealth(c: Campaign): CampaignHealth {
   if (c.status === "Filled") return { tone: "success", label: "Filled", detail: "Role closed." };
   if (m.sourced === 0)
     return { tone: "neutral", label: "Awaiting sourcing", detail: "No candidates sourced yet." };
-  if (m.contacted > 0 && m.replied / Math.max(1, m.contacted) < 0.08)
+  // A reply rate means something only after a few contacts.
+  if (m.contacted >= 5 && m.replied / m.contacted < 0.08)
     return { tone: "warning", label: "Low reply rate", detail: "Reply rate under 8%. Refresh the messaging." };
   if (m.interested > 0 && m.booked === 0)
     return { tone: "tangerine", label: "Bookings pending", detail: "Interested candidates awaiting booking." };
@@ -333,7 +334,10 @@ export function nextActionForCampaign(c: Campaign): string {
   const m = c.metrics;
   if (c.status === "Paused") return "Resume campaign to continue";
   if (m.sourced === 0) return "Source first batch";
-  if (m.sourced > m.contacted) return `Review ${m.sourced - m.contacted} drafts`;
+  if (m.sourced > m.contacted) {
+    const waiting = m.sourced - m.contacted;
+    return `Review ${waiting} new candidate${waiting === 1 ? "" : "s"}`;
+  }
   if (m.replied > m.interested + m.notInterested) return "Classify new replies";
   if (m.interested > m.booked) return `Book ${m.interested - m.booked} interested`;
   if (m.booked > 0 && m.interviewed < m.booked) return "Collect interview feedback";

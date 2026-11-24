@@ -30,7 +30,7 @@ mock.module("next/navigation", {
 });
 mock.module(moduleUrl("src/lib/store.ts"), {
   namedExports: {
-    useHermes: () => ({
+    useWorkspaceStatus: () => ({
       workspaceStatus,
       retryWorkspace: async () => undefined,
       retrySave: async () => undefined,
@@ -45,6 +45,12 @@ mock.module(moduleUrl("src/components/app/topbar.tsx"), {
 });
 mock.module(moduleUrl("src/components/app/onboarding.tsx"), {
   namedExports: { Onboarding: () => React.createElement("div", { "data-testid": "onboarding" }) },
+});
+mock.module(moduleUrl("src/components/tutorial/tutorial.tsx"), {
+  namedExports: {
+    TutorialProvider: ({ children }: { children: React.ReactNode }) => children,
+    useTutorial: () => ({ open: false, openTutorial: () => undefined }),
+  },
 });
 
 const { AppShell } = await import("../src/components/app/app-shell.tsx");

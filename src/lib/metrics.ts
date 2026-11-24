@@ -5,7 +5,7 @@ import type {
   CandidateStage,
   ClassifiedReply,
   FunnelPoint,
-  HermesState,
+  WorkspaceState,
   OutreachMessage,
 } from "./types";
 import { FUNNEL_STAGES } from "./types";
@@ -108,10 +108,13 @@ export interface RealFunnelFacts {
 export interface RealFunnelOptions {
   live: boolean;
   campaignId?: string;
+  /** Count approved dry-run sends as contacts. For clearly labelled demo
+   *  reporting only; canonical KPIs never set this. */
+  includeSimulatedSends?: boolean;
 }
 
 export type RealFunnelState = Pick<
-  HermesState,
+  WorkspaceState,
   "candidates" | "outreach" | "replies" | "bookings"
 >;
 
@@ -119,6 +122,13 @@ export function isRealSendFact(
   message: Pick<OutreachMessage, "dryRun" | "sentAt">,
 ): boolean {
   return message.dryRun === false && message.sentAt != null;
+}
+
+/** An approved send that the dry-run gate stopped before any provider call. */
+export function isSimulatedSendFact(
+  message: Pick<OutreachMessage, "dryRun" | "sentAt">,
+): boolean {
+  return message.dryRun === true && message.sentAt != null;
 }
 
 function candidatesInScope(
@@ -155,7 +165,7 @@ export function realFunnelFacts(
         (message) =>
           inCampaign(message.campaignId) &&
           eligibleCandidateIds.has(message.candidateId) &&
-          isRealSendFact(message),
+          (isRealSendFact(message) || (options.includeSimulatedSends === true && isSimulatedSendFact(message))),
       )
       .map((message) => message.candidateId),
   );
@@ -284,16 +294,21 @@ export interface GlobalKpis {
   timeToFirstInterviewHours: number | null;
   pendingApprovals: number;
   hotReplies: number;
+  /** Dry-run sends and their bookings, counted apart from the real figures
+   *  above so a demo can say "0 real, 35 simulated" instead of a bare 0. */
+  simulatedContacted: number;
+  simulatedBooked: number;
 }
 
 export function globalKpis(
   state: Pick<
-    HermesState,
+    WorkspaceState,
     "campaigns" | "candidates" | "outreach" | "replies" | "bookings" | "settings"
   >,
 ): GlobalKpis {
   const active = state.campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
   const facts = realFunnelFacts(state, { live: !state.settings.dryRunMode });
+  const withSimulated = realFunnelFacts(state, { live: !state.settings.dryRunMode, includeSimulatedSends: true });
   const candidateIds = new Set(facts.candidateIds);
   const cands = state.candidates.filter((c) => candidateIds.has(c.id));
   const interested = cands.filter(
@@ -312,6 +327,8 @@ export function globalKpis(
     totalCampaigns: state.campaigns.length,
     candidatesSourced: facts.sourced,
     contacted: facts.contacted,
+    simulatedContacted: withSimulated.contacted - facts.contacted,
+    simulatedBooked: withSimulated.booked - facts.booked,
     replyRate: facts.replyRate,
     interviewsBooked: facts.booked,
     interested,
@@ -332,6 +349,6 @@ export function globalKpis(
   };
 }
 
-export function candidatesForCampaign(state: HermesState, campaignId: string): Candidate[] {
+export function candidatesForCampaign(state: WorkspaceState, campaignId: string): Candidate[] {
   return state.candidates.filter((c) => c.campaignId === campaignId);
 }

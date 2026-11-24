@@ -1,6 +1,5 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -62,28 +61,7 @@ export function ScoreDistribution({
   scores: number[];
   height?: number;
 }) {
-  const signature = scores.join(",");
-  const data = useMemo(
-    () => scoreDistribution(signature.length === 0 ? [] : signature.split(",").map(Number)),
-    [signature],
-  );
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  const empty = scores.length === 0;
-  useLayoutEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const update = () => {
-      const rect = el.getBoundingClientRect();
-      setVisible(rect.width > 0 && rect.height > 0);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [empty]);
-
-  if (empty) {
+  if (scores.length === 0) {
     return (
       <div style={{ height }} className="flex items-center justify-center">
         <EmptyState
@@ -94,19 +72,20 @@ export function ScoreDistribution({
       </div>
     );
   }
+
+  const data = scoreDistribution(scores);
   const summary = data
     .map((point) => `${point.band} ${formatNumber(point.count)}`)
     .join(", ");
 
   return (
     <div
-      ref={boxRef}
       className="animate-fade-in"
       style={{ width: "100%", height }}
       role="img"
       aria-label={`Match score distribution: ${summary}`}
     >
-      {visible && <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid
             vertical={false}
@@ -124,7 +103,7 @@ export function ScoreDistribution({
             cursor={{ fill: "hsl(var(--ink) / 0.04)" }}
             content={<DistTooltip />}
           />
-          <Bar dataKey="count" radius={[8, 8, 0, 0]} maxBarSize={56} isAnimationActive animationDuration={180} animationEasing="ease-out">
+          <Bar dataKey="count" radius={[8, 8, 0, 0]} maxBarSize={56} isAnimationActive>
             {data.map((entry, index) => (
               <Cell
                 key={entry.band}
@@ -140,7 +119,7 @@ export function ScoreDistribution({
             />
           </Bar>
         </BarChart>
-      </ResponsiveContainer>}
+      </ResponsiveContainer>
     </div>
   );
 }

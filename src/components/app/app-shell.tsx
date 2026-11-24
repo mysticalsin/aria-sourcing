@@ -7,10 +7,12 @@ import { cn } from "@/lib/utils";
 import { ConfirmProvider } from "@/components/ui";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
-import { MOBILE_NAV } from "./nav";
+import { MOBILE_NAV, isNavActive } from "./nav";
+import { SectionTabs } from "./section-tabs";
 import { Onboarding } from "./onboarding";
+import { TutorialProvider } from "@/components/tutorial/tutorial";
 import { WorkspaceStatusPanel } from "./workspace-status-panel";
-import { useHermes } from "@/lib/store";
+import { useWorkspaceStatus } from "@/lib/store";
 import { workspaceBlocksProduct } from "@/lib/workspace-status";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -24,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; pathname: string }) {
-  const { workspaceStatus, retryWorkspace, retrySave } = useHermes();
+  const { workspaceStatus, retryWorkspace, retrySave } = useWorkspaceStatus();
 
   if (workspaceBlocksProduct(workspaceStatus)) {
     return (
@@ -38,6 +40,8 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
 
   return (
     <ConfirmProvider>
+    {/* Tutorial mode: opened from the menu only, never on its own. */}
+    <TutorialProvider>
     <div className="flex min-h-screen">
       <a href="#main-content" className="skip-link">
         Skip to content
@@ -45,18 +49,21 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10">
-          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+        <main id="main-content" className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-10 print:p-0">
+          <div className="mx-auto w-full max-w-[1400px]">
+            <SectionTabs pathname={pathname} />
+            {children}
+          </div>
         </main>
       </div>
 
       {/* Mobile bottom nav */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-violet/10 bg-paper/85 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden print:hidden"
         aria-label="Primary mobile"
       >
         {MOBILE_NAV.map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const active = isNavActive(item, pathname);
           const Icon = item.icon;
           return (
             <Link
@@ -78,6 +85,7 @@ function ProtectedAppShell({ children, pathname }: { children: React.ReactNode; 
       {/* First-run guided tour (shows once per browser) */}
       <Onboarding />
     </div>
+    </TutorialProvider>
     </ConfirmProvider>
   );
 }

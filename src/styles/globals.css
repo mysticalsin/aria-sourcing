@@ -2,8 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Carlito: the open, metric-compatible twin of Calibri (Mantu's brand face),
+   served from public/fonts so every machine renders the same text. SIL OFL 1.1,
+   see public/fonts/carlito/OFL.txt. Only 400 and 700 exist; 600/800 map to them. */
+@font-face {
+  font-family: "Carlito";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: "Carlito";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: "Carlito";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-ext-400-italic.woff2") format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: "Carlito";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Carlito";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Carlito";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/carlito/carlito-latin-400-italic.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
 /* ============================================================================
-   HERMES SOURCING — design tokens
+   ARIA SOURCING — design tokens
    Warm editorial canvas, high-contrast ink, confident accent system.
    All colors are HSL channels (no hsl() wrapper) so Tailwind can apply alpha.
    ========================================================================== */
@@ -45,9 +97,9 @@
      depend on a third-party font request. */
   --font-geist: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-garamond: "Iowan Old Style", "Baskerville", "Baskerville Old Face", "Times New Roman", serif;
-  /* Mantu Brand DNA: Calibri (Carlito open-source fallback), then system. */
-  --font-sans: "Calibri", "Carlito", var(--font-geist);
+  /* Mantu Brand DNA: Calibri metrics via self-hosted Carlito first, so text
+     renders the same on every OS; local Calibri and system faces follow. */
+  --font-sans: "Carlito", "Calibri", var(--font-geist);
   --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Fira Code",
     Menlo, Consolas, monospace;
   --ease-motion-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -87,11 +139,11 @@ body::before {
     radial-gradient(ellipse 80% 65% at 90% 108%, hsl(var(--electric) / 0.06) 0%, transparent 52%);
 }
 
-/* Accessible focus ring everywhere */
+/* Accessible focus ring everywhere. The outline follows each element's own
+   radius; forcing one here squared off every rounded field and button. */
 :focus-visible {
   outline: 2px solid hsl(var(--electric));
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Skip-to-content link */
@@ -325,6 +377,28 @@ body::before {
 }
 .status-live { animation: status-pulse 2s infinite; }
 
+/* Running sourcing search (components/run/sourcing-scan.tsx): the sweep
+   crosses the field every 2.8 s and each match lights as it passes. */
+@keyframes sourcing-scan-sweep {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(100%); }
+}
+@keyframes sourcing-scan-match {
+  0%, 100% { fill: hsl(var(--paper) / 0.2); }
+  6% { fill: hsl(var(--violet)); }
+  45% { fill: hsl(var(--violet) / 0.75); }
+}
+@keyframes sourcing-scan-beacon {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.sourcing-scan-sweep { animation: sourcing-scan-sweep 2.8s linear infinite; }
+.sourcing-scan-match {
+  fill: hsl(var(--paper) / 0.2);
+  animation: sourcing-scan-match 2.8s var(--ease-motion-out) infinite backwards;
+}
+.sourcing-scan-beacon { animation: sourcing-scan-beacon 1.4s ease-in-out infinite; }
+
 /* Hide scrollbar utility (for chip rows / tabs) */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -332,6 +406,16 @@ body::before {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* LinkedIn inbox: a sheen across a message on its way */
+@keyframes li-sending-sheen {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.li-sending-sheen {
+  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.3) 50%, transparent 80%);
+  animation: li-sending-sheen 1.3s var(--ease-motion-out) infinite;
 }
 
 /* Respect reduced motion globally */
@@ -361,13 +445,24 @@ body::before {
   .animate-bounce,
   .spin-slow,
   .status-live,
+  .sourcing-scan-beacon,
   .bot-glow,
-  .dot-typing span {
+  .dot-typing span,
+  .li-sending-sheen {
     animation: none !important;
   }
 
   .motion-progress-fill {
     transition-duration: 0ms !important;
+  }
+
+  /* Still frame: no sweep, the matches stay lit. */
+  .sourcing-scan-sweep {
+    display: none;
+  }
+  .sourcing-scan-match {
+    animation: none !important;
+    fill: hsl(var(--violet));
   }
 }
 
@@ -393,62 +488,16 @@ body::before {
   background: transparent;
 }
 
-/* ============================================================================
-   Cinematic login hero — scoped classes (used only on /login).
-   ========================================================================== */
-.font-garamond {
-  font-family: var(--font-garamond), "Times New Roman", serif;
-}
-
-.login-hero {
-  font-family: var(--font-geist), -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-.mobile-menu-glass {
-  background: rgba(10, 10, 10, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.liquid-glass {
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: none;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  position: relative;
-  overflow: hidden;
-}
-
-.liquid-glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.4px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0) 40%,
-    rgba(255, 255, 255, 0) 60%,
-    rgba(255, 255, 255, 0.15) 80%,
-    rgba(255, 255, 255, 0.45) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-.liquid-glass:hover {
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
-}
-
-.liquid-glass:active {
-  transform: scale(0.98);
+/* Printed reports (Exec "Download PDF"): plain white page, no app chrome. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .skip-link {
+    display: none !important;
+  }
 }

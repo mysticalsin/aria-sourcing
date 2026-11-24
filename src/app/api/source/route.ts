@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
 import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
+import { isSameOriginRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
@@ -17,7 +18,6 @@ import {
 } from "@/lib/sourcing/github";
 import { SOURCE_PLATFORMS } from "@/lib/types";
 import { ensureWebQueryScope, isWebSearchPlatform, extractLead, type WebLead } from "@/lib/sourcing/web-leads";
-import { envWithoutRecruiterCredentials, linkedInLeadsForSearch } from "@/lib/sourcing/linkedin-recruiter";
 import { runWebTool } from "@/lib/ai/web-tools";
 import { buildSeedState } from "@/lib/seed";
 import { clearDiscoveryCriteria, clearIdentityResolution, clearProviderProbe } from "@/lib/sourcing/provider-egress";
@@ -68,8 +68,7 @@ function publicDemoSourceDenied(req: NextRequest): Response | null {
 
 function liveOriginDenied(req: NextRequest): Response | null {
   if (!supabaseEnabled) return null;
-  const origin = req.headers.get("origin");
-  if (origin === req.nextUrl.origin) return null;
+  if (isSameOriginRequest(req)) return null;
   return NextResponse.json(
     { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin sourcing is not allowed." },
     { status: 403 },
@@ -184,22 +183,6 @@ export async function POST(req: NextRequest) {
     }
     const content = result.content as { results?: { title: string; url: string; snippet: string }[] } | undefined;
     const hits = (content?.results ?? []).slice(0, count);
-    if (platform === "LinkedIn") {
-      // Only the demo path reaches here (live search returns 409 above), so the
-      // partner Recruiter token is never spent on an unauthenticated request.
-      const linkedIn = await linkedInLeadsForSearch(
-        { query: scopedQuery, count, publicHits: hits },
-        envWithoutRecruiterCredentials(process.env),
-      );
-      return NextResponse.json({
-        ok: true,
-        source: "web",
-        platform,
-        leads: linkedIn.leads,
-        recruiter: linkedIn.recruiter,
-        ...(linkedIn.error ? { error: linkedIn.error } : {}),
-      });
-    }
     const leads: WebLead[] = hits.map((h) => extractLead(h, platform));
     return NextResponse.json({ ok: true, source: "web", platform, leads });
   }

@@ -20,7 +20,9 @@ import {
 assert.deepEqual(settingsSectionsForTab("ai"), ["14", "15", "16", "17", "19"]);
 assert.equal(settingsDefaultSectionForTab("ai"), "14");
 assert.equal(settingsDefaultSectionForTab("integrations"), "04");
-assert.equal(settingsSectionsForTab("integrations").length, 1);
+assert.equal(settingsSectionsForTab("integrations").length, 2);
+assert.deepEqual(settingsSectionsForTab("integrations"), ["04", "20"]);
+assert.equal(settingsSectionFromHash("#linkedin"), "20");
 assert.deepEqual(settingsSectionsForTab("fleet"), ["03", "06", "09", "18"]);
 
 assert.equal(settingsSectionFromHash("email-connections-panel"), "04");
@@ -83,6 +85,7 @@ assert.equal(settingsNeighborSection("ai", "19", "next"), "14", "wraps");
 assert.equal(settingsNeighborSection("ai", "14", "prev"), "19", "wraps up");
 assert.equal(settingsNeighborSection("ai", "15", "first"), "14");
 assert.equal(settingsNeighborSection("ai", "15", "last"), "19");
-assert.equal(settingsNeighborSection("integrations", "04", "next"), "04");
+assert.equal(settingsNeighborSection("integrations", "04", "next"), "20");
+assert.equal(settingsNeighborSection("integrations", "20", "next"), "04", "wraps");
 
 console.log("settings-accordion: ok");

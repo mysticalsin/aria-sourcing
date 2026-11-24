@@ -1,0 +1,364 @@
+import { mock } from "node:test";
+import { NextRequest } from "next/server";
+import { buildSeedState } from "../src/lib/seed";
+import { createProcessEnvScope } from "./helpers/process-env.mts";
+
+let pass = 0;
+let fail = 0;
+function ok(name: string, condition: boolean) {
+  if (condition) pass += 1;
+  else {
+    fail += 1;
+    console.log("FAIL:", name);
+  }
+}
+
+const envScope = createProcessEnvScope([
+  "OPENAI_API_KEY",
+  "NODE_ENV",
+]);
+envScope.set({
+  OPENAI_API_KEY: undefined,
+  NODE_ENV: "test",
+});
+
+let role: "viewer" | "member" | "admin" = "viewer";
+let upstreamCalls = 0;
+let toolLoopCalls = 0;
+let vaultProvider = "OpenAI";
+let agentSpecAvailable = true;
+let runPersistenceFails = false;
+let agentSpecChannels = ["Email"];
+let agentSpecGuardrails: Record<string, unknown> = { autopilot: false, canary_remaining: 5 };
+let agentSpecOwnerId = "user-1";
+let agentSpecReadCount = 0;
+let agentSpecRemainsActive = true;
+const resolverCalls: Array<{ id?: string; provider?: string }> = [];
+const serviceReadTables: string[] = [];
+const moduleUrl = (path: string) => new URL(`../${path}`, import.meta.url).href;
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const agentSpecId = "22222222-2222-4222-8222-222222222222";
+const agentRunId = "33333333-3333-4333-8333-333333333333";
+const sourcingSeed = buildSeedState();
+const sourcingCampaign = {
+  ...sourcingSeed.campaigns[0],
+  id: "campaign-1",
+  status: "Sourcing" as const,
+};
+const sourcingWorkspaceState = {
+  campaigns: [sourcingCampaign],
+  candidates: sourcingSeed.candidates.map((candidate) => ({
+    ...candidate,
+    campaignId: "unrelated-campaign",
+  })),
+  settings: {
+    ...sourcingSeed.settings,
+    llmProviders: [{
+      id: "provider-openai",
+      kind: "OpenAI",
+      label: "Approved OpenAI",
+      apiKeyId: "11111111-1111-4111-8111-111111111111",
+      enabled: true,
+      isDefault: true,
+    }],
+    savedModels: [{
+      id: "model-openai-sourcing",
+      providerId: "provider-openai",
+      modelName: "gpt-4o-mini",
+      label: "Approved sourcing model",
+      enabled: true,
+      defaultForTask: ["sourcing"],
+    }],
+    defaultModels: { sourcing: "model-openai-sourcing" },
+  },
+};
+
+mock.module("server-only", { namedExports: {} });
+
+const session = {
+  auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
+  rpc: async (name: string) => ({
+    data: name === "current_profile_role" ? role : workspaceId,
+    error: null,
+  }),
+  from: (table: string) => {
+    const specReadAllowed = agentSpecReadCount++ === 0 || agentSpecRemainsActive;
+    const query: any = {
+      insert: () => query,
+      update: () => query,
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({
+        data: table === "workspace_state"
+          ? { state: sourcingWorkspaceState, updated_at: "2026-07-13T19:00:00.000Z" }
+          : table === "agent_specs" && agentSpecAvailable && specReadAllowed
+            ? {
+              id: agentSpecId,
+              workspace_id: workspaceId,
+              owner_id: agentSpecOwnerId,
+              role_brief: { title: "Platform Engineer", skills: ["TypeScript"] },
+              channels: agentSpecChannels,
+              guardrails: agentSpecGuardrails,
+              status: "active",
+              }
+            : null,
+        error: null,
+      }),
+    };
+    return query;
+  },
+};
+
+const service = {
+  rpc: async (name: string) => ({
+    data: name === "create_agent_run_with_memory_context" && !runPersistenceFails ? agentRunId : null,
+    error: name === "create_agent_run_with_memory_context" && runPersistenceFails
+      ? { message: "synthetic persistence failure" }
+      : null,
+  }),
+  from: (table: string) => {
+    if (["agent_run_memory_context", "agent_memories", "api_keys"].includes(table)) {
+      serviceReadTables.push(table);
+    }
+    let updated = false;
+    const query: any = {
+      insert: () => query,
+      update: (value: Record<string, unknown>) => {
+        updated = true;
+        if (table === "agent_runs" && value.state_json) serviceReadTables.push("runtime-policy-snapshot");
+        return query;
+      },
+      select: () => query,
+      eq: () => query,
+      is: () => query,
+      or: () => query,
+      order: () => query,
+      limit: () => query,
+      maybeSingle: async () => ({ data: table === "agent_runs" && updated ? { id: agentRunId } : null, error: null }),
+    };
+    return query;
+  },
+};
+
+mock.module(moduleUrl("src/lib/supabase/config.ts"), {
+  namedExports: {
+    DEMO_COOKIE_NAME: "aria_demo",
+    demoLoginEnabled: false,
+    prodFailClosed: () => null,
+    supabaseEnabled: true,
+  },
+});
+mock.module(moduleUrl("src/lib/supabase/server.ts"), {
+  namedExports: {
+    getServerSupabase: async () => session,
+    getServiceSupabase: () => service,
+    requireAdmin: async () => ({ ok: false, response: new Response(null, { status: 403 }) }),
+  },
+});
+mock.module(moduleUrl("src/lib/ai/vault-secret.ts"), {
+  namedExports: {
+    resolveVaultSecret: async (id?: string, provider?: string) => {
+      resolverCalls.push({ id, provider });
+      return provider === vaultProvider ? "provider-bound-workspace-secret" : "";
+    },
+  },
+});
+mock.module(moduleUrl("src/lib/ai/tool-loop.ts"), {
+  namedExports: {
+    runAnthropicWithTools: async () => {
+      toolLoopCalls += 1;
+      return { ok: true, text: '{"drafts":[]}' };
+    },
+    runOpenAiWithTools: async (args: { servers?: Array<{ run?: (name: string, input: Record<string, unknown>) => Promise<unknown> }> }) => {
+      toolLoopCalls += 1;
+      if (args.servers?.[0]?.run) {
+        await args.servers[0].run("search_candidates", {
+          platform: "GitHub",
+          query: sourcingCampaign.sourcingStrategy.githubQueries[0]?.query,
+          count: 1,
+        });
+      }
+      return { ok: true, text: '{"drafts":[]}' };
+    },
+  },
+});
+mock.module(moduleUrl("src/lib/ai/sourcing-tools.ts"), {
+  namedExports: {
+    SOURCING_TOOL_DEFS: [{ name: "search_candidates", description: "test" }],
+    makeSourcingToolRunner: () => {
+      const executions: Array<Record<string, unknown>> = [];
+      return {
+        run: async (_name: string, input: { platform?: string; query?: string }) => {
+          executions.push({
+            platform: String(input.platform ?? ""),
+            query: String(input.query ?? ""),
+            ok: true,
+            candidateCount: 0,
+            skippedCount: 0,
+          });
+          return { ok: true, content: { found: [] } };
+        },
+        getFound: () => [],
+        getExecutions: () => executions,
+      };
+    },
+  },
+});
+mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
+  namedExports: {
+    beginSourcingRun: async () => ({
+      status: "claimed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      roleFingerprint: "a".repeat(64),
+      lessonsEnabled: false,
+    }),
+    listPromotedSourcingLessons: async () => ({ status: "learning_disabled", lessons: [] }),
+    completeSourcingRun: async () => ({
+      status: "completed",
+      runId: "55555555-5555-4555-8555-555555555555",
+      queryCount: 1,
+      candidateCount: 0,
+      receipts: [],
+    }),
+    failSourcingRun: async () => true,
+  },
+});
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async () => {
+  upstreamCalls += 1;
+  return new Response(JSON.stringify({ choices: [{ message: { content: "provider answer" } }] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}) as typeof fetch;
+
+try {
+  const aiChatRoute = await import("../src/app/api/ai/chat/route");
+  const sourcingRoute = await import("../src/app/api/sourcing-agent/route");
+  const aiChatRequest = (provider = "openai", overrides: Record<string, unknown> = {}) =>
+    new NextRequest("http://localhost/api/ai/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": crypto.randomUUID(), origin: "http://localhost" },
+      body: JSON.stringify({
+        task: "chat",
+        prompt: "Confidential candidate context",
+        provider,
+        ...(provider === "none" ? {} : { model: "gpt-4o-mini", apiKeyId: "11111111-1111-4111-8111-111111111111" }),
+        ...overrides,
+      }),
+    });
+  const campaign = {
+    id: "campaign-1",
+    jobAnalysis: { title: "Platform Engineer", skills: ["TypeScript"] },
+    scoringWeights: {},
+  };
+  const sourcingRequest = () =>
+    new NextRequest("http://localhost/api/sourcing-agent", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost",
+        "x-forwarded-for": crypto.randomUUID(),
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        campaignId: sourcingCampaign.id,
+        count: 1,
+      }),
+    });
+  const resetCalls = () => {
+    resolverCalls.length = 0;
+    upstreamCalls = 0;
+    toolLoopCalls = 0;
+    serviceReadTables.length = 0;
+    agentSpecReadCount = 0;
+    agentSpecRemainsActive = true;
+  };
+
+  const viewerResponse = await aiChatRoute.POST(aiChatRequest());
+  ok("viewer cannot spend a cloud provider key through chat", viewerResponse.status === 403);
+  ok("viewer denial happens before vault resolution or egress", resolverCalls.length === 0 && upstreamCalls === 0);
+
+  role = "member";
+  vaultProvider = "OpenAI";
+  resetCalls();
+  const memberResponse = await aiChatRoute.POST(aiChatRequest());
+  ok("member cannot choose a live cloud provider through chat", memberResponse.status === 403);
+  ok(
+    "member cloud-chat denial happens before vault resolution or egress",
+    resolverCalls.length === 0 && upstreamCalls === 0,
+  );
+
+  resetCalls();
+  const noProviderResponse = await aiChatRoute.POST(aiChatRequest("none"));
+  ok("a member without a provider gets the mock answer, not a 403", noProviderResponse.status === 200);
+  ok("a request without a provider resolves no cloud key", resolverCalls.length === 0 && upstreamCalls === 0);
+
+  role = "admin";
+  vaultProvider = "OpenAI";
+  resetCalls();
+  const adminResponse = await aiChatRoute.POST(aiChatRequest());
+  const adminBody = (await adminResponse.json()) as { ok?: boolean };
+  ok("admin can execute cloud chat with a matching valid key", adminResponse.status === 200 && adminBody.ok === true);
+  ok(
+    "admin cloud chat binds the vault key before one provider call",
+    resolverCalls.some((call) => call.provider === "OpenAI") && upstreamCalls === 1,
+  );
+
+  resetCalls();
+  const localChat = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  ok("admin can draft with a keyless local model tag", localChat.status === 200 && (await localChat.json()).ok === true);
+  ok("keyless local drafting does not consult the vault", resolverCalls.length === 0 && upstreamCalls === 1);
+  resetCalls();
+  const unsafeLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
+  ok("local drafting blocks metadata URL before egress", unsafeLocal.status === 400 && upstreamCalls === 0 && resolverCalls.length === 0);
+  role = "member";
+  const memberLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
+  ok("keyless local drafting retains admin authority", memberLocal.status === 403 && upstreamCalls === 0);
+  role = "admin";
+
+  vaultProvider = "Anthropic";
+  resetCalls();
+  const mismatchResponse = await aiChatRoute.POST(aiChatRequest());
+  ok("admin cross-provider key mismatch fails closed", mismatchResponse.status === 403);
+  ok(
+    "cross-provider cloud chat makes zero provider calls",
+    resolverCalls.some((call) => call.provider === "OpenAI") && upstreamCalls === 0,
+  );
+
+  role = "member";
+  vaultProvider = "OpenAI";
+  resetCalls();
+  const memberSourcing = await sourcingRoute.POST(sourcingRequest());
+  const memberSourcingBody = (await memberSourcing.json()) as { ok?: boolean };
+  ok(
+    "member with source permission can run server-configured cloud sourcing",
+    memberSourcing.status === 200 && memberSourcingBody.ok === true,
+  );
+  ok(
+    "member sourcing uses only the server-selected workspace key and model",
+    resolverCalls.some((call) => call.provider === "OpenAI") && toolLoopCalls === 1 && upstreamCalls === 0,
+  );
+
+  role = "admin";
+  resetCalls();
+  const adminSourcing = await sourcingRoute.POST(sourcingRequest());
+  const adminSourcingBody = (await adminSourcing.json()) as { ok?: boolean };
+  ok("admin can run the live cloud sourcing agent", adminSourcing.status === 200 && adminSourcingBody.ok === true);
+  ok(
+    "admin sourcing binds its key before one model call",
+    resolverCalls.some((call) => call.provider === "OpenAI") && toolLoopCalls === 1,
+  );
+
+  vaultProvider = "Anthropic";
+  resetCalls();
+  const mismatchSourcing = await sourcingRoute.POST(sourcingRequest());
+  ok("sourcing cross-provider key mismatch fails closed before model egress", mismatchSourcing.status === 403 && toolLoopCalls === 0);
+
+} finally {
+  globalThis.fetch = originalFetch;
+  envScope.restore();
+}
+
+console.log(`RESULT ai-chat-authority: ${pass} passed, ${fail} failed`);
+if (fail > 0) process.exitCode = 1;

@@ -10,7 +10,6 @@ export type ReadinessProbes = {
   database: () => Promise<boolean>;
   auth: () => Promise<boolean>;
   queue: () => Promise<boolean>;
-  agentFrameworks: () => Promise<boolean>;
   migration: () => Promise<MigrationState | null>;
 };
 
@@ -20,15 +19,6 @@ export type ReadinessInput = {
   expectedMigrationSha: string;
   expectedMigrationCount: number;
   expectedLedgerSha256: string;
-  agentFrameworksRequired: boolean;
-  /**
-   * True when HERMES_API_URL is set to a value the SSRF allow-list will refuse.
-   * The runtime is then unreachable and every call silently falls back to the
-   * deterministic mock, so the deployment must fail readiness rather than look
-   * healthy. False both when Hermes is unconfigured (feature off) and when it is
-   * configured correctly.
-   */
-  hermesRuntimeMisconfigured: boolean;
 };
 
 async function booleanProbe(probe: () => Promise<boolean>) {
@@ -56,11 +46,10 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     input.expectedMigrationCount > 0 &&
     /^[0-9a-f]{64}$/.test(input.expectedLedgerSha256);
 
-  const [database, auth, queue, agentFrameworks, migration] = await Promise.all([
+  const [database, auth, queue, migration] = await Promise.all([
     booleanProbe(probes.database),
     booleanProbe(probes.auth),
     booleanProbe(probes.queue),
-    input.agentFrameworksRequired ? booleanProbe(probes.agentFrameworks) : Promise.resolve(true),
     migrationProbe(probes.migration),
   ]);
 
@@ -69,9 +58,7 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
     migration.latest.sha256 === input.expectedMigrationSha &&
     migration.count === input.expectedMigrationCount &&
     migration.ledgerSha256 === input.expectedLedgerSha256;
-  const hermesRuntime = !input.hermesRuntimeMisconfigured;
-  const ok =
-    metadata && database && auth && queue && agentFrameworks && migrationMatches && hermesRuntime;
+  const ok = metadata && database && auth && queue && migrationMatches;
 
   return {
     ok,
@@ -82,8 +69,6 @@ export async function evaluateReadiness(input: ReadinessInput, probes: Readiness
       database,
       auth,
       queue,
-      agentFrameworks,
-      hermesRuntime,
       migration: migrationMatches,
       releaseIdentity: metadata,
     },

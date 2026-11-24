@@ -2,7 +2,7 @@
   "goal_id": "goal-2026-07-09-msourcing-production-ready",
   "title": "MSourcing production-ready + enterprise-ready with real multi-platform sourcing including LinkedIn API",
   "created_at": "2026-07-09T21:34:46+00:00",
-  "created_by": "tony.walteur@gmail.com",
+  "created_by": "owner@example.com",
   "deadline": "2026-07-16T18:00:00-04:00",
   "deadline_note": "Self-imposed tracking date. Tony verbatim: 'What ever times you need to have a real full built that any senior full stack dev can read and fully understand I need it to be the best and most entreprise ready code. No spagetti code. Use Codex to chanllenge yourself' \u2014 quality over calendar.",
   "outcome_criterion": "All three gates YES: (1) tsc + lint + tests + build all green; (2) live E2E proof \u2014 real candidates returned from >=2 platforms including LinkedIn via API, real compliant approved outreach sent, zero mock/demo data in the core sourcing path; (3) Codex adversarial architecture/readability review of the full repo ends 'VERDICT: SHIP'. Final sign-off: Tony. AND (4) Owner acceptance path: Tony pastes a real need (copy-pasted email) into intake, the sourcing loop starts, agents run, and real candidates fitting the request are returned to him \u2014 no manual developer intervention.",
@@ -13,7 +13,7 @@
   ],
   "stakeholders": [
     {
-      "name": "Tony Walteur",
+      "name": "Workspace owner",
       "role": "owner/builder",
       "notify_on": [
         "milestone_done",
@@ -36,7 +36,8 @@
       "note": "compliance milestones (consent, suppression, retention) tracked as obligations"
     }
   ],
-  "status": "IN_PROGRESS",
+  "status": "ABANDONED",
+  "status_note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md): Fly/Vercel deploy, the autonomous sourcing loop and WhatsApp were removed; LinkedIn via API is not pursued. Owner dropped Vercel on 2026-11-03 (self-host later). Open milestones m6/m8/m11/m12 set to ABANDONED.",
   "status_history": [
     {
       "status": "CAPTURED",
@@ -53,6 +54,11 @@
     {
       "status": "IN_PROGRESS",
       "at": "2026-07-10T02:34:38+00:00"
+    },
+    {
+      "status": "ABANDONED",
+      "at": "2026-11-03T00:00:00Z",
+      "note": "Superseded by 2026-10-26 demo cleanup scope reset (.scratch/demo-cleanup/spec.md)."
     }
   ],
   "milestones": [
@@ -130,7 +136,7 @@
       "depends_on": [
         "m2"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m7",
@@ -155,7 +161,7 @@
         "m3",
         "m5"
       ],
-      "status": "BLOCKED",
+      "status": "ABANDONED",
       "blocked_on": "Owner Fly.io login (flyctl auth login) \u2014 authentication only Tony can provide; all prep done (flyctl installed, prod JWT/anon/service/encryption/cron secrets generated + gitignored, code pushed to main ed002dc)."
     },
     {
@@ -195,7 +201,7 @@
         "m8",
         "m10"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m12",
@@ -206,7 +212,7 @@
       "depends_on": [
         "m11"
       ],
-      "status": "PENDING"
+      "status": "ABANDONED"
     },
     {
       "id": "m13",

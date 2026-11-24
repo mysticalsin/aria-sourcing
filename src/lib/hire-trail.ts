@@ -1,5 +1,5 @@
 import { withStage } from "@/lib/metrics";
-import type { Activity, CampaignStatus, HermesState } from "@/lib/types";
+import type { Activity, CampaignStatus, WorkspaceState } from "@/lib/types";
 
 /**
  * Facts already returned by one hire. Recording them does not call Odoo,
@@ -121,9 +121,9 @@ export function hireTrailTitle(candidateName: string): string {
  * status when the connector already closed it. A repeated trail is a no-op.
  */
 export function applyHireTrail(
-  state: HermesState,
+  state: WorkspaceState,
   input: { candidateId: string; trail: HireTrail; activityId: string },
-): HermesState {
+): WorkspaceState {
   const candidate = state.candidates.find((item) => item.id === input.candidateId);
   if (!candidate) return state;
   const title = hireTrailTitle(candidate.name);

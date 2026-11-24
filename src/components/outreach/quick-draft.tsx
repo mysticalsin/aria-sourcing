@@ -99,7 +99,7 @@ export function QuickDraft() {
         </div>
 
         {/* Controls */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Candidate" htmlFor="qd-candidate">
             <Select
               id="qd-candidate"

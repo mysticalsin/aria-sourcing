@@ -30,7 +30,7 @@ ok(
 const workspaceSource = readFileSync(new URL("../src/lib/supabase/workspace.ts", import.meta.url), "utf8");
 ok("workspace load resolves current_profile_role", /rpc\("current_profile_role"\)/.test(workspaceSource));
 
-const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const storeSource = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const integrationsSource = readFileSync(new URL("../src/lib/integrations.ts", import.meta.url), "utf8");
 ok("live hydration applies the profile role", /applyAuthoritativeRole/.test(storeSource));
 ok(
@@ -41,7 +41,7 @@ ok(
 );
 ok(
   "a successful empty live workspace is ready and uses the observable save queue",
-  /remote\.state \? normalizeHermesState\(remote\.state\) : buildLiveEmptyState\(\)/.test(storeSource) &&
+  /remote\.state \? normalizeWorkspaceState\(remote\.state\) : buildLiveEmptyState\(\)/.test(storeSource) &&
     /if \(remote\.state\) \{[\s\S]{0,180}skipNextPersist\.current = true;[\s\S]{0,180}skipPersistSnapshot\.current = next;[\s\S]{0,80}\}/.test(storeSource) &&
     /queuedRemoteSnapshot\.current = state/.test(storeSource) &&
     /createFailedWorkspaceSave/.test(storeSource),

@@ -1,4 +1,4 @@
-import type { AgentSeat, HermesState } from "@/lib/types";
+import type { AgentSeat, WorkspaceState } from "@/lib/types";
 import { agentActivity } from "@/lib/floor";
 import type { AgentEvent } from "@/lib/agent-events";
 import type { SoundKind } from "@/lib/sound";
@@ -29,8 +29,7 @@ export interface OfficeAgent {
 
 /**
  * The live, mutated-in-place render record. Characters read their own entry
- * from a shared ref each frame (no React re-render), exactly like the hermes
- * AgentsLayer pattern.
+ * from a shared ref each frame (no React re-render).
  */
 export interface RenderAgent3D extends OfficeAgent {
   x: number;
@@ -159,7 +158,7 @@ const BUSY_STATES = new Set(["sourcing", "outreach", "booking", "warming"]);
  */
 export function seatsToOfficeAgents(
   seats: AgentSeat[],
-  state: HermesState,
+  state: WorkspaceState,
 ): OfficeAgent[] {
   return seats.map((seat, index) => {
     const activity = agentActivity(seat, state);

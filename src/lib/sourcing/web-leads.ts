@@ -22,7 +22,8 @@ export interface WebLead {
   company: string;
   url: string;
   snippet: string;
-  /** Only when the result text itself names a place. Never guessed. */
+  /** Only when the result text itself names a place ("Greater Paris
+   *  Metropolitan Region", "Location: Lyon"); never guessed. */
   location?: string;
 }
 
@@ -84,25 +85,6 @@ function nameFromSlug(url: string): string {
   }
 }
 
-/** An https linkedin.com /in/ profile with no credentials or port. Anything else is not a profile link. */
-export function isPublicLinkedInProfileUrl(value: string | undefined | null): boolean {
-  if (!value) return false;
-  try {
-    const url = new URL(value.trim());
-    const host = url.hostname.toLowerCase();
-    return (
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      !url.port &&
-      (host === "linkedin.com" || host.endsWith(".linkedin.com")) &&
-      url.pathname.startsWith("/in/")
-    );
-  } catch {
-    return false;
-  }
-}
-
 /** A raw url-slug ("jane-doe-4471"), not prose — prefer the title-cased slug over this. */
 function looksLikeSlug(s: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(s);
@@ -137,11 +119,14 @@ export function extractLead(hit: SearchHit, platform: WebSearchPlatform): WebLea
     company = title;
     title = "";
   }
+  // "Senior Engineer at Acme" / "Ingénieur chez Acme"
   const atCompany = !company ? /^(.+?)\s+(?:at|chez|@)\s+(.+)$/i.exec(title) : null;
   if (atCompany) {
     title = atCompany[1]!.trim();
     company = atCompany[2]!.trim();
   }
+  // LinkedIn puts the member's location where a company would be when the
+  // profile shows no employer: keep it as a location, not a company.
   let location = "";
   if (company && looksLikeLocation(company)) {
     location = company;
@@ -151,19 +136,25 @@ export function extractLead(hit: SearchHit, platform: WebSearchPlatform): WebLea
     location ||= title;
     title = "";
   }
+  // A bio sentence in the headline slot ("As an expert in ... · Location:
+  // Paris.") is not a job title; its stated location still counts.
   if (title && (/^(?:i|i'm|i am|my|we|as an?)\b/i.test(title) || title.length > 100 || /\blocation\s*:/i.test(title))) {
     location ||= locationFromText(title);
     title = "";
   }
   const snippet = cleanSnippet(hit.snippet);
   location ||= locationFromText(snippet);
+  // No headline in the title: use the snippet's first sentence only when it
+  // reads like a job title; a bio sentence or a list of "similar profiles" is
+  // not a headline.
   if (!title) title = headlineFromSnippet(snippet);
   const lead: WebLead = { name, title, company, url: hit.url, snippet: snippet.slice(0, 300) };
   if (location) lead.location = location.slice(0, 120);
   return lead;
 }
 
-/** Search-result text without markdown headings and the "similar profiles" tail. */
+/** Search-result text without markdown headings, bullets, emoji and the
+ *  "Other similar profiles" block LinkedIn appends to a public page. */
 export function cleanSnippet(text: string): string {
   return text
     .split(/#{1,6}\s*(?:other similar profiles|people also viewed|explore more posts)/i)[0]!
@@ -189,9 +180,11 @@ export function looksLikeLocation(text: string): boolean {
   if (!t || t.length > 80 || looksLikeJobTitle(t)) return false;
   if (/\bgreater\s+\S.*\b(?:area|region)\b|\bmetropolitan\b|[îi]le-de-france|\br[ée]gion(?!\p{L})/iu.test(t)) return true;
   if (/^[\p{L} .'-]+\s+area$/iu.test(t)) return true;
+  // "City, Region, Country" or "City, Country" ending with a known country.
   return /^[\p{L} .'-]+(?:,\s*[\p{L} .'-]+){1,2}$/u.test(t) && COUNTRIES.test(t.split(",").pop()!);
 }
 
+/** A place the result text states outright: "Location: Paris". */
 function locationFromText(text: string): string {
   const stated = /\b(?:location|localisation|lieu)\s*:\s*([\p{L} '-]+(?:,\s*[\p{L} '-]+){0,2})/iu.exec(text);
   if (stated) return stated[1]!.trim().replace(/[.\s]+$/, "");
@@ -199,6 +192,7 @@ function locationFromText(text: string): string {
   return segment ?? "";
 }
 
+/** Job-title vocabulary (English and French) that a company name rarely contains. */
 const JOB_TITLE_WORDS =
   /\b(?:engineer|developer|programmer|architect|manager|lead|head of|director|consultant|analyst|scientist|designer|devops|sre|administrator|specialist|officer|cto|ceo|cfo|coo|cio|vp|founder|co-founder|recruiter|intern|student|freelance|freelancer|expert|technician|coordinator|product owner|scrum master|tester|ing[ée]nieure?|d[ée]veloppeu(?:r|se)|chef de projet|responsable|directeur|directrice|architecte|stagiaire|alternante?|technicienne?|charg[ée]e? de)\b/i;
 

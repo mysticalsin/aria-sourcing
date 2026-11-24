@@ -1,11 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ShieldCheck } from "lucide-react";
 import { Badge, SkeletonCard } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
-import { RoiCalculator } from "@/components/trust/roi-calculator";
 import { CompliancePosture } from "@/components/trust/compliance-posture";
 import { useHydrated } from "@/lib/store";
+
+const RoiCalculator = dynamic(() => import("@/components/trust/roi-calculator").then((mod) => mod.RoiCalculator), {
+  ssr: false,
+  loading: () => <SkeletonCard className="h-[420px]" />,
+});
 
 /* ============================================================================
    4.3 Trust & ROI Proof Center — the page a buyer signs on.
@@ -24,12 +29,12 @@ export default function TrustPage() {
   return (
     <div className="animate-fade-in">
       <PageHeader
-        eyebrow="Trust & ROI"
-        title="Trust & ROI Proof Center"
+        eyebrow="Reports"
+        title="Trust & ROI"
         description="A falsifiable ROI case and a real compliance posture: every number below is either an auditable count from this workspace or an assumption you can edit yourself."
         actions={
           <Badge tone="warning" size="md" dot>
-            Illustrative, computed on synthetic demo data
+            Estimates from editable assumptions
           </Badge>
         }
       />

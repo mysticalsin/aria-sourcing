@@ -13,23 +13,20 @@ card, ~2 minutes.
    inbox) without verifying a domain. To send from your own domain later, add
    it under Domains and set the SPF/DKIM DNS records Resend shows.
 
-## 2. Set the key as a prod secret and redeploy
+## 2. Set the key and restart the app
 ```bash
-# from repo root, YOUR terminal
-export FLY_API_TOKEN="$(cat production-readiness/.fly-token.env)"
-flyctl secrets set RESEND_API_KEY="re_your_key_here" -a aria-mantu-app
-# secrets set triggers a rolling restart; if not, redeploy the app:
-bash scripts/prod-deploy-app.sh
+# from the repo root
+echo 'RESEND_API_KEY=re_your_key_here' >> .env.local
+docker compose up -d app   # recreates the app container with the new env
 ```
 
 ## 3. (Optional) dry-run against a mock first
 The code honours `RESEND_BASE_URL` — point it at a mock to watch the exact email
-without sending, then unset it to go live. The proof harness in
-scratch (`flat/proof.mjs`) shows the captured payload.
+without sending, then unset it to go live. 
 
 ## 4. Configure a live Resend seat + send one candidate
-In the app (https://aria-mantu-app.fly.dev):
-1. Fleet → add/enable a seat with provider **Resend**, `status = active`,
+In the app (http://localhost:3000):
+1. Mailboxes → add/enable a seat with provider **Resend**, `status = active`,
    `mode = live`. (Resend needs no `domain_verified` for test-mode sends to your
    own address; for a custom domain, verify DNS first.)
 2. Source ONE candidate whose email is an address YOU control (your Resend
@@ -48,7 +45,5 @@ In the app (https://aria-mantu-app.fly.dev):
   soft→permanent handled).
 
 ## Channels beyond email
-- **WhatsApp**: same gate, official Cloud API — set `WHATSAPP_TOKEN` +
-  `WHATSAPP_PHONE_NUMBER_ID`, register a sender on a live WhatsApp Cloud seat.
 - **LinkedIn**: no compliant automated-send API — capture + human-sent draft by
   design; the send endpoint refuses it before any provider call.

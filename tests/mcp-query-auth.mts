@@ -143,8 +143,8 @@ ok("failing query-auth error contains only the expected host context", failed.ok
 ok("failing query-auth error omits raw key", !error.includes(rawSecret));
 ok("failing query-auth error omits auth query field", !error.includes("tavilyApiKey"));
 
-const hermesRouteSource = readFileSync("src/app/api/hermes/chat/route.ts", "utf8");
-ok("Hermes MCP comment no longer claims generic http(s) support", !hermesRouteSource.includes("http(s) only"));
+const aiChatRouteSource = readFileSync("src/app/api/ai/chat/route.ts", "utf8");
+ok("AI route MCP comment no longer claims generic http(s) support", !aiChatRouteSource.includes("http(s) only"));
 
 console.log(`RESULT mcp-query-auth: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

@@ -44,7 +44,7 @@ function SourcedCandidateCard({
 
   return (
     <Card className="overflow-hidden">
-      <CardBody className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-center">
+      <CardBody className="grid grid-cols-1 gap-5 sm:grid-cols-[1fr_auto] sm:items-center">
         <div className="min-w-0 space-y-2.5">
           <div className="flex items-center gap-3">
             <span

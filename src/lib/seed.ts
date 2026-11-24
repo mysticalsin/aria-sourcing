@@ -23,7 +23,7 @@ import type {
   ChatboxSubmission,
   ClassifiedReply,
   GuardrailConfig,
-  HermesState,
+  WorkspaceState,
   InterviewRecord,
   Interviewer,
   JobAnalysis,
@@ -61,7 +61,11 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // connected/lastSync state after the default seed became honest.
 // STATE_VERSION 17 - Databricks execution authority moved out of the shared
 // workspace JSON and into an admin-owned normalized database record.
-export const STATE_VERSION = 17;
+// STATE_VERSION 18 - the AI layer moved to Claude: Anthropic is the default
+// provider and each task has its own model tier (see defaultSavedModels).
+// STATE_VERSION 19 - brief extraction gets its own task (Haiku, structured output).
+// STATE_VERSION 20 - roadmap placeholder integration cards removed from stored workspaces.
+export const STATE_VERSION = 21;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 
@@ -84,47 +88,50 @@ export function defaultLlmProviders(): LlmProvider[] {
     id: `prov_${kind.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
     kind,
     label: kind,
-    // The public demo resolves its chat/agent models to a Kimi (Kimi Code) key held in
-    // the server env, so Kimi is the enabled default provider; the rest activate once a
-    // key is added in Settings → AI & Models.
-    enabled: kind === "Kimi",
-    isDefault: kind === "Kimi",
+    // All AI work runs on Claude. The key comes from the workspace vault or, on a
+    // developer machine, the server env (ANTHROPIC_API_KEY, or the gitignored
+    // .secret file). Other providers activate once a key is added in Settings.
+    enabled: kind === "Anthropic",
+    isDefault: kind === "Anthropic",
   }));
 }
 
+/**
+ * One model tier per kind of work, cheapest that does the job well:
+ * - Haiku: high-volume, short, structured calls (reply classification, brief
+ *   extraction).
+ * - Sonnet: drafting, chat, and the sourcing tool loop.
+ * - Opus: saved but not a task default; pick it per task in Settings when a
+ *   workload measurably needs deeper reasoning.
+ * Effort and output ceilings per task live in ANTHROPIC_TASK_PROFILE.
+ */
 export function defaultSavedModels(): SavedModel[] {
   return [
     {
-      // The demo's active model — Kimi Code, resolved to the server-env KIMI_API_KEY.
-      id: "model_kimi_coding",
-      providerId: "prov_kimi",
-      modelName: "kimi-for-coding",
-      label: "Kimi K2 (Code)",
-      contextWindow: 256000,
+      id: "model_claude_haiku",
+      providerId: "prov_anthropic",
+      modelName: "claude-haiku-5-5",
+      label: "Claude Haiku 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      // No "sourcing": the sourcing agent requires tool-calling, which Kimi doesn't
-      // support (runSourcingAgent in store.ts hard-rejects it). Leaving it out of
-      // this list — and out of defaultModels.sourcing below — lets resolveAiProvider
-      // fall through to its "no provider configured" path instead of a guaranteed failure.
-      defaultForTask: ["outreach", "classification", "chat"],
+      defaultForTask: ["classification", "extraction"],
     },
     {
-      id: "model_claude_opus_4",
+      id: "model_claude_sonnet",
       providerId: "prov_anthropic",
-      modelName: "claude-opus-4-5",
-      label: "Claude Opus 4.5",
-      contextWindow: 200000,
+      modelName: "claude-sonnet-5-5",
+      label: "Claude Sonnet 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      defaultForTask: ["sourcing", "outreach"],
+      defaultForTask: ["sourcing", "outreach", "chat"],
     },
     {
-      id: "model_claude_sonnet_4",
+      id: "model_claude_opus",
       providerId: "prov_anthropic",
-      modelName: "claude-sonnet-4-5",
-      label: "Claude Sonnet 4.5",
-      contextWindow: 200000,
+      modelName: "claude-opus-5-5",
+      label: "Claude Opus 5.5",
+      contextWindow: 1000000,
       enabled: true,
-      defaultForTask: ["classification", "chat"],
     },
   ];
 }
@@ -174,18 +181,13 @@ export function defaultSettings(): SystemSettings {
     tools: defaultTools(),
     mcpServers: [],
     defaultModels: {
-      // No sourcing default: Kimi can't run it (no tool-calling) and no other
-      // provider is enabled out of the box, so resolveAiProvider correctly reports
-      // "not configured" until an operator sets a tool-calling-capable provider.
-      outreach: "model_kimi_coding",
-      classification: "model_kimi_coding",
-      chat: "model_kimi_coding",
+      sourcing: "model_claude_sonnet",
+      outreach: "model_claude_sonnet",
+      classification: "model_claude_haiku",
+      extraction: "model_claude_haiku",
+      chat: "model_claude_sonnet",
     },
-    hermesLiveMode: false,
-    hermesApiUrl: "",
-    hermesApiKeyId: "",
     memoryCapacity: 200,
-    hermesWebUrl: "",
   };
 }
 
@@ -235,7 +237,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_maya",
       name: "Aria · Maya R.",
-      operatorEmail: "maya.rivera@hermes.example",
+      operatorEmail: "maya.rivera@aria.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(24),
       sentToday: 6,
@@ -245,7 +247,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_diego",
       name: "Aria · Diego K.",
-      operatorEmail: "diego.khan@hermes.example",
+      operatorEmail: "diego.khan@aria.example",
       provider: "Gmail API",
       warmupStartedAt: isoDaysBefore(30),
       sentToday: 3,
@@ -255,7 +257,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_aisha",
       name: "Aria · Aisha N.",
-      operatorEmail: "aisha.nwosu@hermes.example",
+      operatorEmail: "aisha.nwosu@aria.example",
       provider: "Microsoft Graph",
       warmupStartedAt: isoDaysBefore(5), // still warming up
       sentToday: 2,
@@ -265,7 +267,7 @@ function seedSeats(): AgentSeat[] {
       ...base,
       id: "seat_lucas",
       name: "Aria · Lucas P.",
-      operatorEmail: "lucas.park@hermes.example",
+      operatorEmail: "lucas.park@aria.example",
       provider: "SendGrid",
       warmupStartedAt: isoDaysBefore(18),
       sentToday: 0,
@@ -289,10 +291,10 @@ function seedSuppression(): SuppressionEntry[] {
  *  slice — real staff, once editable, replace these in Settings. */
 export function seedInterviewers(): Interviewer[] {
   return [
-    { id: "intv_dana", name: "Dana Whitfield", email: "dana.whitfield@hermes.example", role: "Engineering Manager", active: true },
-    { id: "intv_marcus", name: "Marcus Lindqvist", email: "marcus.lindqvist@hermes.example", role: "Staff Engineer", active: true },
-    { id: "intv_priya", name: "Priya Nair", email: "priya.nair@hermes.example", role: "Director of Engineering", active: true },
-    { id: "intv_sofia", name: "Sofia Romano", email: "sofia.romano@hermes.example", role: "Principal Engineer", active: true },
+    { id: "intv_dana", name: "Dana Whitfield", email: "dana.whitfield@aria.example", role: "Engineering Manager", active: true },
+    { id: "intv_marcus", name: "Marcus Lindqvist", email: "marcus.lindqvist@aria.example", role: "Staff Engineer", active: true },
+    { id: "intv_priya", name: "Priya Nair", email: "priya.nair@aria.example", role: "Director of Engineering", active: true },
+    { id: "intv_sofia", name: "Sofia Romano", email: "sofia.romano@aria.example", role: "Principal Engineer", active: true },
   ];
 }
 
@@ -721,7 +723,7 @@ function buildChatboxSubmissions(campaigns: Campaign[]): ChatboxSubmission[] {
   });
 }
 
-export function buildSeedState(): HermesState {
+export function buildSeedState(): WorkspaceState {
   const settings = defaultSettings();
   const now = Date.now();
 
@@ -779,6 +781,7 @@ export function buildSeedState(): HermesState {
     accepted.forEach((cand, i) => {
       const stage: Stage = spec.stagePlan[i] ?? "Sourced";
       cand.stage = stage;
+      cand.createdAt = isoDaysBefore(16 - specIndex * 4);
       const rank = RANK[stage] ?? 0;
 
       // Outreach
@@ -837,9 +840,12 @@ export function buildSeedState(): HermesState {
       if (rank >= RANK.Booked) {
         const interviewer = interviewers[bookingCounter++ % interviewers.length];
         const isPast = stage === "Interviewed";
-        const start = new Date(now + (isPast ? -1 : 1 + (i % 3)) * 86_400_000 + 14 * 3_600_000);
+        const start = new Date(SEED_NOW);
+        start.setUTCDate(start.getUTCDate() + (isPast ? -1 : 1 + (i % 3)));
+        start.setUTCHours(14, 0, 0, 0);
         const booking = createBooking(cand, campaign, interviewer, start);
         booking.status = isPast ? "Completed" : "Confirmed";
+        booking.createdAt = isoDaysBefore(7 - specIndex * 2 - (i % 3)); // booked after the reply
         bookings.push(booking);
         cand.booking = booking;
         campaignActivities.push(

@@ -17,16 +17,16 @@ import type {
   Booking,
   Campaign,
   Candidate,
-  HermesState,
+  WorkspaceState,
   Interviewer,
   SkillUpdate,
 } from "../types";
 import { interviewerIsBusy, resolveBookingSlot } from "./booking-slot";
-import type { BookingUpdate, HermesActions } from "./contracts";
+import type { BookingUpdate, WorkspaceActions } from "./contracts";
 import { appendWinRecord } from "./winlog-derive";
 
 export type BookingReportActions = Pick<
-  HermesActions,
+  WorkspaceActions,
   | "createBookingFor"
   | "updateBooking"
   | "generateReport"
@@ -38,8 +38,8 @@ export type BookingReportActivityDraft = Omit<Activity, "id" | "createdAt"> & {
 };
 
 export interface BookingReportActionDependencies {
-  commit: (update: (state: HermesState) => HermesState) => boolean;
-  currentState: () => HermesState | null;
+  commit: (update: (state: WorkspaceState) => WorkspaceState) => boolean;
+  currentState: () => WorkspaceState | null;
   workspaceEffectAllowed: () => boolean;
   bookingMutationAllowed: () => boolean;
   learningMutationAllowed: () => boolean;
@@ -47,11 +47,11 @@ export interface BookingReportActionDependencies {
   liveCalendarEnabled: boolean;
   makeActivity: (activity: BookingReportActivityDraft) => Activity;
   withActivity: (
-    state: HermesState,
+    state: WorkspaceState,
     activity: Activity,
     campaignId: string | null,
-  ) => HermesState;
-  recomputeMetrics: (state: HermesState, campaignId: string) => HermesState;
+  ) => WorkspaceState;
+  recomputeMetrics: (state: WorkspaceState, campaignId: string) => WorkspaceState;
   emitBooking: (event: {
     kind: "book";
     candidateName: string;
@@ -60,7 +60,7 @@ export interface BookingReportActionDependencies {
 }
 
 function learningSummary(
-  state: HermesState,
+  state: WorkspaceState,
   update: SkillUpdate,
 ): {
   patch: ReturnType<typeof learnedParamsFor>;
@@ -114,7 +114,7 @@ function bookingStatusTransitionAllowed(
   return false;
 }
 
-function candidateCannotBeBooked(state: HermesState, candidateId: string): string | null {
+function candidateCannotBeBooked(state: WorkspaceState, candidateId: string): string | null {
   const candidate = state.candidates.find((item) => item.id === candidateId);
   const campaign = candidate && state.campaigns.find((item) => item.id === candidate.campaignId);
   if (!candidate || !campaign) return "Candidate or campaign not found.";
@@ -173,7 +173,7 @@ function bookingCommandFingerprint(
 }
 
 function bookingCommandInvalid(
-  state: HermesState,
+  state: WorkspaceState,
   fingerprint: BookingCommandFingerprint,
 ): string | null {
   const blocked = candidateCannotBeBooked(state, fingerprint.candidateId);
@@ -412,7 +412,7 @@ export function createBookingReportActions({
           : item,
       );
       const bookedCandidate = candidates.find((item) => item.id === candidateId) ?? liveCandidate;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...current,
         bookings: [booking, ...current.bookings],
         candidates,
@@ -505,7 +505,7 @@ export function createBookingReportActions({
       const liveBooking = current.bookings.find((item) => item.id === id);
       if (!liveBooking) return current;
       updated = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...current,
         bookings: current.bookings.map((item) =>
           item.id === id ? { ...item, ...safePatch } : item,
@@ -580,7 +580,7 @@ export function createBookingReportActions({
         skillUpdates: canonicalUpdates,
       };
       applied = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...current,
         reports: [
           persistedReport,
@@ -639,7 +639,7 @@ export function createBookingReportActions({
       const agentSkill = status === "accepted" ? getSkill(current.skills, liveUpdate.skill) : null;
       if (status === "accepted" && !agentSkill) return current;
       applied = true;
-      let next: HermesState = {
+      let next: WorkspaceState = {
         ...current,
         campaigns: current.campaigns.map((item) =>
           item.id === campaignId
