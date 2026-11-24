@@ -10,6 +10,8 @@ import {
   type OdooStageView,
   type StageTarget,
 } from "@/components/odoo/api";
+import { OdooErasures } from "@/components/odoo/odoo-erasures";
+import { OdooLiveUpdates } from "@/components/odoo/odoo-live-updates";
 import { useRole } from "@/lib/store";
 import { can } from "@/lib/rbac";
 import { formatTimeAgo } from "@/lib/utils";
@@ -291,6 +293,9 @@ export function OdooPanel() {
             </>
           )}
         </div>
+
+        {isAdmin && <OdooLiveUpdates connection={connection} onConnection={setConnection} />}
+        {isAdmin && <OdooErasures />}
       </CardContent>
     </Card>
   );

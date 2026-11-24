@@ -3,7 +3,8 @@
 //   PUT     admin: { baseUrl, publicUrl?, database, apiKey?, stageMap? }
 //           tests the connection against Odoo first; saves only if it works.
 //           apiKey may be omitted to keep the stored one.
-//   DELETE  admin: disconnect and forget every campaign/applicant link.
+//   DELETE  admin: disconnect and forget every campaign/applicant link (and
+//           remove the live-update rule ARIA created in Odoo, if any).
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -11,7 +12,7 @@ import { validateBody } from "@/lib/api/validate";
 import { encryptSecret, encryptionRequiredButMissing, decryptSecret } from "@/lib/crypto-secrets";
 import { createOdooClient, normalizeOdooBaseUrl, odooHttpAllowed, validOdooDatabase } from "@/lib/integrations/odoo/client";
 import { StageMapSchema } from "@/lib/integrations/odoo/mapping";
-import { checkOdoo } from "@/lib/integrations/odoo/service";
+import { checkOdoo, removeStageWebhook } from "@/lib/integrations/odoo/service";
 import {
   clearLinks,
   odooFailure,
@@ -19,6 +20,7 @@ import {
   publicConnection,
   readConnection,
   requireOdooUser,
+  resolveOdoo,
 } from "@/lib/integrations/odoo/authority";
 
 export const runtime = "nodejs";
@@ -115,6 +117,10 @@ export async function PUT(req: NextRequest) {
         updated_at: now,
         last_checked_at: now,
         last_error: null,
+        // Live updates belong to the old instance's automation rule.
+        ...(existing && !sameInstance
+          ? { webhook_token_hash: null, webhook_url_base: null, webhook_automation_id: null, webhook_created_at: null, last_webhook_at: null }
+          : {}),
       },
       { onConflict: "workspace_id" },
     );
@@ -131,6 +137,11 @@ export async function DELETE(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const { svc, workspaceId } = auth.ctx;
   try {
+    // Best effort: remove the automation rule ARIA created in Odoo.
+    const odoo = await resolveOdoo(auth.ctx).catch(() => null);
+    if (odoo?.ok && odoo.connection.webhook_automation_id) {
+      await removeStageWebhook(odoo.client, odoo.connection.webhook_automation_id);
+    }
     await clearLinks(svc, workspaceId);
     const { error } = await svc.from("odoo_connections").delete().eq("workspace_id", workspaceId);
     if (error) throw new Error("odoo_connections delete failed");

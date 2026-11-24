@@ -42,11 +42,18 @@ const session = {
   }),
 };
 
+// Odoo link tables (ADR 0003): this workspace has no candidate in Odoo.
+const emptyQuery = {
+  select: () => emptyQuery,
+  eq: () => emptyQuery,
+  maybeSingle: async () => ({ data: null, error: null }),
+};
 const service = {
   rpc: async (name: string, args: Record<string, unknown>) => {
     rpcCalls.push({ name, args });
     return { data: rpcResult, error: rpcError };
   },
+  from: () => emptyQuery,
 };
 
 mock.module(moduleUrl("src/lib/supabase/config.ts"), {

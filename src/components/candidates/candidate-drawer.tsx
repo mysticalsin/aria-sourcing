@@ -898,7 +898,7 @@ export function CandidateDrawer({
   const handleAnonymize = async () => {
     if (erasureTombstone) return;
     const scope = captureErasureScope();
-    const confirmed = await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true });
+    const confirmed = await confirm({ title: `Anonymize ${c.name}?`, description: "This removes operational candidate data and provider receipts. If the candidate was sent to Odoo, the Odoo applicant is deleted too, unless hired there. Required suppression records follow their controlled retention policy. This cannot be undone.", confirmLabel: "Anonymize", danger: true });
     if (!isErasureScopeCurrent(scope) || !confirmed) return;
     if (rejectionTimer.current) clearTimeout(rejectionTimer.current);
     if (phoneTimer.current) clearTimeout(phoneTimer.current);

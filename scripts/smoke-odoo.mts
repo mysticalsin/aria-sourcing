@@ -3,7 +3,10 @@
  *   ODOO_URL=https://odoo.example.com ODOO_DB=prod ODOO_API_KEY_FILE=/path/key \
  *     npx tsx scripts/smoke-odoo.mts           # read-only checks
  *     npx tsx scripts/smoke-odoo.mts --write   # also hand off a synthetic test
- *                                              # person, move it, then delete it
+ *                                              # person, move it, erase it
+ *     ... --write --webhook-url=https://aria.example.com/api/webhooks/odoo/x
+ *                                              # also create and remove the
+ *                                              # live-update automation rule
  *
  * The key is read from a file so it never appears in a process list. --write
  * creates "ARIA smoke test" applicants on the first open job and deletes them
@@ -23,13 +26,17 @@ import {
 import {
   checkOdoo,
   createOrFindApplicant,
+  ensureStageWebhook,
+  eraseApplicant,
   listOpenJobs,
   postApplicantNote,
   readApplicantStates,
   readJob,
+  removeStageWebhook,
 } from "../src/lib/integrations/odoo/service";
 
 const write = process.argv.includes("--write");
+const hookUrl = process.argv.find((arg) => arg.startsWith("--webhook-url="))?.slice("--webhook-url=".length) ?? "";
 const base = normalizeOdooBaseUrl(process.env.ODOO_URL ?? "", { allowHttp: odooHttpAllowed() });
 if (!base.ok) throw new Error(base.error);
 const keyFile = process.env.ODOO_API_KEY_FILE;
@@ -39,6 +46,10 @@ const client = createOdooClient({
   database: process.env.ODOO_DB ?? "",
   apiKey: readFileSync(keyFile, "utf8").trim(),
 });
+
+function info(label: string, detail: string): void {
+  console.log(`INFO  ${label}  (${detail})`);
+}
 
 function step(label: string, ok: boolean, detail = ""): void {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  (${detail})` : ""}`);
@@ -118,6 +129,25 @@ if (write) {
     step("refused by the applicant reads back as Not Interested", aria === "Not Interested", `${after?.status} / ${after?.refuseReason}`);
     await client.call("hr.applicant", "unlink", { ids: [refused.applicantId] });
   }
+  const erased = await eraseApplicant(client, firstTry.applicantId, "smoke test");
+  step("erasure of a hired applicant keeps it", erased.outcome === "kept_hired", erased.detail);
   await client.call("hr.applicant", "unlink", { ids: [firstTry.applicantId] });
+
+  const fresh = await createOrFindApplicant(client, { ...candidate, id: `${candidate.id}_e`, email: `e.${candidate.email}`, linkedinUrl: `${candidate.linkedinUrl}-e` }, first.id);
+  const erasure = await eraseApplicant(client, fresh.applicantId, "smoke test");
+  const gone = (await readApplicantStates(client, [fresh.applicantId], check.stages))[0]?.status === "deleted";
+  step("erasure deletes an ongoing applicant", erasure.outcome === "deleted" && gone, erasure.detail);
+  info("erasure: contact", erasure.contact === "deleted" ? "deleted (created for the application)" : "kept");
+  info("erasure: Odoo privacy log", erasure.logged ? "written" : "not written (needs more rights)");
+
+  if (hookUrl) {
+    const setup = await ensureStageWebhook(client, hookUrl, null);
+    if (setup.automated) {
+      step("live-update rule created in Odoo", true, `base.automation #${setup.automationId}`);
+      step("live-update rule removed", await removeStageWebhook(client, setup.automationId));
+    } else {
+      info("live-update rule", `not created: ${setup.reason}`);
+    }
+  }
   step("test applicants deleted", true);
 }

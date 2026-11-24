@@ -9,7 +9,7 @@ insert into public.workspaces(id,name) values
   ('f3333333-3333-4333-8333-333333333333','Other workspace');
 insert into public.workspace_state(workspace_id,state) values
   ('f2222222-2222-4222-8222-222222222222',
-   '{"campaigns":[{"id":"camp_odoo","title":"Murex Support"}],"candidates":[{"id":"cand_odoo","campaignId":"camp_odoo","name":"Ada Example","stage":"Interested"}]}'),
+   '{"settings":{"confidentialityMode":true},"campaigns":[{"id":"camp_odoo","title":"Murex Support"}],"candidates":[{"id":"cand_odoo","campaignId":"camp_odoo","name":"Ada Example","stage":"Interested"}],"activities":[{"id":"a1","title":"Candidate PII revealed","linkedEntityId":"cand_odoo","createdAt":"2026-11-24T09:00:00.000Z"},{"id":"a2","title":"Candidate PII revealed","linkedEntityId":"cand_odoo","createdAt":"2026-11-24T10:00:00.000Z"},{"id":"a3","title":"Candidate PII revealed","linkedEntityId":"other","createdAt":"2026-11-24T11:00:00.000Z"}]}'),
   ('f3333333-3333-4333-8333-333333333333','{"campaigns":[],"candidates":[]}');
 
 do $$ begin
@@ -17,6 +17,8 @@ do $$ begin
     or has_table_privilege('authenticated','public.odoo_job_links','INSERT')
     or has_table_privilege('authenticated','public.odoo_applicant_links','UPDATE')
     or has_table_privilege('anon','public.odoo_connections','SELECT')
+    or has_table_privilege('authenticated','public.odoo_erasures','SELECT')
+    or has_table_privilege('anon','public.odoo_erasures','INSERT')
     or has_function_privilege('authenticated','public.odoo_candidate_record(uuid,text)','EXECUTE')
     or has_function_privilege('anon','public.odoo_candidate_record(uuid,text)','EXECUTE') then
     raise exception 'Odoo authority must stay behind the server routes';
@@ -74,6 +76,31 @@ begin
   if record->'candidate'->>'name' <> 'Ada Example' or record->>'campaignTitle' <> 'Murex Support' then
     raise exception 'Candidate record not read: %', record;
   end if;
+  if record->'confidentialityMode' <> 'true'::jsonb or record->>'lastRevealAt' <> '2026-11-24T10:00:00.000Z' then
+    raise exception 'Confidentiality or latest reveal not read: %', record;
+  end if;
+  begin
+    update public.odoo_connections set webhook_token_hash = 'plain-token', webhook_created_at = now()
+     where workspace_id = 'f2222222-2222-4222-8222-222222222222';
+    raise exception 'A webhook token that is not a SHA-256 was stored';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.odoo_connections set webhook_token_hash = repeat('a', 64)
+     where workspace_id = 'f2222222-2222-4222-8222-222222222222';
+    raise exception 'A webhook hash without its creation time was accepted';
+  exception when check_violation then null;
+  end;
+  update public.odoo_connections set webhook_token_hash = repeat('a', 64), webhook_created_at = now()
+   where workspace_id = 'f2222222-2222-4222-8222-222222222222';
+  insert into public.odoo_erasures(workspace_id, candidate_id, applicant_id, status)
+  values ('f2222222-2222-4222-8222-222222222222','cand_odoo',42,'pending');
+  begin
+    update public.odoo_erasures set status = 'deleted' where candidate_id = 'cand_odoo';
+    raise exception 'A completed erasure without its completion time was accepted';
+  exception when check_violation then null;
+  end;
+  update public.odoo_erasures set status = 'deleted', completed_at = now() where candidate_id = 'cand_odoo';
   if public.odoo_candidate_record('f3333333-3333-4333-8333-333333333333','cand_odoo') is not null then
     raise exception 'A candidate was read across workspaces';
   end if;
@@ -84,7 +111,8 @@ reset role;
 delete from public.workspace_state where workspace_id = 'f2222222-2222-4222-8222-222222222222';
 delete from public.workspaces where id = 'f2222222-2222-4222-8222-222222222222';
 do $$ begin
-  if exists (select 1 from public.odoo_connections) or exists (select 1 from public.odoo_applicant_links) or exists (select 1 from public.odoo_job_links) then
+  if exists (select 1 from public.odoo_connections) or exists (select 1 from public.odoo_applicant_links)
+     or exists (select 1 from public.odoo_job_links) or exists (select 1 from public.odoo_erasures) then
     raise exception 'Odoo rows outlived their workspace';
   end if;
 end $$;

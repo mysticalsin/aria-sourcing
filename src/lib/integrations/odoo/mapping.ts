@@ -10,8 +10,10 @@
    ========================================================================== */
 
 import { z } from "zod";
-import { stageRank } from "@/lib/metrics";
-import { CANDIDATE_STAGES, type CandidateStage } from "@/lib/types";
+import { stageRank, withStage } from "@/lib/metrics";
+import { makeActivity, recomputeMetrics, withActivity } from "@/lib/store/workspace-transitions";
+import { CANDIDATE_STAGES, type CandidateStage, type WorkspaceState } from "@/lib/types";
+import { genId } from "@/lib/utils";
 
 /** utm.source name ARIA creates (once) and sets on every applicant it hands off. */
 export const ODOO_SOURCE_NAME = "ARIA";
@@ -443,43 +445,136 @@ export function stageUpdate(current: CandidateStage, next: CandidateStage | null
   return stageRank(next) > stageRank(current) ? next : null;
 }
 
+/* ---- Confidentiality ------------------------------------------------------- */
+
+/** How long an audited "reveal" of a confidential profile allows its hand-off. */
+export const HANDOFF_REVEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const OUTREACH_PURPOSE: ReadonlySet<CandidateStage> = new Set(["Contacted", "Replied", "Interested", "Booked", "Interviewed", "Offer", "Hired"]);
+
+/**
+ * Why a confidential profile may not be sent to Odoo yet, if it may not. Same
+ * rule as the drawer: with confidentiality mode on, a profile without an
+ * outreach purpose (stage Contacted onward) is masked until an operator
+ * reveals it, which the app logs as "Candidate PII revealed".
+ */
+export function confidentialityBlock(
+  input: { confidentialityMode: boolean; stage: CandidateStage; lastRevealAt: string | null },
+  now: number,
+): string | null {
+  if (!input.confidentialityMode || OUTREACH_PURPOSE.has(input.stage)) return null;
+  const revealedAt = input.lastRevealAt ? Date.parse(input.lastRevealAt) : Number.NaN;
+  if (Number.isFinite(revealedAt) && revealedAt <= now + 60_000 && now - revealedAt <= HANDOFF_REVEAL_WINDOW_MS) return null;
+  return "Confidentiality mode hides this profile. Reveal it first (the reveal is logged), then send it to Odoo.";
+}
+
+/* ---- Workspace changes the server makes ----------------------------------- */
+
+export interface ApplicantUpdate {
+  candidateId: string;
+  applicantId: number;
+  ariaStage: CandidateStage | null;
+  odooStage: string | null;
+  status: ApplicationStatus;
+  refuseReason: string | null;
+}
+
 export interface StageSyncChange {
   candidateId: string;
   from: CandidateStage;
   to: CandidateStage;
   odooStage: string | null;
   status: ApplicationStatus;
-  refuseReason: string | null;
 }
 
-/** The ARIA stage changes an Odoo sync implies, for the candidates ARIA has. */
-export function planStageSync(
-  candidates: ReadonlyArray<{ id: string; stage: CandidateStage }>,
-  applicants: ReadonlyArray<{
-    candidateId: string;
-    ariaStage: CandidateStage | null;
-    stage: string | null;
-    status: ApplicationStatus;
-    refuseReason: string | null;
-  }>,
-): StageSyncChange[] {
-  const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+const STATUS_WORD: Record<ApplicationStatus, string> = {
+  ongoing: "in progress",
+  hired: "hired",
+  refused: "refused",
+  archived: "archived",
+  deleted: "deleted",
+};
+
+/**
+ * Apply Odoo's applicant states to the workspace: each candidate that should
+ * move (stageUpdate) gets its stage (with the funnel high-water mark), a note,
+ * Odoo's refuse reason when rejected, and one activity; campaign metrics are
+ * recomputed. Pure: the server runs it inside mutateWorkspace.
+ */
+export function applyOdooUpdates(
+  state: WorkspaceState,
+  updates: readonly ApplicantUpdate[],
+  at: string,
+): { state: WorkspaceState; changes: StageSyncChange[] } {
+  const byCandidate = new Map(updates.map((update) => [update.candidateId, update]));
   const changes: StageSyncChange[] = [];
-  for (const applicant of applicants) {
-    const candidate = byId.get(applicant.candidateId);
-    if (!candidate) continue;
-    const to = stageUpdate(candidate.stage, applicant.ariaStage);
-    if (!to) continue;
-    changes.push({
-      candidateId: candidate.id,
-      from: candidate.stage,
-      to,
-      odooStage: applicant.stage,
-      status: applicant.status,
-      refuseReason: applicant.refuseReason,
-    });
+  const candidates = state.candidates.map((candidate) => {
+    const update = byCandidate.get(candidate.id);
+    if (!update) return candidate;
+    const to = stageUpdate(candidate.stage, update.ariaStage);
+    if (!to) return candidate;
+    changes.push({ candidateId: candidate.id, from: candidate.stage, to, odooStage: update.odooStage, status: update.status });
+    const text = `Odoo: ${update.odooStage ?? "application"} (${STATUS_WORD[update.status]}${update.refuseReason ? `, ${update.refuseReason}` : ""}). ARIA stage ${candidate.stage} → ${to}.`;
+    return {
+      ...candidate,
+      ...withStage(candidate, to),
+      notes: [{ id: genId("note"), text, at }, ...(candidate.notes ?? [])],
+      ...(to === "Rejected" && update.refuseReason ? { rejectionReason: `Odoo: ${update.refuseReason}`.slice(0, 300) } : {}),
+    };
+  });
+  if (changes.length === 0) return { state, changes };
+  let next: WorkspaceState = { ...state, candidates };
+  const campaigns = new Set<string>();
+  for (const change of changes) {
+    const candidate = next.candidates.find((c) => c.id === change.candidateId)!;
+    campaigns.add(candidate.campaignId);
+    next = withActivity(
+      next,
+      makeActivity({
+        type: "system",
+        title: `Odoo moved ${candidate.name} to ${change.to}`,
+        notes: `Odoo Recruitment: ${change.odooStage ?? "application"} (${STATUS_WORD[change.status]}). Odoo is the system of record after the hand-off.`,
+        outcome: `${change.from} → ${change.to}`,
+        campaignId: candidate.campaignId,
+        linkedEntityType: "candidate",
+        linkedEntityId: candidate.id,
+        createdAt: at,
+      }),
+      candidate.campaignId,
+    );
   }
-  return changes;
+  for (const campaignId of campaigns) next = recomputeMetrics(next, campaignId);
+  return { state: next, changes };
+}
+
+/** The audit trail of a hand-off in ARIA: a candidate note and an activity. */
+export function recordHandoff(
+  state: WorkspaceState,
+  input: { candidateId: string; applicantId: number; jobName: string; sentBy: string; created: boolean },
+  at: string,
+): WorkspaceState | null {
+  const candidate = state.candidates.find((c) => c.id === input.candidateId);
+  if (!candidate) return null;
+  const verb = input.created ? "Sent to Odoo" : "Linked to the existing Odoo application";
+  const text = `${verb}: applicant #${input.applicantId} on “${input.jobName}”, by ${input.sentBy}.`;
+  const next: WorkspaceState = {
+    ...state,
+    candidates: state.candidates.map((c) => (c.id === candidate.id ? { ...c, notes: [{ id: genId("note"), text, at }, ...(c.notes ?? [])] } : c)),
+  };
+  return withActivity(
+    next,
+    makeActivity({
+      type: "compliance",
+      title: `${verb}: ${candidate.name}`,
+      notes: `Profile, score and evidence copied to Odoo Recruitment (applicant #${input.applicantId}) by ${input.sentBy}.`,
+      outcome: "Handed off to Odoo",
+      campaignId: candidate.campaignId,
+      linkedEntityType: "candidate",
+      linkedEntityId: candidate.id,
+      createdAt: at,
+    }),
+    candidate.campaignId,
+  );
 }
 
 /** Link to the applicant in Odoo's web client. */

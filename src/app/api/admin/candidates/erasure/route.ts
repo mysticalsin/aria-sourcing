@@ -5,6 +5,8 @@ import { z } from "zod";
 
 import { classifySameOriginJsonRequest } from "@/lib/api/same-origin-json";
 import { validateBody } from "@/lib/api/validate";
+import { eraseFromOdoo } from "@/lib/integrations/odoo/erasure";
+import { safeLog } from "@/lib/log-redact";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import {
@@ -205,6 +207,23 @@ function mutationBoundary(req: NextRequest, correlationId: string): NextResponse
   return null;
 }
 
+async function odooErasureStep(
+  service: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  workspaceId: string,
+  candidateId: string,
+  requestId: string,
+) {
+  try {
+    return await eraseFromOdoo(service, workspaceId, candidateId, requestId);
+  } catch {
+    safeLog("Odoo erasure check failed", { requestId });
+    return {
+      status: "unknown" as const,
+      detail: "ARIA could not check whether this candidate is in Odoo. See Settings > Odoo.",
+    };
+  }
+}
+
 export async function POST(req: NextRequest) {
   const correlationId = requestId(req);
   try {
@@ -303,8 +322,17 @@ export async function POST(req: NextRequest) {
         obligations: parsed.data.obligations,
       }, 423);
     }
+    // The candidate may have been handed off to Odoo (ADR 0003): erase the
+    // applicant ARIA created there too. Reported apart from ARIA's own status;
+    // pending or failed Odoo erasures are retried from Settings > Odoo.
+    const odoo = await odooErasureStep(
+      service,
+      workspaceId as string,
+      parsed.data.candidate_id,
+      parsed.data.request_id,
+    );
     return noStoreJson(
-      expose(parsed.data),
+      { ...expose(parsed.data), ...(odoo ? { odoo } : {}) },
       parsed.data.status === "completed" ? 200 : 202,
     );
   } catch {

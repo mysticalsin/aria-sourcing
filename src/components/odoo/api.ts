@@ -45,6 +45,7 @@ export interface OdooConnectionView {
   stageMap?: Record<string, StageTarget>;
   lastCheckedAt?: string | null;
   lastError?: string | null;
+  push?: OdooPushView;
 }
 
 export interface OdooStageView {
@@ -81,6 +82,32 @@ export interface OdooApplicantView {
   status: "ongoing" | "hired" | "refused" | "archived" | "deleted";
   refuseReason: string | null;
   ariaStage: CandidateStage | null;
+}
+
+export interface OdooStageChange {
+  candidateId: string;
+  from: CandidateStage;
+  to: CandidateStage;
+  odooStage: string | null;
+  status: OdooApplicantView["status"];
+}
+
+export interface OdooPushView {
+  enabled: boolean;
+  ariaUrl: string | null;
+  inOdoo: boolean;
+  createdAt: string | null;
+  lastCallAt: string | null;
+}
+
+export interface OdooErasureView {
+  candidateId: string;
+  applicantId: number;
+  status: "pending" | "deleted" | "kept_hired" | "failed";
+  detail: string | null;
+  attempts: number;
+  updatedAt: string;
+  completedAt: string | null;
 }
 
 export const STATUS_LABEL: Record<OdooApplicantView["status"], string> = {

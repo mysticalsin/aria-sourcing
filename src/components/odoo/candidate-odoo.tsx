@@ -4,9 +4,9 @@ import * as React from "react";
 import { ExternalLink, Send } from "lucide-react";
 import { Button, useConfirm, useToast } from "@/components/ui";
 import { can } from "@/lib/rbac";
-import { useRole } from "@/lib/store";
+import { useRole, useWorkspaceStatus } from "@/lib/store";
 import { jsonBody, odooApi, STATUS_LABEL } from "./api";
-import { notifyOdooChanged, useOdooCampaign, useOdooConnected } from "./use-odoo";
+import { notifyOdooChanged, pullWorkspace, useOdooCampaign, useOdooConnected } from "./use-odoo";
 
 type HandoffAnswer = {
   status: "created" | "linked_existing" | "already_in_odoo";
@@ -36,6 +36,7 @@ export function CandidateOdooAction({
   const role = useRole();
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { flushWorkspace } = useWorkspaceStatus();
   const odoo = useOdooCampaign(campaignId, connected && !hidden);
   const [sending, setSending] = React.useState(false);
 
@@ -72,6 +73,9 @@ export function CandidateOdooAction({
     });
     if (!ok) return;
     setSending(true);
+    // Save first: the server checks the logged reveal of a confidential
+    // profile in the saved workspace, not in this tab.
+    await flushWorkspace().catch(() => undefined);
     const res = await odooApi<HandoffAnswer>("/applicants", jsonBody("POST", { candidateId }));
     setSending(false);
     if (!res.ok) {
@@ -79,6 +83,7 @@ export function CandidateOdooAction({
       return;
     }
     notifyOdooChanged();
+    pullWorkspace();
     const verb = res.data.status === "created" ? "created" : res.data.status === "linked_existing" ? "linked (it was already in Odoo)" : "already in Odoo";
     toast({
       title: `Applicant ${verb}`,

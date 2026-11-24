@@ -3,54 +3,43 @@
 import * as React from "react";
 import { ExternalLink, Link2, RefreshCw } from "lucide-react";
 import { Badge, Button, useToast } from "@/components/ui";
-import { planStageSync } from "@/lib/integrations/odoo/mapping";
 import { can } from "@/lib/rbac";
-import { useActions, useCampaignCandidates, useRole } from "@/lib/store";
-import { jsonBody, odooApi, STATUS_LABEL, type OdooJobLink } from "./api";
+import { useCampaignCandidates, useRole } from "@/lib/store";
+import { jsonBody, odooApi, type OdooJobLink } from "./api";
 import { OdooJobPicker } from "./odoo-job-picker";
 import { notifyOdooChanged, useOdooCampaign, useOdooConnected } from "./use-odoo";
 
 /**
  * Campaign page strip: which Odoo job position this campaign feeds, how many
- * of its candidates are in Odoo, and the sync that brings Odoo's stages back.
+ * of its candidates are in Odoo, and the sync that brings Odoo's stages back
+ * (also pushed by Odoo itself when live updates are on).
  * Renders nothing while Odoo is not connected for the workspace.
  */
 export function CampaignOdooBar({ campaignId }: { campaignId: string }) {
   const connected = useOdooConnected();
   const role = useRole();
   const canSource = can(role, "source");
-  const actions = useActions();
   const candidates = useCampaignCandidates(campaignId);
   const { toast } = useToast();
-  const odoo = useOdooCampaign(campaignId, connected);
+  // With the source permission, opening the campaign applies Odoo's outcome
+  // on the server (same path as the Odoo webhook); viewers only read it.
+  const odoo = useOdooCampaign(campaignId, connected, canSource);
   const [picking, setPicking] = React.useState(false);
   const [linking, setLinking] = React.useState(false);
-  const appliedRef = React.useRef<string>("");
+  const announcedRef = React.useRef<string>("");
 
-  // Odoo owns the hiring steps after the hand-off: bring its outcomes back.
-  const changes = React.useMemo(
-    () => planStageSync(candidates.map((c) => ({ id: c.id, stage: c.stage })), odoo.applicants),
-    [candidates, odoo.applicants],
-  );
   React.useEffect(() => {
-    if (!canSource || changes.length === 0) return;
-    const key = changes.map((c) => `${c.candidateId}:${c.to}`).join("|");
-    if (appliedRef.current === key) return;
-    appliedRef.current = key;
-    for (const change of changes) {
-      actions.setCandidateStage(change.candidateId, change.to);
-      if (change.to === "Rejected" && change.refuseReason) actions.setRejectionReason(change.candidateId, `Odoo: ${change.refuseReason}`);
-      actions.addCandidateNote(
-        change.candidateId,
-        `Odoo: ${change.odooStage ?? "application"} (${STATUS_LABEL[change.status].toLowerCase()}${change.refuseReason ? `, ${change.refuseReason}` : ""}). ARIA stage ${change.from} → ${change.to}.`,
-      );
-    }
+    if (odoo.changes.length === 0) return;
+    const key = odoo.changes.map((c) => `${c.candidateId}:${c.to}`).join("|");
+    if (announcedRef.current === key) return;
+    announcedRef.current = key;
+    const name = (id: string) => candidates.find((c) => c.id === id)?.name ?? "A candidate";
     toast({
-      title: `Odoo: ${changes.length} candidate${changes.length === 1 ? "" : "s"} moved`,
-      description: changes.map((c) => `${c.from} → ${c.to}`).join(", "),
+      title: `Odoo: ${odoo.changes.length} candidate${odoo.changes.length === 1 ? "" : "s"} moved`,
+      description: odoo.changes.map((c) => `${name(c.candidateId)}: ${c.from} → ${c.to}`).join(", "),
       variant: "info",
     });
-  }, [actions, canSource, changes, toast]);
+  }, [candidates, odoo.changes, toast]);
 
   if (!connected) return null;
 

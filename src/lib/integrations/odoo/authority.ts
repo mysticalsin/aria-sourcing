@@ -102,10 +102,15 @@ export interface ConnectionRow {
   updated_at: string;
   last_checked_at: string | null;
   last_error: string | null;
+  webhook_token_hash: string | null;
+  webhook_url_base: string | null;
+  webhook_automation_id: number | null;
+  webhook_created_at: string | null;
+  last_webhook_at: string | null;
 }
 
 const CONNECTION_COLUMNS =
-  "workspace_id, base_url, public_url, database_name, api_key_secret, api_key_last4, odoo_version, odoo_user_name, stage_map, config_revision, updated_at, last_checked_at, last_error";
+  "workspace_id, base_url, public_url, database_name, api_key_secret, api_key_last4, odoo_version, odoo_user_name, stage_map, config_revision, updated_at, last_checked_at, last_error, webhook_token_hash, webhook_url_base, webhook_automation_id, webhook_created_at, last_webhook_at";
 
 export async function readConnection(svc: Svc, workspaceId: string): Promise<ConnectionRow | null> {
   const { data, error } = await svc.from("odoo_connections").select(CONNECTION_COLUMNS).eq("workspace_id", workspaceId).maybeSingle();
@@ -134,6 +139,13 @@ export function publicConnection(row: ConnectionRow | null) {
     updatedAt: row.updated_at,
     lastCheckedAt: row.last_checked_at,
     lastError: row.last_error,
+    push: {
+      enabled: Boolean(row.webhook_token_hash),
+      ariaUrl: row.webhook_url_base,
+      inOdoo: row.webhook_automation_id !== null,
+      createdAt: row.webhook_created_at,
+      lastCallAt: row.last_webhook_at,
+    },
   };
 }
 
@@ -141,22 +153,57 @@ export type ResolvedOdoo =
   | { ok: true; client: OdooClient; connection: ConnectionRow; publicUrl: string; stageMap: StageMap }
   | { ok: false; response: NextResponse };
 
+/** A client for a stored connection, or why there is none. */
+export function clientForConnection(
+  connection: ConnectionRow,
+  fetchImpl?: FetchLike,
+): { ok: true; client: OdooClient; publicUrl: string; stageMap: StageMap } | { ok: false; code: "credential_unavailable" | "invalid_config" } {
+  const apiKey = decryptSecret(connection.api_key_secret);
+  if (!apiKey) return { ok: false, code: "credential_unavailable" };
+  try {
+    const client = createOdooClient({ baseUrl: connection.base_url, database: connection.database_name, apiKey }, { fetchImpl });
+    return { ok: true, client, publicUrl: connection.public_url ?? connection.base_url, stageMap: connectionStageMap(connection) };
+  } catch {
+    return { ok: false, code: "invalid_config" };
+  }
+}
+
+/** The connection whose live-update webhook token has this SHA-256. */
+export async function connectionByWebhookHash(svc: Svc, tokenHash: string): Promise<ConnectionRow | null> {
+  const { data, error } = await svc.from("odoo_connections").select(CONNECTION_COLUMNS).eq("webhook_token_hash", tokenHash).maybeSingle();
+  if (error) throw new Error("odoo_connections read failed");
+  return (data as ConnectionRow | null) ?? null;
+}
+
+export async function saveWebhook(
+  svc: Svc,
+  workspaceId: string,
+  input: { tokenHash: string; urlBase: string; automationId: number | null } | null,
+): Promise<void> {
+  const values = input
+    ? { webhook_token_hash: input.tokenHash, webhook_url_base: input.urlBase, webhook_automation_id: input.automationId, webhook_created_at: new Date().toISOString(), last_webhook_at: null }
+    : { webhook_token_hash: null, webhook_url_base: null, webhook_automation_id: null, webhook_created_at: null, last_webhook_at: null };
+  const { error } = await svc.from("odoo_connections").update(values).eq("workspace_id", workspaceId);
+  if (error) throw new Error("odoo_connections webhook update failed");
+}
+
+export async function touchWebhook(svc: Svc, workspaceId: string): Promise<void> {
+  await svc.from("odoo_connections").update({ last_webhook_at: new Date().toISOString() }).eq("workspace_id", workspaceId);
+}
+
 /** The workspace's Odoo client, or a 409 telling the user to connect Odoo. */
 export async function resolveOdoo(ctx: OdooUserContext, fetchImpl?: FetchLike): Promise<ResolvedOdoo> {
   const connection = await readConnection(ctx.svc, ctx.workspaceId);
   if (!connection) {
     return { ok: false, response: odooJson(409, { ok: false, error: "Odoo is not connected. An admin connects it in Settings > Odoo.", code: "not_configured" }) };
   }
-  const apiKey = decryptSecret(connection.api_key_secret);
-  if (!apiKey) {
-    return { ok: false, response: odooJson(409, { ok: false, error: "The stored Odoo API key cannot be read. An admin enters it again in Settings > Odoo.", code: "credential_unavailable" }) };
+  const resolved = clientForConnection(connection, fetchImpl);
+  if (!resolved.ok) {
+    return resolved.code === "credential_unavailable"
+      ? { ok: false, response: odooJson(409, { ok: false, error: "The stored Odoo API key cannot be read. An admin enters it again in Settings > Odoo.", code: "credential_unavailable" }) }
+      : { ok: false, response: odooJson(400, { ok: false, error: "The stored Odoo connection is invalid. An admin saves it again in Settings > Odoo.", code: "invalid_config" }) };
   }
-  try {
-    const client = createOdooClient({ baseUrl: connection.base_url, database: connection.database_name, apiKey }, { fetchImpl });
-    return { ok: true, client, connection, publicUrl: connection.public_url ?? connection.base_url, stageMap: connectionStageMap(connection) };
-  } catch (error) {
-    return { ok: false, response: odooFailure(error, "connection") };
-  }
+  return { ok: true, client: resolved.client, connection, publicUrl: resolved.publicUrl, stageMap: resolved.stageMap };
 }
 
 export async function recordConnectionCheck(svc: Svc, workspaceId: string, error: string | null): Promise<void> {
@@ -328,6 +375,25 @@ export async function forgetDeletedApplicantLink(svc: Svc, workspaceId: string, 
   if (error) throw new Error("odoo_applicant_links delete failed");
 }
 
+/** The handed-off candidate behind an Odoo applicant id, if any. */
+export async function applicantLinkByApplicant(svc: Svc, workspaceId: string, applicantId: number): Promise<ApplicantLinkRow | null> {
+  const { data, error } = await svc
+    .from("odoo_applicant_links")
+    .select(APPLICANT_LINK_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .eq("applicant_id", applicantId)
+    .eq("state", "linked")
+    .maybeSingle();
+  if (error) throw new Error("odoo_applicant_links read failed");
+  return (data as ApplicantLinkRow | null) ?? null;
+}
+
+/** Forget a candidate's link whatever its state (the candidate was erased). */
+export async function deleteApplicantLink(svc: Svc, workspaceId: string, candidateId: string): Promise<void> {
+  const { error } = await svc.from("odoo_applicant_links").delete().eq("workspace_id", workspaceId).eq("candidate_id", candidateId);
+  if (error) throw new Error("odoo_applicant_links delete failed");
+}
+
 /** Drop a pending claim whose Odoo call failed before anything was created. */
 export async function releaseApplicantLink(svc: Svc, workspaceId: string, candidateId: string): Promise<void> {
   await svc
@@ -362,11 +428,61 @@ export async function clearLinks(svc: Svc, workspaceId: string): Promise<void> {
   if (jobs.error || applicants.error) throw new Error("odoo links delete failed");
 }
 
+// ── Odoo erasures ────────────────────────────────────────────────────────────
+
+export interface OdooErasureRow {
+  candidate_id: string;
+  request_id: string | null;
+  applicant_id: number;
+  status: "pending" | "deleted" | "kept_hired" | "failed";
+  detail: string | null;
+  attempts: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+const ERASURE_COLUMNS = "candidate_id, request_id, applicant_id, status, detail, attempts, created_at, updated_at, completed_at";
+
+export async function odooErasureFor(svc: Svc, workspaceId: string, candidateId: string): Promise<OdooErasureRow | null> {
+  const { data, error } = await svc.from("odoo_erasures").select(ERASURE_COLUMNS).eq("workspace_id", workspaceId).eq("candidate_id", candidateId).maybeSingle();
+  if (error) throw new Error("odoo_erasures read failed");
+  return (data as OdooErasureRow | null) ?? null;
+}
+
+export async function listOdooErasures(svc: Svc, workspaceId: string): Promise<OdooErasureRow[]> {
+  const { data, error } = await svc.from("odoo_erasures").select(ERASURE_COLUMNS).eq("workspace_id", workspaceId).limit(500);
+  if (error) throw new Error("odoo_erasures read failed");
+  return ((data as OdooErasureRow[] | null) ?? []).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+}
+
+export async function saveOdooErasure(
+  svc: Svc,
+  workspaceId: string,
+  row: Pick<OdooErasureRow, "candidate_id" | "request_id" | "applicant_id" | "status" | "detail" | "attempts">,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const terminal = row.status === "deleted" || row.status === "kept_hired";
+  const { error } = await svc.from("odoo_erasures").upsert(
+    {
+      workspace_id: workspaceId,
+      ...row,
+      detail: row.detail ? row.detail.slice(0, 500) : null,
+      updated_at: now,
+      completed_at: terminal ? now : null,
+    },
+    { onConflict: "workspace_id,candidate_id" },
+  );
+  if (error) throw new Error("odoo_erasures upsert failed");
+}
+
 // ── Candidate (server copy) ──────────────────────────────────────────────────
 
 export interface CandidateForHandoff {
   candidate: HandoffCandidate;
   campaignTitle: string;
+  confidentialityMode: boolean;
+  lastRevealAt: string | null;
 }
 
 /** The candidate from the server's copy of the workspace state. Null when it
@@ -375,8 +491,14 @@ export async function candidateForHandoff(svc: Svc, workspaceId: string, candida
   const { data, error } = await svc.rpc("odoo_candidate_record", { p_workspace_id: workspaceId, p_candidate_id: candidateId });
   if (error) throw new Error(`candidate read failed (${error.code ?? "?"})`);
   if (!data || typeof data !== "object") return null;
-  const record = data as { candidate?: unknown; campaignTitle?: unknown };
+  const record = data as { candidate?: unknown; campaignTitle?: unknown; confidentialityMode?: unknown; lastRevealAt?: unknown };
   const parsed = HandoffCandidateSchema.safeParse(record.candidate);
   if (!parsed.success) throw new Error("candidate record is malformed");
-  return { candidate: parsed.data, campaignTitle: typeof record.campaignTitle === "string" ? record.campaignTitle : "" };
+  return {
+    candidate: parsed.data,
+    campaignTitle: typeof record.campaignTitle === "string" ? record.campaignTitle : "",
+    // Fail closed: an unreadable setting counts as confidentiality on.
+    confidentialityMode: record.confidentialityMode !== false,
+    lastRevealAt: typeof record.lastRevealAt === "string" ? record.lastRevealAt : null,
+  };
 }

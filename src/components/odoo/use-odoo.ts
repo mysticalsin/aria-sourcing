@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { WORKSPACE_PULL_EVENT } from "@/lib/store";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { odooApi, type OdooApplicantView, type OdooConnectionView, type OdooJobLink } from "./api";
+import { jsonBody, odooApi, type OdooApplicantView, type OdooConnectionView, type OdooJobLink, type OdooStageChange } from "./api";
 
 /* Shared Odoo state for the campaign bar, the candidate drawer and the intake.
    Each piece refetches on the "aria:odoo-changed" window event. */
@@ -11,6 +12,12 @@ const CHANGED = "aria:odoo-changed";
 
 export function notifyOdooChanged(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGED));
+}
+
+/** Ask the store for the server's newer workspace now (the server applied
+ *  Odoo's changes, or wrote a hand-off note). */
+export function pullWorkspace(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(WORKSPACE_PULL_EVENT));
 }
 
 function useChangeCounter(): number {
@@ -52,35 +59,46 @@ export interface OdooCampaignState {
   loading: boolean;
   link: OdooJobLink | null;
   applicants: OdooApplicantView[];
+  /** Candidates the last sync moved in ARIA (server side). */
+  changes: OdooStageChange[];
   error: string | null;
   refresh: () => void;
 }
 
-/** The campaign's Odoo job link and the live Odoo state of its applicants. */
-export function useOdooCampaign(campaignId: string, enabled: boolean): OdooCampaignState {
+/**
+ * The campaign's Odoo job link and the Odoo state of its applicants. With
+ * `apply` (the user may source), the server applies Odoo's stages to the
+ * workspace (POST /sync, same path as the Odoo webhook); otherwise it is a
+ * read. Either way the store then pulls the server's newer version.
+ */
+export function useOdooCampaign(campaignId: string, enabled: boolean, apply = false): OdooCampaignState {
   const changes = useChangeCounter();
   const [tick, setTick] = React.useState(0);
-  const [state, setState] = React.useState<Omit<OdooCampaignState, "refresh">>({ loading: true, link: null, applicants: [], error: null });
+  const [state, setState] = React.useState<Omit<OdooCampaignState, "refresh">>({ loading: true, link: null, applicants: [], changes: [], error: null });
   React.useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true }));
     void Promise.all([
       odooApi<{ links: OdooJobLink[] }>("/links"),
-      odooApi<{ applicants: OdooApplicantView[] }>(`/applicants?campaignId=${encodeURIComponent(campaignId)}`),
+      apply
+        ? odooApi<{ applicants: OdooApplicantView[]; changes: OdooStageChange[] }>("/sync", jsonBody("POST", { campaignId }))
+        : odooApi<{ applicants: OdooApplicantView[] }>(`/applicants?campaignId=${encodeURIComponent(campaignId)}`),
     ]).then(([links, applicants]) => {
       if (cancelled) return;
       setState({
         loading: false,
         link: links.ok ? (links.data.links.find((l) => l.campaignId === campaignId) ?? null) : null,
         applicants: applicants.ok ? applicants.data.applicants : [],
+        changes: applicants.ok ? ((applicants.data as { changes?: OdooStageChange[] }).changes ?? []) : [],
         error: !links.ok ? links.error : !applicants.ok ? applicants.error : null,
       });
+      if (applicants.ok && applicants.data.applicants.length > 0) pullWorkspace();
     });
     return () => {
       cancelled = true;
     };
-  }, [campaignId, enabled, changes, tick]);
+  }, [campaignId, enabled, apply, changes, tick]);
   const refresh = React.useCallback(() => setTick((v) => v + 1), []);
   return { ...state, refresh };
 }

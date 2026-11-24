@@ -4,7 +4,7 @@
    (src/lib/integrations/odoo/authority.ts).
    ========================================================================== */
 
-import { OdooError, type OdooClient } from "./client";
+import { OdooError, isOdooError, type OdooClient } from "./client";
 import {
   JOB_FIELDS,
   ODOO_SOURCE_NAME,
@@ -65,7 +65,7 @@ export async function checkOdoo(client: OdooClient): Promise<OdooCheck> {
   try {
     context = await client.call<Row>("res.users", "context_get");
   } catch (error) {
-    if (error instanceof OdooError && error.code === "not_found") {
+    if (isOdooError(error) && error.code === "not_found") {
       throw new OdooError("not_found", "Odoo did not find this database. Check the database name.", error.status);
     }
     throw error;
@@ -74,9 +74,19 @@ export async function checkOdoo(client: OdooClient): Promise<OdooCheck> {
   if (!uid) throw new OdooError("bad_response", "Odoo did not say which user the API key belongs to.");
   const users = await client.call<Row[]>("res.users", "read", { ids: [uid], fields: ["name"] });
   const userName = typeof users?.[0]?.name === "string" ? (users[0].name as string).slice(0, 200) : `user ${uid}`;
-  const installed = await client.call<number>("ir.model", "search_count", { domain: [["model", "=", "hr.applicant"]] });
-  const recruitment = installed > 0;
-  const stages = recruitment ? await listStages(client) : [];
+  // Reading the stages proves both that Recruitment is installed (404 when
+  // the model does not exist) and that this user may read it (403). A
+  // non-admin user cannot read ir.model, so it is not used here.
+  let stages: OdooStage[] = [];
+  let recruitment = true;
+  try {
+    stages = await listStages(client);
+  } catch (error) {
+    if (isOdooError(error) && error.code === "not_found") recruitment = false;
+    else if (isOdooError(error) && error.code === "forbidden") {
+      throw new OdooError("forbidden", `The Odoo user ${userName} cannot read Recruitment. Give it Recruitment access "Officer".`, error.status, error.odooName);
+    } else throw error;
+  }
   return { version, major, userName, recruitment, stages };
 }
 
@@ -279,4 +289,189 @@ export async function readApplicantStates(
   return ids.map(
     (id) => found.get(id) ?? { applicantId: id, jobId: null, status: "deleted" as const, stage: null, refuseReason: "" },
   );
+}
+
+/* ---- Erasure ---------------------------------------------------------------- */
+
+export interface ApplicantErasure {
+  outcome: "deleted" | "kept_hired" | "already_gone";
+  contact: "deleted" | "kept" | "none";
+  /** An entry was written in Odoo's own GDPR log (privacy.log). */
+  logged: boolean;
+  detail: string;
+}
+
+/** "Jane Doe" -> "J*** D***", "jane@x.com" -> "j***@x.com": what Odoo's own
+ *  privacy log keeps about an erased person. */
+export function maskForPrivacyLog(name: string, email: string): { name: string; email: string } {
+  const maskedName = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => `${part[0]}***`)
+    .join(" ")
+    .slice(0, 120);
+  const at = email.indexOf("@");
+  const maskedEmail = at > 0 ? `${email[0]}***${email.slice(at)}`.slice(0, 200) : "";
+  return { name: maskedName || "***", email: maskedEmail || "***" };
+}
+
+function odooTime(value: unknown): number | null {
+  if (typeof value !== "string" || !value) return null;
+  const parsed = Date.parse(`${value.replace(" ", "T")}Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Erase the applicant ARIA created in Odoo, for an ARIA candidate erasure.
+ * - Hired: kept. The application and the employee record follow HR retention
+ *   rules ARIA does not know; HR decides in Odoo.
+ * - Otherwise the applicant is deleted (Odoo deletes its notes and
+ *   attachments with it). Its contact (res.partner) is deleted only when Odoo
+ *   created it for this application (same author, same minute) and nothing
+ *   else uses it; a contact that existed before is someone else's record.
+ * - An entry is written in Odoo's privacy log when the user may do so.
+ */
+export async function eraseApplicant(client: OdooClient, applicantId: number, reference: string): Promise<ApplicantErasure> {
+  const fields = await modelFields(client, "hr.applicant");
+  const rows = await client.call<Row[]>("hr.applicant", "search_read", {
+    domain: [["id", "=", applicantId]],
+    fields: pick(fields, ["application_status", "partner_id", "employee_id", "emp_id", "partner_name", "email_from", "create_date", "create_uid"]),
+    context: { active_test: false },
+    limit: 1,
+  });
+  const row = rows?.[0];
+  if (!row) return { outcome: "already_gone", contact: "none", logged: false, detail: "The applicant was already deleted in Odoo." };
+  if (row.application_status === "hired" || many2one(row.employee_id) || many2one(row.emp_id)) {
+    return {
+      outcome: "kept_hired",
+      contact: "none",
+      logged: false,
+      detail: "Hired in Odoo: the application and the employee record follow HR retention. HR erases them in Odoo if it applies.",
+    };
+  }
+
+  const partner = many2one(row.partner_id);
+  await client.call("hr.applicant", "unlink", { ids: [applicantId] });
+  let contact: ApplicantErasure["contact"] = "none";
+  let contactNote = "";
+  if (partner) {
+    contact = "kept";
+    try {
+      const [info] = await client.call<Row[]>("res.partner", "search_read", {
+        domain: [["id", "=", partner.id]],
+        fields: ["create_date", "create_uid", "user_ids"],
+        context: { active_test: false },
+        limit: 1,
+      });
+      const others = await client.call<number>("hr.applicant", "search_count", {
+        domain: [["partner_id", "=", partner.id]],
+        context: { active_test: false },
+      });
+      const createdWith =
+        info &&
+        many2one(info.create_uid)?.id === many2one(row.create_uid)?.id &&
+        Math.abs((odooTime(info.create_date) ?? 0) - (odooTime(row.create_date) ?? Number.NaN)) <= 120_000;
+      const users = Array.isArray(info?.user_ids) ? info.user_ids.length : 0;
+      if (!info) contactNote = " Its contact was already gone.";
+      else if (!createdWith) contactNote = " Its contact existed before the application and was kept.";
+      else if (others > 0 || users > 0) contactNote = " Its contact is used elsewhere in Odoo and was kept.";
+      else {
+        await client.call("res.partner", "unlink", { ids: [partner.id] });
+        contact = "deleted";
+        contactNote = " Its contact, created for this application, was deleted too.";
+      }
+    } catch (error) {
+      contactNote = ` Its contact was kept (${isOdooError(error) ? error.message : "Odoo refused"}).`;
+    }
+  }
+
+  let logged = false;
+  try {
+    const masked = maskForPrivacyLog(typeof row.partner_name === "string" ? row.partner_name : "", typeof row.email_from === "string" ? row.email_from : "");
+    await client.call("privacy.log", "create", {
+      vals_list: [
+        {
+          anonymized_name: masked.name,
+          anonymized_email: masked.email,
+          execution_details: `Deleted hr.applicant #${applicantId}${contact === "deleted" ? ` and res.partner #${partner!.id}` : ""}.`,
+          records_description: `Recruitment applicant created by ARIA (${reference}).`,
+          additional_note: "Erasure requested in ARIA.",
+        },
+      ],
+    });
+    logged = true;
+  } catch {
+    // Writing Odoo's privacy log needs extra rights; ARIA keeps its own receipt.
+  }
+  return { outcome: "deleted", contact, logged, detail: `Applicant deleted in Odoo with its notes and attachments.${contactNote}` };
+}
+
+/* ---- Live updates (Odoo automation rule -> ARIA webhook) ------------------- */
+
+export const AUTOMATION_NAME = "ARIA: applicant changed";
+
+export type WebhookSetup =
+  | { automated: true; automationId: number }
+  | { automated: false; reason: string };
+
+/**
+ * Create (or point at a new URL) the Odoo automation rule that calls ARIA when
+ * an applicant from source "ARIA" changes stage, is archived or refused.
+ * Needs Odoo's Automation Rules app and an Odoo admin key; otherwise the
+ * caller shows the manual steps (docs/odoo.md).
+ */
+export async function ensureStageWebhook(client: OdooClient, url: string, existingId: number | null): Promise<WebhookSetup> {
+  try {
+    if (existingId) {
+      const [rule] = await client.call<Row[]>("base.automation", "search_read", {
+        domain: [["id", "=", existingId]],
+        fields: ["action_server_ids"],
+        context: { active_test: false },
+        limit: 1,
+      });
+      const actions = Array.isArray(rule?.action_server_ids) ? (rule.action_server_ids as number[]) : [];
+      if (rule && actions.length > 0) {
+        await client.call("ir.actions.server", "write", { ids: actions, vals: { webhook_url: url } });
+        await client.call("base.automation", "write", { ids: [existingId], vals: { active: true } });
+        return { automated: true, automationId: existingId };
+      }
+    }
+    const [modelId] = await client.call<number[]>("ir.model", "search", { domain: [["model", "=", "hr.applicant"]], limit: 1 });
+    if (!modelId) return { automated: false, reason: "Recruitment is not installed in this Odoo." };
+    const triggerFields = await client.call<number[]>("ir.model.fields", "search", {
+      domain: [["model", "=", "hr.applicant"], ["name", "in", ["stage_id", "active", "refuse_reason_id"]]],
+    });
+    const created = await client.call<number[]>("base.automation", "create", {
+      vals_list: [
+        {
+          name: AUTOMATION_NAME,
+          model_id: modelId,
+          trigger: "on_create_or_write",
+          trigger_field_ids: [[6, 0, triggerFields]],
+          filter_domain: "[('source_id.name', '=', 'ARIA')]",
+          action_server_ids: [[0, 0, { name: "Notify ARIA", state: "webhook", model_id: modelId, webhook_url: url }]],
+        },
+      ],
+    });
+    if (!Array.isArray(created) || typeof created[0] !== "number") return { automated: false, reason: "Odoo did not return the automation rule." };
+    return { automated: true, automationId: created[0] };
+  } catch (error) {
+    if (isOdooError(error) && error.code === "not_found") {
+      return { automated: false, reason: "Odoo's Automation Rules app is not installed." };
+    }
+    if (isOdooError(error) && error.code === "forbidden") {
+      return { automated: false, reason: "The Odoo user ARIA connects with may not create automation rules (Odoo admin only)." };
+    }
+    throw error;
+  }
+}
+
+/** Remove the automation rule ARIA created. Best effort: false when Odoo refused. */
+export async function removeStageWebhook(client: OdooClient, automationId: number): Promise<boolean> {
+  try {
+    await client.call("base.automation", "unlink", { ids: [automationId] });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -5,6 +5,8 @@
 //                           internal note. A recruiter's click; idempotent.
 //   GET  ?campaignId=<id>   the Odoo state of every handed-off candidate (of
 //                           one campaign), with the ARIA stage it implies.
+//                           Read-only: POST /api/integrations/odoo/sync and the
+//                           Odoo webhook apply it to the workspace.
 // The candidate is read from the server's copy of the workspace state, never
 // taken from the browser.
 
@@ -13,11 +15,12 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api/validate";
 import {
   applicantUrl,
-  ariaStageForApplicant,
+  confidentialityBlock,
   handoffBlock,
   handoffNoteHtml,
 } from "@/lib/integrations/odoo/mapping";
 import { createOrFindApplicant, listStages, postApplicantNote, readApplicantStates } from "@/lib/integrations/odoo/service";
+import { readLinkedApplicants, recordHandoffInWorkspace, workspaceStages } from "@/lib/integrations/odoo/sync";
 import {
   STALE_CLAIM_MS,
   applicantLinkFor,
@@ -30,7 +33,6 @@ import {
   odooFailure,
   odooJson,
   reclaimStaleApplicantLink,
-  recordApplicantSync,
   releaseApplicantLink,
   requireOdooUser,
   resolveOdoo,
@@ -102,6 +104,13 @@ export async function POST(req: NextRequest) {
   }
   const block = handoffBlock(candidate);
   if (block) return odooJson(409, { ok: false, error: block, code: "blocked" });
+  // The drawer hides the button on a masked profile; the server holds the
+  // same line, from the workspace's own setting and reveal log.
+  const confidential = confidentialityBlock(
+    { confidentialityMode: record.confidentialityMode, stage: candidate.stage, lastRevealAt: record.lastRevealAt },
+    Date.now(),
+  );
+  if (confidential) return odooJson(409, { ok: false, error: confidential, code: "confidential" });
   if (!jobLink) {
     return odooJson(409, {
       ok: false,
@@ -165,11 +174,25 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  let auditWarning: string | null = null;
+  try {
+    await recordHandoffInWorkspace(svc, workspaceId, {
+      candidateId,
+      applicantId,
+      jobName: jobLink.job_name ?? `job #${jobLink.job_id}`,
+      sentBy: auth.ctx.userEmail || "an ARIA user",
+      created,
+    });
+  } catch {
+    auditWarning = "The applicant is in Odoo, but ARIA could not write the hand-off in the candidate's history.";
+  }
+
+  const warning = [noteWarning, auditWarning].filter(Boolean).join(" ");
   return odooJson(200, {
     ok: true,
     status: created ? "created" : "linked_existing",
     applicant: { id: applicantId, url: applicantUrl(odoo.publicUrl, applicantId), stage, status },
-    ...(noteWarning ? { warning: noteWarning } : {}),
+    ...(warning ? { warning } : {}),
   });
 }
 
@@ -197,32 +220,12 @@ export async function GET(req: NextRequest) {
     return odooJson(503, { ok: false, error: "The Odoo connection could not be read." });
   }
   if (!odoo.ok) return odoo.response;
+  let applicants;
   try {
-    const stages = await listStages(odoo.client);
-    const states = new Map(
-      (await readApplicantStates(odoo.client, links.map((row) => row.applicant_id), stages)).map((state) => [state.applicantId, state]),
-    );
-    const applicants = [];
-    for (const row of links) {
-      const state = states.get(row.applicant_id);
-      if (!state) continue;
-      const stageName = state.stage?.name ?? null;
-      if (stageName !== row.odoo_stage || state.status !== row.odoo_status) {
-        await recordApplicantSync(svc, workspaceId, row.candidate_id, { stage: stageName, status: state.status }).catch(() => undefined);
-      }
-      applicants.push({
-        candidateId: row.candidate_id,
-        campaignId: row.campaign_id,
-        applicantId: row.applicant_id,
-        url: applicantUrl(odoo.publicUrl, row.applicant_id),
-        stage: stageName,
-        status: state.status,
-        refuseReason: state.refuseReason || null,
-        ariaStage: ariaStageForApplicant(state, stages, odoo.stageMap),
-      });
-    }
-    return odooJson(200, { ok: true, applicants });
+    applicants = await readLinkedApplicants(svc, workspaceId, odoo, links);
   } catch (error) {
     return odooFailure(error, "sync");
   }
+  const stages = await workspaceStages(svc, workspaceId, applicants.map((a) => a.candidateId)).catch(() => ({}));
+  return odooJson(200, { ok: true, applicants, workspaceStages: stages });
 }
