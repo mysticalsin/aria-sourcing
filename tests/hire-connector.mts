@@ -171,6 +171,26 @@ ok(
     Object.keys(writeKw.params.args[6] as object).length === 0,
 );
 
+const closeCalls: { init?: RequestInit }[] = [];
+const closed = await odooHireConnector(odooEnv, (async (_url: string, init?: RequestInit) => {
+  closeCalls.push({ init });
+  if (closeCalls.length === 1) return jsonResponse(200, { result: 7 });
+  return jsonResponse(200, { result: true });
+}) as typeof fetch).call({
+  idempotencyKey: "hire-close",
+  model: "hr.job",
+  method: "write",
+  values: { id: 11, state: "open", no_of_recruitment: 0 },
+});
+const closeKw = JSON.parse(String(closeCalls[1]?.init?.body)) as { params: { args: unknown[] } };
+ok(
+  "odoo hr.job close never sends state",
+  closed.ok === true &&
+    JSON.stringify(closeKw.params.args[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(closeKw.params.args[6]) === "{}" &&
+    !JSON.stringify(closeKw.params.args[5]).includes('"state"'),
+);
+
 const echoed = await odooHireConnector(odooEnv, (async () => jsonResponse(200, { error: { message: "rejected secret" } })) as typeof fetch).call(call);
 ok("odoo auth errors do not echo the api key", echoed.ok === false && !echoed.error.includes("secret"));
 
