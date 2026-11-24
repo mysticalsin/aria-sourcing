@@ -14,11 +14,34 @@ function stepLabel(action: string, skipped?: boolean): string {
   return "Close the vacancy";
 }
 
+/** One host per line, with a wrap opportunity after each slash. The text stays the URL. */
+function HostLines({ hosts, testId, className }: { hosts: string[]; testId: string; className?: string }) {
+  return (
+    <p className={className} data-testid={testId}>
+      {hosts.map((host, index) => (
+        <span key={`${index}-${host}`} className="block">
+          {host.split(/(?<=\/)/).map((part, partIndex) => (
+            <span key={partIndex}>
+              {part}
+              <wbr />
+            </span>
+          ))}
+          {index < hosts.length - 1 ? "\n" : ""}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export default async function SyntheticHirePage() {
   const demo = await runSyntheticHireDemo();
-  const vacancy = JSON.stringify(demo.vacancyClose);
-  const kwargs = JSON.stringify(demo.vacancyKwargs);
-  const unsetResult = JSON.stringify({ ok: demo.unset.ok, erp: demo.unset.erp, linkedIn: demo.unset.linkedIn });
+  const vacancy = JSON.stringify(demo.vacancyClose, null, 2);
+  const kwargs = JSON.stringify(demo.vacancyKwargs, null, 2);
+  const unsetResult = JSON.stringify(
+    { ok: demo.unset.ok, erp: demo.unset.erp, linkedIn: demo.unset.linkedIn },
+    null,
+    2,
+  );
   const hireRecordId = demo.hired.steps.find((step) => step.action === "hire")?.id ?? "";
 
   return (
@@ -104,14 +127,14 @@ export default async function SyntheticHirePage() {
                 </div>
               </dl>
               <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Write</p>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-write">{vacancy}</pre>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-write">{vacancy}</pre>
               <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Kwargs</p>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-kwargs">{kwargs}</pre>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-kwargs">{kwargs}</pre>
               <p className="mt-4 text-sm text-muted">
                 hr.job fields sent: <span data-testid="hr-job-fields">{demo.hrJobFields.join(",")}</span>. hr.job.state sent: <span data-testid="hr-job-state-sent">{demo.hrJobStateSent ? "yes" : "no"}</span>.
               </p>
               <p className="mt-2 text-sm text-muted">hr.job.state is not sent. Recruiting stops because no_of_recruitment is 0.</p>
-              <p className="mt-2 break-all text-sm text-muted" data-testid="odoo-hosts">{demo.odooHosts.join(" ")}</p>
+              <HostLines hosts={demo.odooHosts} testId="odoo-hosts" className="mt-2 text-sm text-muted" />
             </div>
           </CardBody>
         </Card>
@@ -126,7 +149,7 @@ export default async function SyntheticHirePage() {
             <p className="text-sm text-muted">
               The same fixture, with HIRE_CONNECTOR unset. Odoo, SMART, the generic API, and MCP are all unset. Sourcing still completes and no upstream request is sent.
             </p>
-            <pre className="mt-4 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="unset-result">{unsetResult}</pre>
+            <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="unset-result">{unsetResult}</pre>
             <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
                 <dt className="text-xs font-bold uppercase tracking-wider text-muted">ok</dt>
@@ -168,7 +191,7 @@ export default async function SyntheticHirePage() {
                   <p className="mt-1 text-sm text-muted">
                     erp {item.erp} · ok {String(item.ok)} · linkedIn {String(item.linkedIn)}
                   </p>
-                  <p className="mt-1 break-all text-sm text-muted" data-testid={`connector-${item.erp}-hosts`}>{item.hosts.join(" ")}</p>
+                  <HostLines hosts={item.hosts} testId={`connector-${item.erp}-hosts`} className="mt-1 text-sm text-muted" />
                 </li>
               ))}
             </ul>

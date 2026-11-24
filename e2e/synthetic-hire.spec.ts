@@ -4,11 +4,11 @@ import { join } from "node:path";
 
 const shots = process.env.ARIA_E2E_SHOT_DIR ?? "e2e-artifacts/local/screenshots";
 
-async function shot(page: Page, name: string, locator?: Locator) {
+async function shot(page: Page, name: string, locator?: Locator, fullPage = true) {
   mkdirSync(shots, { recursive: true });
   const path = join(shots, `${name}.png`);
   if (locator) await locator.screenshot({ path });
-  else await page.screenshot({ path, fullPage: true });
+  else await page.screenshot({ path, fullPage });
 }
 
 function hostsOf(text: string): string[] {
@@ -138,12 +138,25 @@ test.describe("phone width", () => {
     }));
     expect(unsetBox.scrollWidth).toBeLessThanOrEqual(unsetBox.clientWidth + 1);
     expect(JSON.parse(unsetBox.text)).toEqual({ ok: true, erp: "skipped", linkedIn: true });
-    expect(unsetBox.text).toContain('"linkedIn":true');
+    expect(unsetBox.text.split("\n").some((line) => line.includes('"linkedIn"'))).toBe(true);
     await expect(page.getByTestId("unset-fetches")).toHaveText("0");
     await shot(page, "03-phone-no-connector", page.locator("#synthetic-unset"));
 
     await expect(page.getByTestId("selected-connector")).toHaveText("odoo");
     await expect(page.getByTestId("odoo-step-hire")).toContainText("written");
+    for (const id of ["odoo-hosts", "connector-smart-hosts", "connector-api-hosts", "connector-mcp-hosts"]) {
+      const hostBox = await page.getByTestId(id).evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(hostBox.scrollWidth).toBeLessThanOrEqual(hostBox.clientWidth + 1);
+    }
+    expect(hostsOf((await page.getByTestId("connector-smart-hosts").textContent()) ?? "")).toEqual([
+      "https://smart.example.test/api/hire/hr.job",
+      "https://smart.example.test/api/hire/hr.applicant",
+      "https://smart.example.test/api/hire/hr.applicant",
+      "https://smart.example.test/api/hire/hr.applicant",
+    ]);
     for (const erp of ["smart", "api", "mcp"] as const) {
       await expect(page.getByTestId(`connector-${erp}-outcome`)).toHaveText("hired");
     }
@@ -153,6 +166,7 @@ test.describe("phone width", () => {
     }));
     expect(pageWidth.scrollWidth).toBeLessThanOrEqual(pageWidth.clientWidth + 1);
     expect(outside).toEqual([]);
-    await shot(page, "04-phone-connectors", page.locator("#synthetic-connectors"));
+    await page.getByTestId("connector-mcp").evaluate((el) => el.scrollIntoView({ block: "center", inline: "nearest" }));
+    await shot(page, "04-phone-connectors", undefined, false);
   });
 });
