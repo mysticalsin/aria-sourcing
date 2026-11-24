@@ -103,7 +103,7 @@ const gate = workflow.slice(workflow.indexOf("\n  release-gate:\n"));
 ok(
   "the release gate always runs",
   gate.includes("if: always()") &&
-    gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters]"),
+    gate.includes("needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e]"),
 );
 ok(
   "the release gate fails unless secret scan and the local demo succeed",

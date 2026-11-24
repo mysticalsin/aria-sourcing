@@ -1,15 +1,17 @@
 ---
 project: MSourcing / ARIA
-shift: 469
+shift: 474
 agent: cursor
-updated: 2026-11-21
-status: stack-shared-config
+updated: 2026-11-23 20:40 America/Sao_Paulo
+status: 178-merged-twa-odoo
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 474
 
 ## Current state
 
+- Pull request 178 merged current twa-odoo `a27373efae80fc438f48405ef0a3b683a29c2685` with a merge commit. Do not squash-merge 178 until the gates pass and Ultron confirms. No force push.
+- The LinkedIn token channel stays in `src/channels/linkedin-token/` and stays off until an owner or admin records the risk notice. The release gate also requires the LinkedIn token Playwright job.
 - Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.

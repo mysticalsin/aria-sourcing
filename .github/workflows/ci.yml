@@ -259,10 +259,34 @@ jobs:
           fi
           (cd services/channels && go test -race ./...)
 
+  linkedin-token-e2e:
+    name: LinkedIn token Playwright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup Node 22
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Run the headless LinkedIn token suite
+        env:
+          CI: "true"
+        run: bash scripts/e2e-mac.sh
+      - name: Upload the end-to-end log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linkedin-token-e2e
+          path: e2e-artifacts
+          if-no-files-found: error
+
   release-gate:
     name: Release gate
     if: always()
-    needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters]
+    needs: [quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -275,8 +299,9 @@ jobs:
           DATABASE_SECURITY_RESULT: ${{ needs.database-security.result }}
           LOCAL_DEMO_RESULT: ${{ needs.local-demo.result }}
           CHANNEL_ADAPTERS_RESULT: ${{ needs.channel-adapters.result }}
+          LINKEDIN_TOKEN_E2E_RESULT: ${{ needs.linkedin-token-e2e.result }}
         run: |
-          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ] || [ "$CHANNEL_ADAPTERS_RESULT" != success ]; then
-            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT channel_adapters=$CHANNEL_ADAPTERS_RESULT"
+          if [ "$QUALITY_RESULT" != success ] || [ "$AUDIT_RESULT" != success ] || [ "$SECRET_SCAN_RESULT" != success ] || [ "$DATABASE_SECURITY_RESULT" != success ] || [ "$LOCAL_DEMO_RESULT" != success ] || [ "$CHANNEL_ADAPTERS_RESULT" != success ] || [ "$LINKEDIN_TOKEN_E2E_RESULT" != success ]; then
+            echo "::error::release gate failed: quality=$QUALITY_RESULT audit=$AUDIT_RESULT secret_scan=$SECRET_SCAN_RESULT database_security=$DATABASE_SECURITY_RESULT local_demo=$LOCAL_DEMO_RESULT channel_adapters=$CHANNEL_ADAPTERS_RESULT linkedin_token_e2e=$LINKEDIN_TOKEN_E2E_RESULT"
             exit 1
           fi
