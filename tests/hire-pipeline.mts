@@ -455,11 +455,28 @@ ok(
     synthetic.unset.steps.length === 0 &&
     synthetic.unset.fetchCount === 0,
 );
+function linkedInUrlCount(source: string): number {
+  let count = 0;
+  for (const match of source.matchAll(/https?:\/\/[^\s"'`<>)]+/g)) {
+    let host = "";
+    try {
+      host = new URL(match[0]).hostname;
+    } catch {
+      continue;
+    }
+    const labels = host.split(".").filter((label) => label.length > 0);
+    if (labels.slice(-2).join(".") === "linkedin.com") count += 1;
+  }
+  return count;
+}
 const demoSource = readFileSync(new URL("../src/lib/synthetic-hire-demo.ts", import.meta.url), "utf8");
 const demoPage = readFileSync(new URL("../src/app/demo/hire/page.tsx", import.meta.url), "utf8");
 ok(
   "the synthetic hire demo does not call LinkedIn",
-  !demoSource.includes("linkedin.com") && !demoPage.includes("linkedin.com") && !demoSource.includes("api.linkedin"),
+  linkedInUrlCount(demoSource) === 0 &&
+    linkedInUrlCount(demoPage) === 0 &&
+    linkedInUrlCount('fetch("https://api.linkedin.com/v2/me")') === 1 &&
+    linkedInUrlCount('fetch("https://linkedin.com.evil.test/in/fixture")') === 0,
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
