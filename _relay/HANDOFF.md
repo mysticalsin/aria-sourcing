@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 3
 agent: cursor
-updated: 2026-11-24 16:03 UTC
+updated: 2026-11-24 14:20 -03
 status: in-progress
 ---
 
@@ -18,19 +18,23 @@ status: in-progress
 - Local `npm audit --audit-level=high` exits 0 (`found 0 vulnerabilities`), including `npm ci` with npm 10.8.2 and npm 10.9.9. `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build` (Next.js 16.4.6, 58 pages) exited 0. Hire suites stayed `tests/hire-connector.mts` 62 passed, `tests/hire-pipeline.mts` 46 passed.
 - `/demo/hire` was not re-rendered this shift. Hire connector behavior was not edited. No `ODOO_*` values were set and no live Odoo host was called.
 - Draft PR https://github.com/mysticalsin/aria-sourcing/pull/319 only. Not merged. Not deployed. PRs 313, 317, and 318 were not updated.
+- CI on `eb685e91` is green for both `Typecheck / Lint / Test / Build` jobs.
+- With the four Odoo variables set to the existing fixture placeholders, `hireEnvForRoute` plus `runSourcingThroughHired` and `POST /api/hire` both complete sourcing through hired on the in-repo fake. The route proof stubs `fetch` and uses the RFC 5737 documentation address `203.0.113.50`, so no DNS lookup and no socket run. The fixture values are removed before the test exits.
 
 ## Done this shift
 - Moved the lock and the direct floors so the blocking audit can pass without a hire behavior change.
 - `@dust-tt/client` 1.2.6 bundled `@modelcontextprotocol/sdk@1.26.0`, which `npm audit fix` cannot rewrite. 1.2.11 is the published client whose SDK range is `^1.32.1`.
 
 ## Blockers
-- On tip `599d1d197a8d76bc93e7157b177c3e167683714f`, audit is green (`found 0 vulnerabilities`). The job still fails in gitleaks: the depth-1 checkout does not contain the parent commit the scan range names (`unknown revision`). A fetch-unshallow step was added before the scan. Do not treat that as a secret finding. The log says no leaks were found in the partial scan.
+- A real Odoo call is blocked because `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, and `ODOO_API_KEY` are absent from the process environment and from `.env`, `.env.local`, `.env.production`, and `.env.development`. No host was guessed and none was called.
+- `ODOO_HIRED_STAGE_ID` is also absent. With the four variables set, job create, applicant create, and the vacancy close run. The hired-stage write stays skipped until that id is a positive integer.
+- The live transport still refuses non-https, loopback, private, and metadata hosts.
 - `@dust-tt/client@1.2.11` declares `engines.node >=24.16.0`. CI uses Node 20. `npm ci` warns `EBADENGINE` and continues. `tests/dust.mts` passed under Node v20.20.2 (28 passed).
 
 ## Next steps
-1. Read the GitHub check runs on the new tip. If `Typecheck / Lint / Test / Build` is green, record that job URL here and leave the PR a draft.
-2. If it is still red, use the job log. Do not loosen `npm audit --audit-level=high`.
-3. Keep this pull request a draft. Do not merge it and do not deploy it.
+1. Leave the pull request a draft. Do not merge it and do not deploy it.
+2. A real Odoo call waits on the four runtime variables. Do not invent them.
+3. CI on `eb685e91` is green. A later proof commit needs its own check run.
 
 ## Decisions made (don't relitigate)
 - Synthetic `/demo/hire` never sends runtime credentials. It uses the in-repo fake.

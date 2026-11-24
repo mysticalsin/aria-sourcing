@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { odooExecuteResponse } from "../src/lib/fake-odoo";
+import { NextRequest } from "next/server";
+import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
 import { fetchPublicUrl } from "../src/lib/api/public-fetch";
 import { envForHireRequest, hireEnvForRoute, runSourcingThroughHired } from "../src/lib/mcp-client";
 import { runSyntheticHireDemo } from "../src/lib/synthetic-hire-demo";
@@ -564,6 +565,128 @@ try {
 }
 ok("the live transport refuses the metadata host", metadataCalled === false);
 ok("the synthetic demo module does not read process.env", !demoSource.includes("process.env"));
+
+const liveCredentialNames = ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_API_KEY"] as const;
+ok(
+  "this process has no live Odoo credentials to spend",
+  liveCredentialNames.every((name) => !process.env[name]),
+);
+
+const liveFixture = {
+  idempotencyKey: "live-path-fixture",
+  job: { name: "Fixture Platform Role", department: "Fixture Delivery" },
+  applicant: { name: "Fixture Candidate North", email: "fixture.north@example.test" },
+  stage: "Hired",
+};
+const liveEnv = hireEnvForRoute(
+  {
+    NODE_ENV: "test",
+    ODOO_URL: "https://odoo.example.test/",
+    ODOO_DB: "fixture",
+    ODOO_USERNAME: "fixture-api",
+    ODOO_API_KEY: "fixture-key",
+  },
+  false,
+);
+const liveFake = createFakeOdooFetch(10);
+const liveHired = await runSourcingThroughHired(liveFixture, liveEnv, liveFake.fetch);
+const liveExecute = liveFake.calls
+  .map((call) => JSON.parse(String(call.init?.body ?? "{}")) as { params?: { method?: string; args?: unknown[] } })
+  .filter((body) => body.params?.method === "execute_kw");
+const liveClose = liveExecute.find((body) => body.params?.args?.[3] === "hr.job" && body.params.args[4] === "write");
+ok(
+  "the live env selector hires on the fake Odoo when the four variables are set",
+  !liveEnv.HIRE_CONNECTOR &&
+    liveHired.ok === true &&
+    liveHired.erp === "odoo" &&
+    liveHired.linkedIn === true &&
+    liveHired.steps.map((step) => `${step.action}:${step.skipped === true ? "skipped" : "written"}`).join(",") ===
+      "job:written,applicant:written,stage:skipped,hire:written" &&
+    JSON.stringify(liveClose?.params?.args?.[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(liveClose?.params?.args?.[6]) === "{}" &&
+    liveFake.calls.every((call) => call.url === "https://odoo.example.test/jsonrpc"),
+);
+
+const stagedLive = createFakeOdooFetch(10);
+const stagedLiveResult = await runSourcingThroughHired(
+  liveFixture,
+  hireEnvForRoute({ ...liveEnv, ODOO_HIRED_STAGE_ID: "15" }, false),
+  stagedLive.fetch,
+);
+const stagedWrite = stagedLive.calls
+  .map((call) => JSON.parse(String(call.init?.body ?? "{}")) as { params?: { method?: string; args?: unknown[] } })
+  .find((body) => body.params?.args?.[3] === "hr.applicant" && body.params.args[4] === "write");
+ok(
+  "the same live path writes the hired stage when that id is set",
+  stagedLiveResult.ok === true &&
+    stagedLiveResult.steps[2]?.skipped !== true &&
+    JSON.stringify(stagedWrite?.params?.args?.[5]) === JSON.stringify([[12], { stage_id: 15 }]),
+);
+
+// 203.0.113.50 is RFC 5737 TEST-NET-3. The public-URL check accepts it without DNS.
+// global fetch is the in-repo fake, so the route's live transport never opens a socket.
+const routeFake = createFakeOdooFetch(10);
+const previousFetch = globalThis.fetch;
+const previousEnv = {
+  ODOO_URL: process.env.ODOO_URL,
+  ODOO_DB: process.env.ODOO_DB,
+  ODOO_USERNAME: process.env.ODOO_USERNAME,
+  ODOO_API_KEY: process.env.ODOO_API_KEY,
+  ODOO_HIRED_STAGE_ID: process.env.ODOO_HIRED_STAGE_ID,
+  HIRE_CONNECTOR: process.env.HIRE_CONNECTOR,
+};
+process.env.ODOO_URL = "https://203.0.113.50/";
+process.env.ODOO_DB = "fixture";
+process.env.ODOO_USERNAME = "fixture-api";
+process.env.ODOO_API_KEY = "fixture-key";
+delete process.env.ODOO_HIRED_STAGE_ID;
+delete process.env.HIRE_CONNECTOR;
+globalThis.fetch = routeFake.fetch;
+let routeStatus = 0;
+let routeBody: { ok?: boolean; erp?: string; linkedIn?: boolean; steps?: { action: string; skipped?: boolean }[] } = {};
+try {
+  const { POST } = await import("../src/app/api/hire/route.ts");
+  const response = await POST(
+    new NextRequest("http://127.0.0.1:3456/api/hire", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://127.0.0.1:3456" },
+      body: JSON.stringify(liveFixture),
+    }),
+  );
+  routeStatus = response.status;
+  routeBody = (await response.json()) as typeof routeBody;
+} finally {
+  globalThis.fetch = previousFetch;
+  for (const [name, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+const routeClose = routeFake.calls
+  .map((call) => JSON.parse(String(call.init?.body ?? "{}")) as { params?: { method?: string; args?: unknown[] } })
+  .find((body) => body.params?.method === "execute_kw" && body.params.args?.[3] === "hr.job" && body.params.args[4] === "write");
+const routeStateSent = routeFake.calls.some((call) => {
+  const body = JSON.parse(String(call.init?.body ?? "{}")) as { params?: { args?: unknown[] } };
+  return JSON.stringify(body.params?.args?.[5] ?? null).includes('"state"');
+});
+ok(
+  "POST /api/hire follows the live path onto the fake Odoo when the four variables are set",
+  routeStatus === 200 &&
+    routeBody.ok === true &&
+    routeBody.erp === "odoo" &&
+    routeBody.linkedIn === true &&
+    routeBody.steps?.map((step) => step.action).join(",") === "job,applicant,stage,hire" &&
+    routeBody.steps?.[2]?.skipped === true &&
+    JSON.stringify(routeClose?.params?.args?.[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    JSON.stringify(routeClose?.params?.args?.[6]) === "{}" &&
+    routeStateSent === false &&
+    routeFake.calls.length === 6 &&
+    routeFake.calls.every((call) => call.url === "https://203.0.113.50/jsonrpc"),
+);
+ok(
+  "the route proof removed the fixture credentials from the process",
+  liveCredentialNames.every((name) => !process.env[name]),
+);
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
