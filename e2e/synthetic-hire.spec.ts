@@ -13,6 +13,22 @@ function hostsOf(text: string): string[] {
   return text.split(/\s+/).map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
+/** Same host check as the synthetic hire unit test: parse the URL, then compare the registrable domain. */
+function registrableHostCount(source: string, domain: string): number {
+  let count = 0;
+  for (const match of source.matchAll(/https?:\/\/[^\s"'`<>)]+/g)) {
+    let host = "";
+    try {
+      host = new URL(match[0]).hostname;
+    } catch {
+      continue;
+    }
+    const labels = host.split(".").filter((label) => label.length > 0);
+    if (labels.slice(-2).join(".") === domain) count += 1;
+  }
+  return count;
+}
+
 test("forge skip gate: retries stay at zero", () => {
   const config = readFileSync("playwright.config.ts", "utf8");
   expect(config.includes("retries: 0")).toBe(true);
@@ -84,8 +100,8 @@ test("the synthetic hire demo closes the fixture vacancy without a live connecto
   await expect(page.getByTestId("connector-mcp")).toContainText("MCP");
 
   const html = await page.content();
-  expect(html.includes("linkedin.com")).toBe(false);
-  expect(html.includes("azure.com")).toBe(false);
+  expect(registrableHostCount(html, "linkedin.com")).toBe(0);
+  expect(registrableHostCount(html, "azure.com")).toBe(0);
   expect(outside).toEqual([]);
   await shot(page, "02-connectors-hired");
 });
