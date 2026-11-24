@@ -30,7 +30,11 @@ const CreateSpecSchema = z.object({
   name: z.string().min(1).max(120),
   role_brief: SupportedAgentRoleBriefSchema,
   channels: SupportedAgentChannelsSchema.default(["Email"]),
-  guardrails: SupportedAgentGuardrailsSchema.default({ autopilot: false, canary_remaining: 5 }),
+  guardrails: SupportedAgentGuardrailsSchema.default({
+    autopilot: false,
+    canary_remaining: 5,
+    topics_allow: [],
+  }),
   seat_id: z.string().uuid().optional(),
 });
 

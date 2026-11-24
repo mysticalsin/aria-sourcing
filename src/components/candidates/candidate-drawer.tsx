@@ -31,6 +31,13 @@ import {
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
+import {
+  buildHireRequest,
+  hireStatusText,
+  localHireCompletes,
+  postCandidateHire,
+  type HireUiOutcome,
+} from "@/lib/hire-ui";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
@@ -517,6 +524,9 @@ export function CandidateDrawer({
   const [erasureActionId, setErasureActionId] = useState<string | null>(null);
   const [erasureQueueError, setErasureQueueError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
+  const [hiring, setHiring] = useState(false);
+  const [hireResult, setHireResult] = useState<HireUiOutcome | null>(null);
+  const hireRequestRef = useRef(0);
   // Index into enrichment.attempts marking where the LAST "Enrich" click's
   // results start — null until the first click this session, so the
   // per-provider progress list stays empty (not a wall of prior history)
@@ -534,6 +544,11 @@ export function CandidateDrawer({
   actionsRef.current = actions;
 
   const candidateId = candidate?.id ?? null;
+  useEffect(() => {
+    hireRequestRef.current += 1;
+    setHireResult(null);
+    setHiring(false);
+  }, [candidateId]);
   const candidateCampaignId = candidate?.campaignId ?? null;
   const erasureGenerationRef = useRef(0);
   const erasureControllersRef = useRef(new Set<AbortController>());
@@ -790,19 +805,58 @@ export function CandidateDrawer({
     }
   };
 
-  const handleSetStage = (stage: CandidateStage) => {
-    if (erasureTombstone) return;
-    actions.setCandidateStage(c.id, stage);
+  const recordHire = async () => {
+    const requestId = hireRequestRef.current + 1;
+    hireRequestRef.current = requestId;
+    const candidateIdForHire = c.id;
+    setHiring(true);
+    const outcome = await postCandidateHire(
+      buildHireRequest({
+        candidateId: c.id,
+        candidateName: c.name,
+        email: c.email,
+        jobName: campaign?.title || c.currentTitle || "Open role",
+        department: campaign?.department,
+      }),
+    );
+    if (hireRequestRef.current !== requestId) return;
+    setHiring(false);
+    setHireResult(outcome);
+    if (!localHireCompletes(outcome)) {
+      toast({
+        title: "Hire was not recorded",
+        description: outcome.label,
+        variant: "error",
+      });
+      return;
+    }
+    actions.setCandidateStage(candidateIdForHire, "Hired");
     toast({
-      title: `Stage updated: ${stage}`,
+      title: hireStatusText(outcome),
       description:
-        stage === "Hired"
-          ? `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`
-          : stage === "Rejected"
+        outcome.outcome === "skipped"
+          ? `${c.name} moved to Hired. LinkedIn sourcing completed.`
+          : `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`,
+      variant: "success",
+    });
+  };
+
+  const handleSetStage = (stage: CandidateStage) => {
+    if (erasureTombstone || hiring) return;
+    if (stage !== "Hired") {
+      setHireResult(null);
+      actions.setCandidateStage(c.id, stage);
+      toast({
+        title: `Stage updated: ${stage}`,
+        description:
+          stage === "Rejected"
             ? `${c.name} moved to Rejected. Add a rejection reason below.`
             : `${c.name} moved to ${stage}.`,
-      variant: stage === "Rejected" ? "warning" : "success",
-    });
+        variant: stage === "Rejected" ? "warning" : "success",
+      });
+      return;
+    }
+    void recordHire();
   };
 
   const handleAddNote = () => {
@@ -1646,14 +1700,29 @@ export function CandidateDrawer({
                 key={stage}
                 variant={c.stage === stage ? "primary" : "outline"}
                 size="sm"
-                disabled={erasureTombstone || c.stage === stage}
+                disabled={erasureTombstone || c.stage === stage || hiring}
                 title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
                 onClick={() => handleSetStage(stage)}
               >
-                {stage}
+                {stage === "Hired" && hiring ? "Hiring…" : stage}
               </Button>
             ))}
           </div>
+          {hiring ? (
+            <p role="status" className="text-sm text-muted">
+              Recording hire…
+            </p>
+          ) : hireResult ? (
+            <p
+              role={hireResult.ok ? "status" : "alert"}
+              data-hire-outcome={hireResult.outcome}
+              className={
+                hireResult.ok ? "text-sm font-medium text-ink" : "text-sm font-medium text-danger"
+              }
+            >
+              {hireStatusText(hireResult)}
+            </p>
+          ) : null}
           {c.stage === "Rejected" && (
             <div>
               <label

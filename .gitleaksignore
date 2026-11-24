@@ -11,3 +11,28 @@ df6fa3398f1f6ee5cd4289056fff762704a674bc:docker-compose.yml:jwt:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:.env.production.example:generic-api-key:23
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/log-redact.mts:generic-api-key:33
 5c4270c88a42e1b83561f77e7394f29f4529e5ca:tests/audit-fixes.mts:generic-api-key:83
+
+# Exact historical false positives. No paths or rules are disabled.
+# Mocked test external profile ID (not a credential).
+c79dcaa83c7af4240d37dde583b68229a531e3c5:tests/source-enrich-auth.mts:generic-api-key:40
+# Boolean reporting field, not a LinkedIn client identifier.
+1a5bfea108eb8f8698d81236b67d870d23b5d58c:scripts/record-marketing-n-agent-linkedin-e2e.mjs:linkedin-client-id:329
+# TypeScript SourcingProvider bindings, not client secrets.
+2ec563ebd74b084945042f5467b0ca82ffa8fa40:src/lib/sourcing/providers/linkedin-agent-tool.ts:linkedin-client-secret:21
+b5d723a3914a029d9efbf3eaed1e34b10c16bca4:src/lib/sourcing/providers/linkedin-profiles.ts:linkedin-client-secret:44
+# Cron authorization fixtures used only by mocked route tests.
+d4ca9af6dc65bbd488625e4edd25bcaa705e378f:tests/source-apify-auth.mts:generic-api-key:169
+886df40f0e21c4fd8c2cf32865f2901a1caab5ae:tests/sourcing-loop-ignition-route.mts:generic-api-key:9
+# Object field that maps a LinkedIn profile handle from operator input.
+f5f1e47fec2568fbcf6da60d73dc7aaf42585df7:src/app/api/source/sillage/start/route.ts:linkedin-client-id:75
+# Source identifier in an assignment, not a client secret.
+da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333
+# SHA-256 digest of a retired sample. The sample value is not stored.
+0f2b86e1238067f7525245a7f492d90ee25737b9:scripts/jwt-secret-policy.mjs:generic-api-key:4
+# Expected HMAC of a synthetic test vector.
+fc1d82a8e16b0ec2e0dc3cc8b5c9db749f1bd32e:services/channels/harness_test.go:generic-api-key:22
+db67293906e5f29e9d8a5401ea386484a827ee87:services/channels/harness_test.go:generic-api-key:20
+# Synthetic idempotency slug in a unit test, not an API key.
+63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/json2_test.go:generic-api-key:325
+63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/idempotency_test.go:generic-api-key:45
+63dcc26f52c6a0b1775d992bd9f57a9a6e3bfd67:services/internal/odoo/idempotency_test.go:generic-api-key:95
