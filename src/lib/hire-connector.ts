@@ -184,44 +184,61 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (!url || !db || !user || !key) return missing("odoo", "ODOO_URL, ODOO_DB, ODOO_USERNAME, or ODOO_API_KEY");
       const base = erpBase(url);
       if (!base) return { ok: false, error: "odoo ODOO_URL must be a public https URL without credentials" };
+      const refused = assertHireModel("odoo", input.model);
+      if (refused) return refused;
       const endpoint = `${base}/jsonrpc`;
-      const authRes = await fetchImpl(endpoint, {
-        method: "POST",
-        redirect: "error",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "call",
-          id: input.idempotencyKey,
-          params: { service: "common", method: "authenticate", args: [db, user, key, {}] },
-        }),
-      });
-      if (!authRes.ok) return { ok: false, error: `odoo auth http ${authRes.status}` };
-      const authBody = (await authRes.json()) as { result?: unknown; error?: { message?: string } };
+      const secrets = [key, user];
+      const authRes = await send(
+        fetchImpl,
+        endpoint,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "call",
+            id: input.idempotencyKey,
+            params: { service: "common", method: "authenticate", args: [db, user, key, {}] },
+          }),
+        },
+        secrets,
+      );
+      if (!authRes.ok) return authRes;
+      if (!authRes.response.ok) return { ok: false, error: `odoo auth http ${authRes.response.status}` };
+      const authJson = await readJson(authRes.response, secrets);
+      if (!authJson.ok) return authJson;
+      const authBody = authJson.value as { result?: unknown; error?: { message?: string } };
       const uid = authBody.result;
       if (typeof uid !== "number" || !Number.isSafeInteger(uid) || uid <= 0) {
-        return { ok: false, error: scrubbed(authBody.error?.message ?? "odoo auth failed", [key, user]) };
+        return { ok: false, error: scrubbed(authBody.error?.message ?? "odoo auth failed", secrets) };
       }
       const positional = odooPositional(input);
       if (!positional.ok) return positional;
-      const writeRes = await fetchImpl(endpoint, {
-        method: "POST",
-        redirect: "error",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "call",
-          id: input.idempotencyKey,
-          params: {
-            service: "object",
-            method: "execute_kw",
-            args: [db, uid, key, input.model, input.method, positional.args, {}],
-          },
-        }),
-      });
-      if (!writeRes.ok) return { ok: false, error: `odoo write http ${writeRes.status}` };
-      const writeBody = (await writeRes.json()) as { result?: unknown; error?: { message?: string } };
-      if (writeBody.error) return { ok: false, error: scrubbed(writeBody.error.message ?? "odoo execute_kw failed", [key, user]) };
+      const writeRes = await send(
+        fetchImpl,
+        endpoint,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "call",
+            id: input.idempotencyKey,
+            params: {
+              service: "object",
+              method: "execute_kw",
+              args: [db, uid, key, input.model, input.method, positional.args, {}],
+            },
+          }),
+        },
+        secrets,
+      );
+      if (!writeRes.ok) return writeRes;
+      if (!writeRes.response.ok) return { ok: false, error: `odoo write http ${writeRes.response.status}` };
+      const writeJson = await readJson(writeRes.response, secrets);
+      if (!writeJson.ok) return writeJson;
+      const writeBody = writeJson.value as { result?: unknown; error?: { message?: string } };
+      if (writeBody.error) return { ok: false, error: scrubbed(writeBody.error.message ?? "odoo execute_kw failed", secrets) };
       const id = odooRecordId(writeBody.result, input);
       if (!id) return { ok: false, error: "odoo execute_kw returned no record" };
       return { ok: true, id };
@@ -239,17 +256,27 @@ export function smartHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike 
       const base = erpBase(raw);
       if (!base) return { ok: false, error: "smart SMART_URL must be a public https URL without credentials" };
       if (!HIRE_MODELS.has(input.model)) return { ok: false, error: "smart model must be hr.job or hr.applicant" };
-      const res = await fetchImpl(`${base}/api/hire/${encodeURIComponent(input.model)}`, {
-        method: "POST",
-        redirect: "error",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "idempotency-key": input.idempotencyKey },
-        body: JSON.stringify({ method: input.method, values: input.values }),
-      });
-      if (!res.ok) return { ok: false, error: `smart http ${res.status}` };
-      const body = (await res.json()) as { id?: unknown; error?: unknown };
-      if (body.error) return { ok: false, error: scrubbed(String(body.error), [token]) };
-      if (typeof body.id !== "string" || !body.id) return { ok: false, error: "smart response missing id" };
-      return { ok: true, id: body.id };
+      const res = await send(
+        fetchImpl,
+        `${base}/api/hire/${encodeURIComponent(input.model)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "idempotency-key": input.idempotencyKey },
+          body: JSON.stringify({ method: input.method, values: input.values }),
+        },
+        [token],
+      );
+      if (!res.ok) return res;
+      if (!res.response.ok) return { ok: false, error: `smart http ${res.response.status}` };
+      const parsed = await readJson(res.response, [token]);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "smart response missing id" };
+      const record = body as { id?: unknown; error?: unknown };
+      if (record.error) return { ok: false, error: scrubbed(String(record.error), [token]) };
+      const id = positiveId(record.id);
+      if (!id) return { ok: false, error: "smart response missing id" };
+      return { ok: true, id };
     },
   };
 }
@@ -355,6 +382,7 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
         secrets,
       );
       if (!notified.ok) return notified;
+      if (!notified.response.ok) return { ok: false, error: `mcp initialized http ${notified.response.status}` };
       const call = await send(
         fetchImpl,
         base,
