@@ -246,7 +246,15 @@ class GraphifyLessonsWorkerTests(unittest.TestCase):
         self.assertGreaterEqual(dockerfile.count("--require-hashes"), 2)
         self.assertIn("--no-deps", dockerfile)
         self.assertIn("pip check", dockerfile)
-        self.assertNotIn("apt-get", dockerfile)
+        # Supply chain fails closed on fixable HIGH and CRITICAL OS packages.
+        # One released-fix upgrade is required. Installing extra packages is not.
+        upgrade = (
+            "RUN apt-get update \\\n"
+            "    && apt-get upgrade -y \\\n"
+            "    && rm -rf /var/lib/apt/lists/*\n"
+        )
+        self.assertEqual(dockerfile.count(upgrade), 1)
+        self.assertNotIn("apt-get install", dockerfile)
         self.assertNotIn("git+", requirements)
         self.assertIn("GRAPHIFY_QUERY_LOG_DISABLE=1", dockerfile)
         self.assertIn("USER 10001:10001", dockerfile)
