@@ -24,7 +24,7 @@ status: in-progress
 - `@dust-tt/client` 1.2.6 bundled `@modelcontextprotocol/sdk@1.26.0`, which `npm audit fix` cannot rewrite. 1.2.11 is the published client whose SDK range is `^1.32.1`.
 
 ## Blockers
-- GitHub Actions on the new tip is not confirmed yet.
+- On tip `599d1d197a8d76bc93e7157b177c3e167683714f`, audit is green (`found 0 vulnerabilities`). The job still fails in gitleaks: the depth-1 checkout does not contain the parent commit the scan range names (`unknown revision`). A fetch-unshallow step was added before the scan. Do not treat that as a secret finding. The log says no leaks were found in the partial scan.
 - `@dust-tt/client@1.2.11` declares `engines.node >=24.16.0`. CI uses Node 20. `npm ci` warns `EBADENGINE` and continues. `tests/dust.mts` passed under Node v20.20.2 (28 passed).
 
 ## Next steps
