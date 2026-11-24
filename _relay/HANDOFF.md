@@ -1,15 +1,17 @@
 ---
 project: MSourcing / ARIA
-shift: 474
+shift: 475
 agent: cursor
-updated: 2026-11-23 20:40 America/Sao_Paulo
-status: 178-merged-twa-odoo
+updated: 2026-11-24T16:00Z
+status: pr-311-onto-twa-odoo
 ---
 
-# Handoff - Shift 474
+# Handoff - Shift 475
 
 ## Current state
 
+- Pull request 311 records the Odoo hire trail on `twa-odoo`. One workspace write stores who, when, the need, the Odoo job id, the Odoo applicant id, the stage change, whether the stage write ran, and whether this hire closed the vacancy. The campaign becomes `Filled` only when the connector closed the vacancy during this hire.
+- When `ODOO_HIRED_STAGE_ID` is unset, `hr.recruitment.stage` is looked up by name `Hired` once per process. An empty lookup skips the write with reason "not written". The applicant write sends numeric `stage_id` only. The vacancy close writes `{ no_of_recruitment: 0 }` and does not send `hr.job.state`.
 - Pull request 178 merged current twa-odoo `a27373efae80fc438f48405ef0a3b683a29c2685` with a merge commit. Do not squash-merge 178 until the gates pass and Ultron confirms. No force push.
 - The LinkedIn token channel stays in `src/channels/linkedin-token/` and stays off until an owner or admin records the risk notice. The release gate also requires the LinkedIn token Playwright job.
 - Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
@@ -144,6 +146,9 @@ status: 178-merged-twa-odoo
   roles come from the API, not the browser store.
 - Tutorial never opens on its own (owner, 2026-11-02). Contact basis can be
   recorded on synthetic demo profiles (owner, 2026-11-02).
+- The hire trail marks a campaign `Filled` only when this hire's connector closed the vacancy. A local or pre-existing Filled vacancy does not.
+- The Odoo vacancy close is `{ no_of_recruitment: 0 }`. Do not send `hr.job.state`.
+- Do not retarget pull request 311 to main. Do not edit merged pull request 313. Do not push `mbe-branch`, `mbe-ngrok`, or `mbe-test`.
 
 ## Watch out
 
@@ -177,7 +182,7 @@ status: 178-merged-twa-odoo
   `agents` service (`pull_policy: never`).
 - Agents spend the shared AI caps (`AI_MONTHLY_BUDGET_USD`, default 30;
   `AI_DAILY_BUDGET_USD`, default 6). Raise them in `.env.local` for longer runs.
-- `tests/store-contracts.mts` pins the store action count (118): removing or
+- `tests/store-contracts.mts` pins the store action count (119): removing or
   adding an action updates it.
 - `tests/sourcing-provider-egress-structure.mts` pins the probe allowlist:
   only `provider-egress.ts` and `src/app/api/source/route.ts` may use

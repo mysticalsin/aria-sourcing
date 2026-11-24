@@ -1,4 +1,5 @@
 import type { AriaPlan } from "../aria-command";
+import type { HireTrail } from "../hire-trail";
 import type { ConnectionTestResult } from "../integrations";
 import type { ReplyClassification } from "../mock-ai";
 import type { Recommendation } from "../recommendations";
@@ -302,6 +303,8 @@ export interface WorkspaceActions {
 
   // candidates / compliance
   setCandidateStage: (id: string, stage: CandidateStage) => void;
+  /** One commit: Hired stage, the activity trail, and vacancy status when the connector already closed it. */
+  recordHiredCandidate: (candidateId: string, trail: HireTrail) => void;
   setCandidatePhone: (id: string, phone: string) => void;
   recordCandidateEvidence: (id: string, input: { email: string; linkedinUrl: string; source: string; skills?: string[]; yearsExperience?: number | null; location?: string; industryExperience?: string[]; companyStageExperience?: CompanyStage[]; lawfulBasis?: CandidateLawfulBasis }) => Promise<{ ok: boolean; error?: string }>;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes

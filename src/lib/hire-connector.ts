@@ -4,7 +4,7 @@ import { redactSecrets } from "@/lib/log-redact";
 
 export type HireConnectorKind = "odoo" | "smart" | "api" | "mcp" | "linkedin";
 
-export type HireResult = { ok: true; id: string } | { ok: false; error: string };
+export type HireResult = { ok: true; id: string } | { ok: false; error: string; found?: false };
 
 export type HireCall = {
   idempotencyKey: string;
@@ -67,11 +67,33 @@ function odooRecordRef(value: unknown): number | null {
   return null;
 }
 
+const HIRED_STAGE_NAME = "Hired";
+
+/**
+ * A search_read row is a stage only when it is an object with a positive id.
+ * An empty list means the Hired stage is absent. A bare id is not a stage.
+ */
+function hiredStageFromSearch(result: unknown): { id: string } | { empty: true } | { invalid: true } {
+  if (!Array.isArray(result) || result.length === 0) return { empty: true };
+  const first = result[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return { invalid: true };
+  const record = first as { id?: unknown; name?: unknown };
+  if (record.name !== undefined && record.name !== HIRED_STAGE_NAME) return { empty: true };
+  if (typeof record.id === "number" && Number.isSafeInteger(record.id) && record.id > 0) return { id: String(record.id) };
+  return { invalid: true };
+}
+
 /**
  * Odoo create(vals_list) and write(ids, vals) take positional arguments.
+ * search_read(domain, fields, offset, limit) is positional too.
  * A non-empty kwargs object is the shape real Odoo rejects with TypeError.
  */
 function odooPositional(input: HireCall): { ok: true; args: unknown[] } | { ok: false; error: string } {
+  if (input.method === "search") {
+    if (input.model !== "hr.recruitment.stage") return { ok: false, error: "odoo search model must be hr.recruitment.stage" };
+    if (input.values.name !== HIRED_STAGE_NAME) return { ok: false, error: "odoo search name must be Hired" };
+    return { ok: true, args: [[["name", "=", HIRED_STAGE_NAME]], ["id", "name"], 0, 1] };
+  }
   const vals = { ...input.values };
   delete vals.id;
   if (input.method === "create") return { ok: true, args: [[vals]] };
@@ -204,6 +226,7 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       }
       const positional = odooPositional(input);
       if (!positional.ok) return positional;
+      const rpcMethod = input.method === "search" ? "search_read" : input.method;
       const writeRes = await fetchImpl(endpoint, {
         method: "POST",
         redirect: "error",
@@ -215,13 +238,19 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
           params: {
             service: "object",
             method: "execute_kw",
-            args: [db, uid, key, input.model, input.method, positional.args, {}],
+            args: [db, uid, key, input.model, rpcMethod, positional.args, {}],
           },
         }),
       });
       if (!writeRes.ok) return { ok: false, error: `odoo write http ${writeRes.status}` };
       const writeBody = (await writeRes.json()) as { result?: unknown; error?: { message?: string } };
       if (writeBody.error) return { ok: false, error: scrubbed(writeBody.error.message ?? "odoo execute_kw failed", [key, user]) };
+      if (input.method === "search") {
+        const stage = hiredStageFromSearch(writeBody.result);
+        if ("empty" in stage) return { ok: false, error: "odoo search returned no record", found: false };
+        if ("invalid" in stage) return { ok: false, error: "odoo search returned no stage" };
+        return { ok: true, id: stage.id };
+      }
       const id = odooRecordId(writeBody.result, input);
       if (!id) return { ok: false, error: "odoo execute_kw returned no record" };
       return { ok: true, id };

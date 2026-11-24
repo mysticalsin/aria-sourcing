@@ -175,6 +175,7 @@ import {
   proposeSkillUpdates,
 } from "./skills";
 import { stageRank, withStage } from "./metrics";
+import { applyHireTrail, type HireTrail } from "./hire-trail";
 import { humanizeText } from "./humanizer";
 import { parseCommand, campaignToAriaContext, type AriaPlan } from "./aria-command";
 import { recordOutreachApproval, revokeOutreachApproval } from "./outreach-approval";
@@ -2675,6 +2676,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         };
         if (cand) next = recomputeMetrics(next, cand.campaignId);
         return next;
+      }),
+    [commit],
+  );
+
+  const recordHiredCandidate = useCallback(
+    (candidateId: string, trail: HireTrail) =>
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === candidateId);
+        if (!cand) return s;
+        const next = applyHireTrail(s, { candidateId, trail, activityId: genId("act") });
+        if (next === s) return s;
+        return recomputeMetrics(next, cand.campaignId);
       }),
     [commit],
   );
@@ -5370,6 +5383,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       generateReport,
       setSkillUpdateStatus,
       setCandidateStage,
+      recordHiredCandidate,
       setCandidatePhone,
       recordCandidateEvidence,
       addCandidateNote,
@@ -5462,7 +5476,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch, addCandidateFromGithub, addCandidateManual, enrichCandidate, enrichCampaign, runSourcingAgent, recordSourcingFeedback, listPendingSourcingFeedback, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, prepareReplyResponse, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, recordCandidateEvidence, addCandidateNote, setRejectionReason,
+      setSkillUpdateStatus, setCandidateStage, recordHiredCandidate, setCandidatePhone, recordCandidateEvidence, addCandidateNote, setRejectionReason,
       setCandidateRating, setCandidateLeadSource, toggleVivier, savePrequal, setPrequalOutcome, addInterview, updateInterview,
       advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,
       suppressCandidate, markDoNotContact, restoreCandidateContact,

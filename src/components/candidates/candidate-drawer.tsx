@@ -23,7 +23,7 @@ import { VerifyProfileFields, readVerifiedProfile } from "@/components/candidate
 import { inPocScope } from "@/components/app/nav";
 import { CandidateLinkedIn, LinkedInQuickAction, linkedInContactBlock } from "@/components/linkedin/candidate-linkedin";
 import { bookingCalendarSummary } from "@/lib/booking-status";
-import { useActions, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
+import { useActions, useActivities, useApiKeys, useCampaign, useCandidate, useOutreach, useRole, useSettings } from "@/lib/store";
 import { candidateEnrichmentBlocker, candidateExclusionBlocker, candidateReview } from "@/lib/candidate-review";
 import type { CandidateErasureObligation, CandidateErasureStatus } from "@/lib/store/contracts";
 import { supabaseEnabled } from "@/lib/supabase/config";
@@ -37,6 +37,15 @@ import {
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
+import {
+  buildHireRequest,
+  hireStatusText,
+  vacancyClosedByThisHire,
+  localHireCompletes,
+  postCandidateHire,
+  type HireUiOutcome,
+} from "@/lib/hire-ui";
+import { buildHireTrail, hireTrailRows, type HireTrail } from "@/lib/hire-trail";
 import { can } from "@/lib/rbac";
 import { computeCoverage } from "@/lib/enrichment/merge";
 import { ENRICHMENT_PROVIDERS } from "@/lib/enrichment/registry";
@@ -425,6 +434,19 @@ function TaniaPanel({ c }: { c: Candidate }) {
   );
 }
 
+function HireTrailList({ trail }: { trail: HireTrail }) {
+  return (
+    <dl data-hire-trail className="mt-2 space-y-1">
+      {hireTrailRows(trail).map((row) => (
+        <div key={row.label} className="flex gap-2 text-sm">
+          <dt className="w-28 shrink-0 text-muted">{row.label}</dt>
+          <dd className="min-w-0 break-words font-medium text-ink">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Onboarding progress (TAnIA Stages III→IV) — shown once a candidate reaches an
  *  offer. Steps derive from stage; this is the offer→signed→pre-boarding→employee
  *  journey plus the post-fill signal. */
@@ -494,6 +516,7 @@ export function CandidateDrawer({
   const liveCandidate = useCandidate(candidate?.id);
   const campaign = useCampaign(candidate?.campaignId);
   const settings = useSettings();
+  const activities = useActivities();
   const confidentialityMode = Boolean(settings.confidentialityMode);
   const apiKeys = useApiKeys();
   const [revealed, setRevealed] = useState(false);
@@ -513,6 +536,9 @@ export function CandidateDrawer({
   const [erasureQueueError, setErasureQueueError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [savingContact, setSavingContact] = useState(false);
+  const [hiring, setHiring] = useState(false);
+  const [hireResult, setHireResult] = useState<HireUiOutcome | null>(null);
+  const hireRequestRef = useRef(0);
   const enrichmentClick = useRef(false);
   // Index into enrichment.attempts marking where the LAST "Enrich" click's
   // results start — null until the first click this session, so the
@@ -530,6 +556,11 @@ export function CandidateDrawer({
   actionsRef.current = actions;
 
   const candidateId = candidate?.id ?? null;
+  useEffect(() => {
+    hireRequestRef.current += 1;
+    setHireResult(null);
+    setHiring(false);
+  }, [candidateId]);
   const candidateCampaignId = candidate?.campaignId ?? null;
   const erasureGenerationRef = useRef(0);
   const erasureControllersRef = useRef(new Set<AbortController>());
@@ -747,6 +778,12 @@ export function CandidateDrawer({
   }
 
   const c = liveCandidate ?? candidate;
+  const persistedHire = activities.find(
+    (activity) =>
+      activity.linkedEntityType === "candidate" &&
+      activity.linkedEntityId === c.id &&
+      activity.title.startsWith("Hired:"),
+  );
   const erasureTombstone = isCandidateErasureTombstone(c);
   const purpose = hasOutreachPurpose(c.stage);
   const masked = confidentialityMode && !purpose && !revealed;
@@ -805,19 +842,76 @@ export function CandidateDrawer({
     }
   };
 
-  const handleSetStage = (stage: CandidateStage) => {
-    if (erasureTombstone) return;
-    actions.setCandidateStage(c.id, stage);
+  const recordHire = async () => {
+    const requestId = hireRequestRef.current + 1;
+    hireRequestRef.current = requestId;
+    const candidateIdForHire = c.id;
+    const stageFrom = c.stage;
+    const need = campaign?.title || c.currentTitle || "Open role";
+    setHiring(true);
+    const outcome = await postCandidateHire(
+      buildHireRequest({
+        candidateId: c.id,
+        candidateName: c.name,
+        email: c.email,
+        jobName: need,
+        department: campaign?.department,
+      }),
+    );
+    if (hireRequestRef.current !== requestId) return;
+    setHiring(false);
+    if (!localHireCompletes(outcome)) {
+      setHireResult(outcome);
+      toast({
+        title: "Hire was not recorded",
+        description: outcome.label,
+        variant: "error",
+      });
+      return;
+    }
+    const trail = buildHireTrail({
+      who: settings.operatorName,
+      when: new Date().toISOString(),
+      need,
+      erp: outcome.erp,
+      stageFrom,
+      stageTo: "Hired",
+      steps: outcome.steps,
+      vacancyClosed: vacancyClosedByThisHire(outcome.vacancyClosed, campaign?.status),
+    });
+    setHireResult({ ...outcome, trail });
+    actions.recordHiredCandidate(candidateIdForHire, trail);
+    const closedTitle = trail.vacancyClosed && campaign ? campaign.title : null;
     toast({
-      title: `Stage updated: ${stage}`,
+      title: hireStatusText(outcome),
       description:
-        stage === "Hired"
-          ? `${c.name} moved to Hired. Consider marking ${campaign?.title ?? "the campaign"} as Filled once the req is closed.`
-          : stage === "Rejected"
+        outcome.outcome === "skipped"
+          ? closedTitle
+            ? `${c.name} moved to Hired. ${closedTitle} is filled and closed. LinkedIn sourcing completed.`
+            : `${c.name} moved to Hired. LinkedIn sourcing completed.`
+          : closedTitle
+            ? `${c.name} moved to Hired. ${closedTitle} is filled and closed.`
+            : `${c.name} moved to Hired.`,
+      variant: "success",
+    });
+  };
+
+  const handleSetStage = (stage: CandidateStage) => {
+    if (erasureTombstone || hiring) return;
+    if (stage !== "Hired") {
+      setHireResult(null);
+      actions.setCandidateStage(c.id, stage);
+      toast({
+        title: `Stage updated: ${stage}`,
+        description:
+          stage === "Rejected"
             ? `${c.name} moved to Rejected. Add a rejection reason below.`
             : `${c.name} moved to ${stage}.`,
-      variant: stage === "Rejected" ? "warning" : "success",
-    });
+        variant: stage === "Rejected" ? "warning" : "success",
+      });
+      return;
+    }
+    void recordHire();
   };
 
   const handleAddNote = () => {
@@ -1632,14 +1726,41 @@ export function CandidateDrawer({
                     key={stage}
                     variant={c.stage === stage ? "primary" : "outline"}
                     size="sm"
-                    disabled={erasureTombstone || c.stage === stage}
+                    disabled={erasureTombstone || c.stage === stage || hiring}
                     title={erasureTombstone ? "Permanent erasure tombstones cannot change stage" : undefined}
                     onClick={() => handleSetStage(stage)}
                   >
-                    {stage}
+                    {stage === "Hired" && hiring ? "Hiring…" : stage}
                   </Button>
                 ))}
               </div>
+              {hiring ? (
+                <p role="status" className="text-sm text-muted">
+                  Recording hire…
+                </p>
+              ) : hireResult ? (
+                <p
+                  role={hireResult.ok ? "status" : "alert"}
+                  data-hire-outcome={hireResult.outcome}
+                  className={
+                    hireResult.ok ? "text-sm font-medium text-ink" : "text-sm font-medium text-danger"
+                  }
+                >
+                  {hireStatusText(hireResult)}
+                </p>
+              ) : null}
+              {hireResult?.ok && hireResult.trail ? (
+                <HireTrailList trail={hireResult.trail} />
+              ) : persistedHire ? (
+                <p data-hire-trail className="mt-2 whitespace-pre-line text-sm text-ink-soft">
+                  {persistedHire.notes}
+                </p>
+              ) : null}
+              {c.stage === "Hired" && campaign?.status === "Filled" && (
+                <p data-vacancy-status="filled" className="text-sm text-muted">
+                  {campaign.title} is filled and closed.
+                </p>
+              )}
               {c.stage === "Rejected" && (
                 <div>
                   <label
