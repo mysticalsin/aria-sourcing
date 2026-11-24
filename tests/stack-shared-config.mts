@@ -94,11 +94,12 @@ test("CI jobs cover the stack and pin ubuntu-24.04", () => {
     "local-demo:",
     "channel-adapters:",
     "linkedin-token-e2e:",
+    "synthetic-hire-e2e:",
     "release-gate:",
   ]) {
     assert.ok(ci.includes(`  ${job}\n`), job);
   }
-  assert.equal((ci.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 8);
+  assert.equal((ci.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 9);
   assert.match(ci, /gitleaks git \. --redact=100 --no-banner --config \.gitleaks\.toml --log-opts='--all'/);
   assert.match(ci, /git cat-file -e "\$\{sha\}\^\{commit\}"/);
   assert.match(ci, /gitleaks ignore commit is not reachable with --all/);
@@ -106,9 +107,10 @@ test("CI jobs cover the stack and pin ubuntu-24.04", () => {
   assert.match(ci, /services\/channels\/go\.mod/);
   assert.match(ci, /go vet \.\/\.\.\./);
   assert.match(ci, /go test -race \.\/\.\.\./);
-  assert.match(ci, /needs: \[quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e\]/);
+  assert.match(ci, /needs: \[quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e, synthetic-hire-e2e\]/);
   assert.match(ci, /CHANNEL_ADAPTERS_RESULT/);
   assert.match(ci, /LINKEDIN_TOKEN_E2E_RESULT/);
+  assert.match(ci, /SYNTHETIC_HIRE_E2E_RESULT/);
 });
 
 test("each pull request block is present in its job", () => {
@@ -146,7 +148,7 @@ test("each pull request block is present in its job", () => {
 
   // #180 pins the release gate, and every other job, to ubuntu-24.04.
   assert.match(release, /runs-on: ubuntu-24\.04/);
-  for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "linkedin-token-e2e", "release-gate"]) {
+  for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "linkedin-token-e2e", "synthetic-hire-e2e", "release-gate"]) {
     assert.match(jobBlock(ci, id), /runs-on: ubuntu-24\.04/, id);
   }
 });

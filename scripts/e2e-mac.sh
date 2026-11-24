@@ -118,7 +118,7 @@ curl --silent --fail --max-time 2 "$ARIA_E2E_FAKE_HEALTH" >/dev/null
 curl --silent --fail --max-time 5 "$ARIA_E2E_BASE_URL/api/health" >/dev/null
 
 set +e
-npx playwright test --retries=0 >"$LOG_DIR/playwright.log" 2>&1
+npx playwright test e2e/linkedin-token.spec.ts --retries=0 >"$LOG_DIR/playwright.log" 2>&1
 PLAYWRIGHT_STATUS=$?
 set -e
 cat "$LOG_DIR/playwright.log"

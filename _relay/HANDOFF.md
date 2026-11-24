@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 474
 agent: cursor
-updated: 2026-11-23 20:40 America/Sao_Paulo
+updated: 2026-11-23 23:17 America/Sao_Paulo
 status: 178-merged-twa-odoo
 ---
 
@@ -12,6 +12,7 @@ status: 178-merged-twa-odoo
 
 - Pull request 178 merged current twa-odoo `a27373efae80fc438f48405ef0a3b683a29c2685` with a merge commit. Do not squash-merge 178 until the gates pass and Ultron confirms. No force push.
 - The LinkedIn token channel stays in `src/channels/linkedin-token/` and stays off until an owner or admin records the risk notice. The release gate also requires the LinkedIn token Playwright job.
+- Synthetic hire Playwright is job `synthetic-hire-e2e` in `.github/workflows/ci.yml`. It runs `bash scripts/e2e-synthetic-hire.sh`, which serves the app on loopback and runs `e2e/synthetic-hire.spec.ts` against `/demo/hire`. Fixture hosts are `*.example.test`. The release gate requires that job. `scripts/e2e-mac.sh` runs only `e2e/linkedin-token.spec.ts`.
 - Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
@@ -29,6 +30,7 @@ status: 178-merged-twa-odoo
 
 ## Done this shift
 
+- Synthetic hire Playwright spec `e2e/synthetic-hire.spec.ts` covers the fixture `/demo/hire` page: Odoo vacancy close, unset connector, and hired on SMART, the generic HTTPS API, and MCP. Local run with `CI=true`: 2 passed, 0 failed.
 - Demo-day check: OrbStack was stopped; started it, stack came back healthy
   (the db answered slowly for the first minutes after boot).
 - Playwright smoke of every in-scope page (/, /campaigns, /campaigns/new,
