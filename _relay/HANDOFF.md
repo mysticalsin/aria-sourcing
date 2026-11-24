@@ -1,19 +1,21 @@
 ---
 project: MSourcing / ARIA
-shift: 470
+shift: 474
 agent: cursor
-updated: 2026-11-23
-status: resolve-251-into-282
+updated: 2026-11-23 20:40 America/Sao_Paulo
+status: 178-merged-twa-odoo
 ---
 
-# Handoff - Shift 468
+# Handoff - Shift 474
 
 ## Current state
 
+- Pull request 178 merged current twa-odoo `a27373efae80fc438f48405ef0a3b683a29c2685` with a merge commit. Do not squash-merge 178 until the gates pass and Ultron confirms. No force push.
+- The LinkedIn token channel stays in `src/channels/linkedin-token/` and stays off until an owner or admin records the risk notice. The release gate also requires the LinkedIn token Playwright job.
 - Shared config for the ordered pull request stack lives in .gitleaksignore, docker-compose.yml, scripts/accept-local-demo.mjs, .github/workflows/ci.yml, and _relay/HANDOFF.md.
 - The agents service healthcheck signals pid 1 with process.kill(1, 0), interval 5s, timeout 5s, retries 12, start_period 5s.
-- Follow-up branch `cursor/aria-251-282-merge-resolve-d8a3` ordinary-merges #251 `bb7aa075` into #282 `1054a3d4`. Those two heads stay frozen. `.gitleaksignore` keeps the union of both fingerprint lines and both justification comments, including `da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linkedin-client-secret:333`. The local demo keeps the manual-tab retry and fills `[id$='-manual-name']` and `[id$='-manual-lawful-basis']`.
 - Branch cursor/aria-stack-shared-config, based on twa-odoo. Later stack branches take this version of those five files.
+- Merged twa-odoo 70e72d6c (the squash of pull request 251) with a merge commit. The agents healthcheck stays process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The cmdline probe from that squash is not the shared probe. Line allowlists in .gitleaks.toml stay, and they do not allowlist a path.
 
 - Branch mbe-branch, local only (not pushed). HEAD = 75f8b8bb
   (fix(intake): keep skills Claude reworded from the brief's own words).
@@ -54,9 +56,10 @@ status: resolve-251-into-282
 
 ## Decisions made (don't relitigate)
 
-- 2026-11-23: #251 stays at `bb7aa075` and #282 stays at `1054a3d4`. The conflict follow-up is an ordinary merge on a new branch. `.gitleaksignore` is the union of both sides' fingerprints and justification comments. The agents healthcheck stays process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The demo script keeps the manual-tab retry and the manual field ids.
 - 2026-11-21: the five shared files above are canonical on cursor/aria-stack-shared-config. Later pull requests merge that branch with an ordinary merge and keep this version of those files.
 - 2026-11-21: the agents healthcheck is process.kill(1, 0) with interval 5s, timeout 5s, retries 12, and start_period 5s. The agents service stays in docker-compose.yml.
+- 2026-11-23: pull request 251 landed on twa-odoo as 70e72d6c. This branch merged that commit and kept process.kill(1, 0). The two wantTokenMAC fingerprints are different digests.
+- 2026-11-23: pull request 272 landed on twa-odoo as 4730a158. This branch merged that commit. The public-repo hygiene test is in this tip, and history was not rewritten.
 - 2026-11-21: pull request 168 deletes LinkedIn bridge routes and strips LinkedIn dispatch. Pull request 167 keeps its approval hash, allowlist, and kill switch on the remaining send path and does not restore the deleted LinkedIn files.
 
 - Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages
@@ -144,7 +147,7 @@ status: resolve-251-into-282
 
 ## Watch out
 
-- Public-repo hygiene: addresses in relay notes and goal records at this tip are placeholders. `tests/public-repo-hygiene.mts` rejects a private-key block, a non-sample linkedin.com/in/ URL outside tests/, and a non-placeholder address outside `tests/`. History was not rewritten.
+- Public-repo hygiene: addresses in relay notes and goal records at this tip are placeholders. `tests/public-repo-hygiene.mts` rejects a private-key block, a non-sample linkedin.com/in/ URL outside `tests/`, and a non-placeholder address outside `tests/`. History was not rewritten.
 
 - Remove or empty `AGENTS_LINKEDIN_ALLOWLIST` in `.env.local` (and restart
   the app) before any real autopilot use beyond the demo; set but invalid

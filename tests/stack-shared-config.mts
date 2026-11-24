@@ -93,11 +93,12 @@ test("CI jobs cover the stack and pin ubuntu-24.04", () => {
     "database-security:",
     "local-demo:",
     "channel-adapters:",
+    "linkedin-token-e2e:",
     "release-gate:",
   ]) {
     assert.ok(ci.includes(`  ${job}\n`), job);
   }
-  assert.equal((ci.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 7);
+  assert.equal((ci.match(/runs-on: ubuntu-24\.04/g) ?? []).length, 8);
   assert.match(ci, /gitleaks git \. --redact=100 --no-banner --config \.gitleaks\.toml --log-opts='--all'/);
   assert.match(ci, /git cat-file -e "\$\{sha\}\^\{commit\}"/);
   assert.match(ci, /gitleaks ignore commit is not reachable with --all/);
@@ -105,8 +106,9 @@ test("CI jobs cover the stack and pin ubuntu-24.04", () => {
   assert.match(ci, /services\/channels\/go\.mod/);
   assert.match(ci, /go vet \.\/\.\.\./);
   assert.match(ci, /go test -race \.\/\.\.\./);
-  assert.match(ci, /needs: \[quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters\]/);
+  assert.match(ci, /needs: \[quality, dependency-audit, secret-scan, database-security, local-demo, channel-adapters, linkedin-token-e2e\]/);
   assert.match(ci, /CHANNEL_ADAPTERS_RESULT/);
+  assert.match(ci, /LINKEDIN_TOKEN_E2E_RESULT/);
 });
 
 test("each pull request block is present in its job", () => {
@@ -144,7 +146,7 @@ test("each pull request block is present in its job", () => {
 
   // #180 pins the release gate, and every other job, to ubuntu-24.04.
   assert.match(release, /runs-on: ubuntu-24\.04/);
-  for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "release-gate"]) {
+  for (const id of ["quality", "dependency-audit", "secret-scan", "database-security", "local-demo", "channel-adapters", "linkedin-token-e2e", "release-gate"]) {
     assert.match(jobBlock(ci, id), /runs-on: ubuntu-24\.04/, id);
   }
 });
@@ -167,7 +169,7 @@ test("workflows cancel stale PR runs and push only the release branches", () => 
   }
 });
 
-test("handoff records the shared config and the public-repo hygiene watch", () => {
+test("handoff records the shared config and the hygiene watch", () => {
   const handoff = read("_relay/HANDOFF.md");
   assert.match(
     handoff,
@@ -175,6 +177,10 @@ test("handoff records the shared config and the public-repo hygiene watch", () =
   );
   assert.match(handoff, /process\.kill\(1, 0\)/);
   assert.match(handoff, /interval 5s, timeout 5s, retries 12, start_period 5s/);
-  assert.match(handoff, /tests\/public-repo-hygiene\.mts/);
-  assert.match(handoff, /non-placeholder address outside `tests\/`/);
+  assert.match(
+    handoff,
+    /`tests\/public-repo-hygiene\.mts` rejects a private-key block, a non-sample linkedin\.com\/in\/ URL outside `tests\/`, and a non-placeholder address outside `tests\/`/,
+  );
+  assert.match(handoff, /addresses in relay notes and goal records at this tip are placeholders/);
+  assert.equal(read("tests/public-repo-hygiene.mts").includes("PRIVATE KEY"), true);
 });

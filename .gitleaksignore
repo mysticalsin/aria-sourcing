@@ -39,7 +39,7 @@ da301b172b1796738f402b779297dfa9fadced88:src/lib/store/sourcing-actions.ts:linke
 # Expected HMAC of a synthetic channel-harness vector.
 # expected HMAC of a synthetic test vector. The test key is a literal synthetic value.
 fc1d82a8e16b0ec2e0dc3cc8b5c9db749f1bd32e:services/channels/harness_test.go:generic-api-key:22
-# Earlier line number of that same synthetic wantTokenMAC digest.
+# Expected HMAC of a synthetic channel-harness vector at wantTokenMAC. A different digest from the fingerprint above.
 # expected HMAC of a synthetic test vector. The test key is a literal synthetic value.
 db67293906e5f29e9d8a5401ea386484a827ee87:services/channels/harness_test.go:generic-api-key:20
 # Synthetic idempotency slug in a Go unit test.

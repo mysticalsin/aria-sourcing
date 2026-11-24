@@ -814,6 +814,9 @@ export default function SettingsPage() {
             title="LinkedIn"
             description="Your own LinkedIn, through the ARIA extension in your browser: invite sourced candidates and talk to them from their profile."
           >
+            <p className="text-sm">
+              <Link href="/channels/linkedin-token">Your LinkedIn</Link>
+            </p>
             <div id="linkedin">
               <LinkedInSettingsPanel />
             </div>
