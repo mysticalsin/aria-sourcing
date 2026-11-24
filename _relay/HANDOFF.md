@@ -1,75 +1,83 @@
 ---
 project: MSourcing / ARIA
-shift: 469
+shift: 470
 agent: claude-code
-updated: 2026-11-23
-status: odoo-integration-built-awaiting-owner-review
+updated: 2026-11-24
+status: odoo-followups-done-awaiting-owner-review
 ---
 
-# Handoff - Shift 469
+# Handoff - Shift 470
 
 ## Current state
 
-- New local branch `odoo` (from mbe-branch e3fa3f59), not pushed. Commits:
-  1d6d914f (backend), 202eb194 (UI), 1910302c (docs/dev tooling), then this
-  handoff. Gate green on every commit (typecheck, typecheck:tests, npm test;
-  intermediate commits gated in worktrees) and eslint on the changed files; `bash tests/schema-authority-db.sh` passed
-  (5 scenarios incl. new `odoo-integration`).
-- mbe-branch untouched. The owner's stack (aria-sourcing-*, port 3000) was NOT
-  rebuilt and runs mbe-branch 75f8b8bb as before; migration 0010 is NOT
-  applied to it.
-- Running for the owner to try (disposable, safe to remove):
-  - Odoo 20 dev: `docker/odoo/docker-compose.yml` (project aria-odoo),
-    http://localhost:8069, admin / admin, database `aria`, demo data, job
-    "Senior Python Backend Engineer" (id 7) plus a few hired test applicants.
-  - Disposable ARIA stack on the `odoo` branch: project aria-odoo-e2e,
-    http://localhost:3010, admin@aria.local / admindemo123, Odoo already
-    connected. Built with an override in the session scratchpad (own image
-    tag aria-odoo-e2e-app:local, no .env.local, throwaway DATA_ENCRYPTION_KEY).
-    Remove: `docker compose -p aria-odoo-e2e down -v` and
+- Local branch `odoo` (from mbe-branch e3fa3f59), not pushed. Shift 470
+  commits: 9be60f72 (store background refresh), 6fc19b16 (Odoo live updates,
+  server-side confidentiality, erasure), 58979693 (docs + explainer image),
+  then this handoff. Gate green on the final tree (typecheck,
+  typecheck:tests, npm test, eslint on changed files); intermediate commits
+  gated in worktrees; `bash tests/schema-authority-db.sh` passed (5
+  scenarios, `odoo-integration` covers migration 0011).
+- mbe-branch and the owner's stack (aria-sourcing-*, port 3000) untouched;
+  migrations 0010/0011 are NOT applied there.
+- Running for the owner (disposable):
+  - Odoo 20 dev (project aria-odoo, http://localhost:8069, admin/admin, db
+    `aria`). Now has the Automation Rules app installed, the rule
+    "ARIA: applicant changed" (#3) pointing at the e2e ARIA, and an internal
+    user `aria-integration` with only "Recruitment / Officer" (its API key is
+    in the session scratchpad only, not in the repo).
+  - Disposable ARIA on branch `odoo` (project aria-odoo-e2e,
+    http://localhost:3010, admin@aria.local / admindemo123): Odoo connected
+    (admin key), live updates on. Remove both with
+    `docker compose -p aria-odoo-e2e down -v` and
     `docker compose -f docker/odoo/docker-compose.yml down -v`.
 
 ## Done this shift
 
-- Owner asked (FR): IT will use Odoo open source; make ARIA work with Odoo and
-  explain where ARIA fits. Proposal in `docs/adr/0003-odoo-recruitment-system-of-record.md`
-  (status proposed): Odoo Recruitment = system of record (jobs, applications,
-  hires); ARIA = sourcing/engagement layer in front of it. Guide: `docs/odoo.md`.
-- Built: JSON-2 client + mapping + Odoo operations + server authority
-  (`src/lib/integrations/odoo/`), routes `/api/integrations/odoo/{config,check,jobs,links,applicants}`,
-  migration `0010_odoo_integration.sql`, Settings > Integrations > Odoo,
-  "Import from Odoo" on new campaign, Odoo strip on the campaign page,
-  "Send to Odoo" in the candidate drawer.
-- Verified against real Odoo (not from memory): `scripts/smoke-odoo.mts --write`
-  14/14 on Odoo 19.0 and 20.0; Playwright walk on the disposable stack:
-  connect, import job, parse, create (linked), add candidate, send, Odoo
-  moves it, ARIA syncs Interviewed then Hired, the "open in Odoo" URL
-  (`/odoo/hr.applicant/<id>`) shows the ARIA note.
-- Facts found on real Odoo: no hr.candidate in 19/20 (18 only); Odoo 20
-  JSON-2 accepts only API keys of scope `rpc` (UI default); hr.job.user_id
-  became recruiter_id; message_post escapes HTML unless body_is_html; error
-  bodies carry a full Python traceback; `=ilike` treats `_`/`%` as wildcards
-  (fixed: escaped, test added).
-- Intake: generic parser now reads an explicit "Required skills:" line
-  (`src/lib/mock-ai.ts`); the Odoo brief avoids the Mantu-format markers.
+- Owner asked (FR) to finish the four open points and to make an English
+  image explaining the ARIA/Odoo link.
+- Live updates: Odoo automation rule -> `POST /api/webhooks/odoo/[token]`
+  (token SHA-256 stored; ping only; ARIA reads the applicant back; 202 at
+  once via `after()`). Set-up/off in Settings > Odoo (`/api/integrations/odoo/push`),
+  automatic when the Odoo user is admin, else manual steps.
+- Stage changes are applied on the server only (`src/lib/integrations/odoo/sync.ts`)
+  by the webhook and by `POST /api/integrations/odoo/sync` on campaign open.
+  The store pulls newer server versions every 15 s when idle
+  (`pullRemoteWorkspace`, event `aria:workspace-pull`).
+- Confidentiality: hand-off refused (409 `confidential`) without a logged
+  reveal in 24 h when confidentiality mode is on and no outreach yet.
+- Erasure: `/api/admin/candidates/erasure` also erases the Odoo applicant
+  (`src/lib/integrations/odoo/erasure.ts`, receipts `odoo_erasures`, retry
+  in Settings > Odoo). Hired applicants kept for HR.
+- Minimal rights: Recruitment Officer alone works (Odoo 20); privacy.log and
+  automation rule need Odoo admin, both degrade cleanly.
+- Verified for real: smoke on Odoo 20 as admin and as Officer-only; browser
+  walk on the disposable stack: live update visible in 15 s without reload,
+  server refusal of an unrevealed profile, erasure deleted the Odoo
+  applicant and its contact.
+- Image: `docs/images/aria-odoo-overview.png` (+ HTML source), shown at the
+  top of `docs/odoo.md`.
 
 ## Blockers
 
-- None. Waiting for the owner's review of ADR 0003 (positioning).
+- None. Waiting for the owner's review of ADR 0003 and the erasure rule.
 
 ## Next steps
 
-1. Owner: read the explanation / ADR 0003; accept or adjust the boundary
-   (status proposed). Try it on http://localhost:3010 (Odoo already connected).
-2. Owner/IT: which Odoo version (19 or 20) and where it is hosted; create the
-   ARIA integration user and an RPC API key (docs/odoo.md "Connect Odoo").
-3. Follow-ups in `.scratch/odoo-integration/spec.md` (01 push webhook,
-   02 minimal-rights Odoo user, 05 server-side reveal check, 06 erasure).
-4. To ship on mbe-branch: merge `odoo`, rebuild the owner's stack
-   (applies migration 0010), check `DATA_ENCRYPTION_KEY` is set in .env.local.
-5. Carried over from 468: demo campaign prep, empty AGENTS_LINKEDIN_ALLOWLIST
-   after the demo, issue `.scratch/linkedin-bridge/issues/01-...`, VM POC
-   (issue 07), server config (issue 10).
+1. Owner: review ADR 0003 (still proposed) and the image; try it on
+   http://localhost:3010.
+2. Owner + DPO: confirm the erasure rule (hired applicants kept in Odoo; the
+   contact deleted only when Odoo created it for that application).
+3. Owner/IT: Odoo version and hosting; create the `aria-integration` user
+   (Recruitment Officer) and an RPC key; install Automation Rules for live
+   updates; make ARIA reachable from Odoo over HTTPS.
+4. Remaining follow-ups in `.scratch/odoo-integration/spec.md` (03 talent
+   pools / employees, 04 recruiter identity + SSO, 07 CRM needs, 08 Odoo
+   module); 02 not re-run on Odoo 19.
+5. To ship on mbe-branch: merge `odoo`, rebuild the owner's stack (applies
+   0010 + 0011), check `DATA_ENCRYPTION_KEY` in .env.local.
+6. Carried over from 468: demo campaign prep, empty AGENTS_LINKEDIN_ALLOWLIST
+   after the demo, `.scratch/linkedin-bridge/issues/01-...`, VM POC (07),
+   server config (10).
 
 ## Decisions made (don't relitigate)
 
@@ -157,6 +165,19 @@ status: odoo-integration-built-awaiting-owner-review
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- Store background refresh (shift 470): `pullRemoteWorkspace` in
+  `src/lib/store.ts` replaces local state with a newer server version only
+  when no save is queued/in flight and nothing changed during the load. Any
+  server route that writes workspace_state can dispatch
+  `WORKSPACE_PULL_EVENT` on the client to make tabs follow at once.
+- Odoo: stage changes must stay server-side (sync.ts); do not reintroduce a
+  browser-side `setCandidateStage` from Odoo data (duplicate notes).
+- Odoo webhook route is public (`/api/webhooks/*` bypasses the proxy auth):
+  keep the "same answer for unknown token" and "read back from Odoo" rules.
+- Odoo tests: `tests/odoo-integration.mts` mocks `server-only` and
+  `after-response.ts`; its fake Query keeps `singleRow` (a field named
+  `single` would shadow the `single()` method).
 
 - Odoo (branch `odoo`): never rebuild `aria-sourcing-app:local` for a test
   stack (the owner's agents service uses that tag with pull_policy never);
