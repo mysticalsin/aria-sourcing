@@ -1,38 +1,37 @@
 ---
 project: MSourcing / ARIA
-shift: 439
+shift: 440
 agent: cursor-grok
-updated: 2026-11-23T19:59Z
-status: draft-pr
+updated: 2026-11-24T16:48Z
+status: ci-pending
 ---
 
-# Handoff — Shift 439
+# Handoff — Shift 440
 
 ## Current state
 
-- Branch `cursor/hire-api-mcp-connectors-ec87`, started at `b27c06822882a43ddf748f148717ac9b89cd8394` (`cursor/hire-action-ui-defa`).
-- `POST /api/hire` order when `HIRE_CONNECTOR` is unset: Odoo, then SMART, then generic HTTPS API (`HIRE_API_URL` and `HIRE_API_TOKEN`), then MCP (`HIRE_MCP_URL` and `HIRE_MCP_TOKEN`, tool `HIRE_MCP_TOOL` or `hire`), otherwise `{ ok: true, erp: "skipped", linkedIn: true }` and no upstream request.
-- `HIRE_CONNECTOR=odoo|smart|api|mcp` selects that path. Demo requests drop those connector variables.
-- Generic API posts to `/v1/hire/{hr.job|hr.applicant}`. MCP does initialize, notifications/initialized, then tools/call. Both use `fetchPublicUrl` and `redirect: "error"`. A false or empty upstream payload is an error. Tokens are scrubbed from error text.
-- Odoo `execute_kw` uses positional args: create `[[vals]]`, write `[[id], vals]`, kwargs `{}`. Authenticate stays on `common` and is not logged. Job create sends `name` only. Applicant create sends `name`, `partner_name`, `email_from`, and numeric `job_id`. A hired stage write sends numeric `stage_id`. `ODOO_HIRED_STAGE_ID` is that id when it is a positive integer. When it is unset, `hr.recruitment.stage` is looked up by name `Hired` once per process and that id is reused. An empty lookup skips the write with reason "not written". No stage string and no `hired: true` is sent. The hire step writes the created `hr.job` as positional `execute_kw` args `[[id], { no_of_recruitment: 0 }]` with kwargs `{}`. It never sends `hr.job.state`. It does not close a different job.
-- A successful hire sets that candidate's campaign to `Filled`. The drawer says the vacancy is filled and closed. It does not ask anyone to mark it filled.
-- `npx tsc --noEmit` and `npm test` are the gate for this branch, with flyctl 0.5.15 on `PATH` and `FLY_API_TOKEN=local-validate-only`.
-- `workers/graphify-lessons/Dockerfile` was not edited. `workers/graphify-lessons/test_worker.py` still rejects `apt-get` in that file. The upgrade line is on the base tip and is expected to be reverted on `cursor/hire-action-ui-defa`.
+- Draft PR #318 stays draft. Base is `cursor/odoo-hire-traceability-d254` at `32b60ba3d0652cdfeffc124eaadb08d48c63295b`. Do not merge. Do not retarget. Do not touch #313, #317, #319, or #320.
+- Branch `cursor/vacancy-close-shape-c32a`. Previous tip `f4a57ec00055ac020519156e2f1cea5f484fad6c` failed Release gate because Production image supply chain failed in "Build every production custom image".
+- That step built the graphify image, then `npm run test:graphify-learning` failed `test_container_and_dependency_contract_is_bounded`: `workers/graphify-lessons/test_worker.py` rejects `apt-get` in the Dockerfile. The `apt-get upgrade` lines came from `b27c0682`.
+- Those lines existed to clear fixed HIGH and CRITICAL Debian findings on `python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203` (Debian 13.5). Removing the upgrade without moving the pin would fail the Trivy gate again.
+- This shift pins both stages to `python:3.12-slim@sha256:4a68d3169325c47e1bafbb86425220f03fbdff6f079a419e8d39407183288217` (Python 3.12.16, Debian 13.8, published 2026-11-24) and deletes the `apt-get` block.
+- Local Trivy 0.72.0 on that base rootfs, with `--severity HIGH,CRITICAL --ignore-unfixed=true`, reported 0 vulnerabilities. The same binary's secret scanner reported 0 findings. `.gitleaks.toml` and the CI secret-scan job were not edited. `linkedin-client-secret` stays armed.
+- Host check: `test_container_and_dependency_contract_is_bounded` passed with a stubbed `graphify` import. `node --experimental-strip-types tests/sourcing-learning-operations.mts` passed 19. Docker is not installed here, so the container runtime test was not run locally.
+- CI on the new tip is not terminal yet.
 
 ## Done this shift
 
-1. Generic HTTPS API and MCP hire connectors beside the existing Odoo and SMART connectors. Odoo and SMART function bodies were left as they were on `b27c0682`.
-2. Hire drawer labels for `erp: "api"` and `erp: "mcp"`.
-3. Blank `HIRE_API_*`, `HIRE_MCP_*`, and `HIRE_CONNECTOR` entries in the env examples.
+1. Diagnosed both Release gate failures on `f4a57ec0` as the supply-chain job (push and pull_request). Quality, Dependency audit, Secret scan, Database security, and CodeQL were success.
+2. Replaced the graphify base digest and removed `apt-get` so the worker contract and the fixed-vulnerability gate can both hold.
 
 ## Blockers
 
-- None for this slice. The graphify image no-apt failure belongs to the base tip, not this diff.
+- Waiting on GitHub Actions for the new tip. The full image build and `test:graphify-learning` run only in that job.
 
 ## Next steps
 
-1. Open the draft PR onto `cursor/hire-action-ui-defa`. Do not push that branch and do not move PR #308.
-2. Leave the graphify Dockerfile apt line for the revert on `cursor/hire-action-ui-defa`.
+1. If Production image supply chain or Release gate fails, read the job log and fix on this branch only. Do not disable a secret rule to get green.
+2. Leave the pull request in draft. Do not merge.
 
 ## Decisions made (don't relitigate)
 
@@ -42,15 +41,17 @@ status: draft-pr
 - `linkedInSourcingRunsWithoutErp` returns true. Connector sync is gated separately
 - Unset `HIRE_CONNECTOR` prefers Odoo, then SMART, then the generic API, then MCP
 - Demo hire requests strip Odoo, SMART, generic API, and MCP credentials
-- Do not edit `workers/graphify-lessons/Dockerfile` on this branch
 - #49 closed permanently; #51 was the Europe successor
 - Slim Fly deploy preserves live 0079 migration identity
+- The graphify image does not run `apt-get`. Released Debian fixes come from the pinned `python:3.12-slim` digest above.
+- Do not weaken Gitleaks or the Trivy secret scanner to clear this gate
 
 ## Watch out
 
 - `tests/public-fetch.mts` forbids a `fetch(` call in `src/lib/mcp-client.ts`. The hire runner takes an injected fetch and does not call `fetch(`
 - `POST /api/hire` uses the same demo, origin, rate-limit, and `source` permission gates as `POST /api/source`
 - A partial connector env does not call fetch; LinkedIn sourcing still completes
-- Manifest contract hashes must be recomputed when a test is added. This shift only extended existing hire tests
+- Manifest contract hashes must be recomputed when a test is added. This shift did not add a test
 - `FLY_API_TOKEN=local-validate-only` is only for local `flyctl config validate`. Do not commit it
-- Do not push `cursor/hire-action-ui-defa`
+- Do not push `cursor/hire-action-ui-defa` or `cursor/odoo-hire-traceability-d254`
+- CI runs on push and on pull_request, so the same job name appears twice. Both must succeed

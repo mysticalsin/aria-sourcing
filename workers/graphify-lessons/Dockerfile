@@ -1,4 +1,4 @@
-FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS builder
+FROM python:3.12-slim@sha256:4a68d3169325c47e1bafbb86425220f03fbdff6f079a419e8d39407183288217 AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -13,7 +13,7 @@ RUN python -m venv /opt/venv \
     && /opt/venv/bin/python -c "import importlib.metadata; assert importlib.metadata.version('graphifyy') == '0.9.14'" \
     && /opt/venv/bin/python -c "from graphify.build import build_from_json; from graphify.cluster import cluster, score_all; from graphify.export import to_json"
 
-FROM python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS runtime
+FROM python:3.12-slim@sha256:4a68d3169325c47e1bafbb86425220f03fbdff6f079a419e8d39407183288217 AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/Graphify-Labs/graphify.git" \
       org.opencontainers.image.revision="94d3099540550d58dd121ec3e67cf93e80364079" \
@@ -23,11 +23,6 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     GRAPHIFY_QUERY_LOG_DISABLE=1
-
-# Patch Debian packages that have a released fix. The Python digest pin stays.
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 10001 graphify \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin graphify

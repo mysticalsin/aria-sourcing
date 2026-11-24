@@ -39,7 +39,8 @@ counts, independent evidence counts, and the optimistic authority version.
 - A Graphify worker image built from `workers/graphify-lessons/Dockerfile` and
   stored by immutable registry digest.
 - Python base image digest
-  `sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203`.
+  `sha256:4a68d3169325c47e1bafbb86425220f03fbdff6f079a419e8d39407183288217`
+  (`python:3.12-slim`, Python 3.12.16, Debian 13.8).
 - Graphify source commit
   `94d3099540550d58dd121ec3e67cf93e80364079` (`graphifyy` 0.9.14).
 - `requirements.lock` hash verification, `pip check`, image scan, SBOM, and
