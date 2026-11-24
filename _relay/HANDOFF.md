@@ -14,7 +14,7 @@ status: in-progress
   - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408975864/job/138497299679
   - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408933103/job/138497144231
 - That audit was 13 high + 2 critical, inherited from the `vercel-demo` lock. `next@16.2.9` was inside `9.3.4-canary.0 - 16.4.4`. `zod@3.25.76` is `<4.6.6` (GHSA-mrhx-c7xc-m3w5) and has no 3.x fix.
-- The audit fix on this branch resolves `next@16.4.6`, `zod@4.6.7` (override `"zod": "$zod"`), `@dust-tt/client@1.2.11`, `postcss@8.5.23`, `sharp@0.35.5`. Declared floors: `next@^16.4.6`, `zod@^4.6.7`, `@dust-tt/client@^1.2.11`, `postcss@^8.5.23`, `ip-address@^10.7.6`.
+- Audit fix commit `2c3b87fcb9543dcdd4325e068d83a3319fb55e46` resolves `next@16.4.6`, `zod@4.6.7` (override `"zod": "$zod"`), `@dust-tt/client@1.2.11`, `postcss@8.5.23`, `sharp@0.35.5`. Declared floors: `next@^16.4.6`, `zod@^4.6.7`, `@dust-tt/client@^1.2.11`, `postcss@^8.5.23`, `ip-address@^10.7.6`. The branch tip is the handoff note on top of that commit.
 - Local `npm audit --audit-level=high` exits 0 (`found 0 vulnerabilities`), including `npm ci` with npm 10.8.2 and npm 10.9.9. `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build` (Next.js 16.4.6, 58 pages) exited 0. Hire suites stayed `tests/hire-connector.mts` 62 passed, `tests/hire-pipeline.mts` 46 passed.
 - `/demo/hire` was not re-rendered this shift. Hire connector behavior was not edited. No `ODOO_*` values were set and no live Odoo host was called.
 - Draft PR https://github.com/mysticalsin/aria-sourcing/pull/319 only. Not merged. Not deployed. PRs 313, 317, and 318 were not updated.
