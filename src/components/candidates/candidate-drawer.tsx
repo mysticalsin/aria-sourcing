@@ -35,6 +35,7 @@ import {
   buildHireRequest,
   closeMatchingVacancy,
   hireStatusText,
+  vacancyClosedByThisHire,
   localHireCompletes,
   postCandidateHire,
   type HireUiOutcome,
@@ -864,7 +865,7 @@ export function CandidateDrawer({
       stageFrom,
       stageTo: "Hired",
       steps: outcome.steps,
-      vacancyClosed: outcome.vacancyClosed || closedVacancy?.status === "Filled",
+      vacancyClosed: vacancyClosedByThisHire(outcome.vacancyClosed, closedVacancy?.status),
     });
     setHireResult({ ...outcome, trail });
     actions.recordHiredCandidate(candidateIdForHire, trail);

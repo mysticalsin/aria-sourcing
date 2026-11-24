@@ -9,6 +9,7 @@ import {
   buildHireRequest,
   closeMatchingVacancy,
   hireStatusText,
+  vacancyClosedByThisHire,
   interpretHireBody,
   localHireCompletes,
   postCandidateHire,
@@ -396,6 +397,56 @@ ok(
   leftOpen.campaigns[0]?.status === "Interviewing" && leftOpen.activities[0]?.outcome === "Hired",
 );
 ok("a missing candidate does not write a trail", applyHireTrail(workspace(), { candidateId: "missing", activityId: "act-x", trail: openTrail! }).activities.length === 0);
+
+const localFilled = closeMatchingVacancy([{ id: "camp-1", status: "Interviewing" }], "camp-1")[0];
+const openHire = interpretHireBody({ ok: true, erp: "skipped", linkedIn: true, steps: [] });
+if (!openHire.ok) throw new Error("open hire fixture");
+const localOnly = applyHireTrail(workspace(), {
+  candidateId: "cand-1",
+  activityId: "act-local-fill",
+  trail: buildHireTrail({
+    who: "Operator",
+    when: "2026-11-23T20:00:00.000Z",
+    need: "Senior Backend Engineer",
+    erp: openHire.erp,
+    stageFrom: "Offer",
+    stageTo: "Hired",
+    steps: openHire.steps,
+    vacancyClosed: vacancyClosedByThisHire(openHire.vacancyClosed, localFilled?.status),
+  }),
+});
+ok(
+  "a pre-existing filled vacancy alone does not mark the campaign Filled",
+  localFilled?.status === "Filled" &&
+    localOnly.campaigns[0]?.status === "Interviewing" &&
+    localOnly.activities[0]?.outcome === "Hired",
+);
+const connectorHire = interpretHireBody({
+  ok: true,
+  erp: "odoo",
+  linkedIn: true,
+  steps: [{ action: "hire", ok: true, id: "11", model: "hr.job" }],
+});
+if (!connectorHire.ok) throw new Error("connector hire fixture");
+const connectorClosed = applyHireTrail(workspace(), {
+  candidateId: "cand-1",
+  activityId: "act-connector-close",
+  trail: buildHireTrail({
+    who: "Operator",
+    when: "2026-11-23T20:00:00.000Z",
+    need: "Senior Backend Engineer",
+    erp: connectorHire.erp,
+    stageFrom: "Offer",
+    stageTo: "Hired",
+    steps: connectorHire.steps,
+    vacancyClosed: vacancyClosedByThisHire(connectorHire.vacancyClosed, localFilled?.status),
+  }),
+});
+ok(
+  "only a vacancy the connector closed during this hire marks the campaign Filled",
+  connectorClosed.campaigns[0]?.status === "Filled" &&
+    connectorClosed.activities[0]?.outcome === "Hired, vacancy closed",
+);
 
 const trailLib = readFileSync(new URL("../src/lib/hire-trail.ts", import.meta.url), "utf8");
 const store = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
