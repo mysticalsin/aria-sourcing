@@ -1,4 +1,3 @@
-import { createFakeOdooFetch, type RecordedOdooCall } from "@/lib/fake-odoo";
 import { fetchPublicUrl } from "@/lib/api/public-fetch";
 import {
   connectorRuntimeConfigured,
@@ -9,8 +8,9 @@ import {
 
 /**
  * Sourcing screens call the same hire function as POST /api/hire.
- * With no live connector configured, the call stays on the in-repo fake Odoo.
- * A complete runtime connector uses the public HTTPS transport. No host is guessed.
+ * With no live connector, fixture env runs SMART, the generic HTTPS API, and MCP
+ * on in-process stubs, and the unset case stays skipped. A complete runtime
+ * connector uses the public HTTPS transport. No host is guessed.
  */
 export const SOURCING_SCREENS = ["search", "shortlist", "candidate", "command"] as const;
 export type SourcingScreen = (typeof SOURCING_SCREENS)[number];
@@ -23,19 +23,6 @@ export interface SourcingScreenHireInput {
   stage: string;
 }
 
-export interface SourcingScreenHireResult {
-  ok: boolean;
-  erp: "odoo" | "smart" | "api" | "mcp" | "skipped";
-  linkedIn: boolean;
-  screen: SourcingScreen;
-  transport: "fake" | "live";
-  steps: SourcingScreenHireStep[];
-  vacancyClose: unknown;
-  vacancyKwargs: unknown;
-  hrJobStateSent: boolean;
-  error?: string;
-}
-
 export interface SourcingScreenHireStep {
   action: SourcingThroughHiredStep["action"];
   model: string;
@@ -46,14 +33,51 @@ export interface SourcingScreenHireStep {
   reason?: string;
 }
 
+export interface SourcingScreenFixtureConnector {
+  erp: "smart" | "api" | "mcp";
+  hired: boolean;
+  ok: boolean;
+  linkedIn: boolean;
+  hosts: string[];
+}
+
+export interface SourcingScreenHireResult {
+  ok: boolean;
+  erp: "odoo" | "smart" | "api" | "mcp" | "skipped";
+  linkedIn: boolean;
+  screen: SourcingScreen;
+  transport: "fixture" | "live";
+  steps: SourcingScreenHireStep[];
+  vacancyClose: unknown;
+  vacancyKwargs: unknown;
+  hrJobStateSent: boolean;
+  unset?: { ok: boolean; erp: "skipped" | "odoo" | "smart" | "api" | "mcp"; linkedIn: boolean; fetchCount: number };
+  connectors?: SourcingScreenFixtureConnector[];
+  error?: string;
+}
+
 type HireFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-const FAKE_ODOO_ENV: NodeJS.ProcessEnv = {
+const FIXTURE_SMART_ENV: NodeJS.ProcessEnv = {
   NODE_ENV: "test",
-  ODOO_URL: "https://odoo.example.test/",
-  ODOO_DB: "fixture",
-  ODOO_USERNAME: "fixture-api",
-  ODOO_API_KEY: "fixture-key",
+  HIRE_CONNECTOR: "smart",
+  SMART_URL: "https://smart.example.test/",
+  SMART_TOKEN: "fixture-smart",
+};
+
+const FIXTURE_API_ENV: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  HIRE_CONNECTOR: "api",
+  HIRE_API_URL: "https://hire-api.example.test/",
+  HIRE_API_TOKEN: "fixture-api",
+};
+
+const FIXTURE_MCP_ENV: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  HIRE_CONNECTOR: "mcp",
+  HIRE_MCP_URL: "https://hire-mcp.example.test/mcp",
+  HIRE_MCP_TOKEN: "fixture-mcp",
+  HIRE_MCP_TOOL: "hire",
 };
 
 function shownStep(step: SourcingThroughHiredStep): SourcingScreenHireStep {
@@ -68,33 +92,111 @@ function shownStep(step: SourcingThroughHiredStep): SourcingScreenHireStep {
   };
 }
 
-function rpcBodies(calls: RecordedOdooCall[]) {
-  return calls.map(
-    (call) => JSON.parse(String(call.init?.body ?? "{}")) as { params?: { method?: string; args?: unknown[] } },
-  );
+function jsonResponse(status: number, body: unknown, headers?: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
 }
 
-function hasStateKey(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some((item) => hasStateKey(item));
-  return Object.entries(value as Record<string, unknown>).some(([key, child]) => key === "state" || hasStateKey(child));
+function recordedFetch(
+  hosts: string[],
+  respond: (init: RequestInit | undefined, index: number) => Response,
+): HireFetch {
+  return (async (url: string, init?: RequestInit) => {
+    hosts.push(String(url));
+    return respond(init, hosts.length);
+  }) as HireFetch;
 }
 
-function vacancyFacts(calls: RecordedOdooCall[]): { close: unknown; kwargs: unknown; stateSent: boolean } {
-  const bodies = rpcBodies(calls);
-  const write = bodies.find(
-    (body) => body.params?.method === "execute_kw" && body.params.args?.[3] === "hr.job" && body.params.args?.[4] === "write",
-  );
-  const stateSent = bodies.some((body) => hasStateKey(body.params?.args?.[5]) || hasStateKey(body.params?.args?.[6]));
+function fixtureConnector(
+  erp: SourcingScreenFixtureConnector["erp"],
+  result: Awaited<ReturnType<typeof runSourcingThroughHired>>,
+  hosts: string[],
+): SourcingScreenFixtureConnector {
+  const closed = result.steps.some((step) => step.action === "hire" && step.ok && step.skipped !== true);
   return {
-    close: write?.params?.args?.[5] ?? null,
-    kwargs: write?.params?.args?.[6] ?? null,
-    stateSent,
+    erp,
+    ok: result.ok,
+    linkedIn: result.linkedIn,
+    hired: result.ok && result.linkedIn && result.erp === erp && closed,
+    hosts,
   };
 }
 
 export function isSourcingScreen(value: string): value is SourcingScreen {
   return (SOURCING_SCREENS as readonly string[]).includes(value);
+}
+
+async function hireWithFixtureConnectors(
+  input: SourcingScreenHireInput,
+  payload: {
+    idempotencyKey: string;
+    job: { name: string; department?: string };
+    applicant: { name: string; email?: string };
+    stage: string;
+  },
+): Promise<SourcingScreenHireResult> {
+  let unsetFetches = 0;
+  const unset = await runSourcingThroughHired(payload, { NODE_ENV: "test" }, (async () => {
+    unsetFetches += 1;
+    throw new Error("unset connector must not fetch");
+  }) as HireFetch);
+
+  const smartHosts: string[] = [];
+  const smart = await runSourcingThroughHired(
+    { ...payload, idempotencyKey: `${payload.idempotencyKey}:smart` },
+    FIXTURE_SMART_ENV,
+    recordedFetch(smartHosts, (_init, index) => jsonResponse(200, { id: `smart-${index}` })),
+  );
+
+  const apiHosts: string[] = [];
+  const api = await runSourcingThroughHired(
+    { ...payload, idempotencyKey: `${payload.idempotencyKey}:api` },
+    FIXTURE_API_ENV,
+    recordedFetch(apiHosts, (_init, index) => jsonResponse(200, { id: `api-${index}` })),
+  );
+
+  const mcpHosts: string[] = [];
+  const mcp = await runSourcingThroughHired(
+    { ...payload, idempotencyKey: `${payload.idempotencyKey}:mcp` },
+    FIXTURE_MCP_ENV,
+    recordedFetch(mcpHosts, (init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "initialize") {
+        return jsonResponse(200, { result: { serverInfo: { name: "fixture-hire" } } }, { "mcp-session-id": "fixture-session" });
+      }
+      if (body.method === "notifications/initialized") return jsonResponse(202, {});
+      return jsonResponse(200, { result: { structuredContent: { id: `mcp-${mcpHosts.length}` } } });
+    }),
+  );
+
+  const connectors = [
+    fixtureConnector("smart", smart, smartHosts),
+    fixtureConnector("api", api, apiHosts),
+    fixtureConnector("mcp", mcp, mcpHosts),
+  ];
+  const allHired = connectors.every((connector) => connector.hired);
+  const unsetSkipped = unset.ok === true && unset.erp === "skipped" && unset.linkedIn === true && unsetFetches === 0;
+
+  return {
+    ok: allHired && unsetSkipped,
+    erp: "skipped",
+    linkedIn: true,
+    screen: input.screen,
+    transport: "fixture",
+    steps: [],
+    vacancyClose: null,
+    vacancyKwargs: null,
+    hrJobStateSent: false,
+    unset: {
+      ok: unset.ok,
+      erp: unset.erp,
+      linkedIn: unset.linkedIn,
+      fetchCount: unsetFetches,
+    },
+    connectors,
+  };
 }
 
 export async function hireFromSourcingScreen(
@@ -108,7 +210,7 @@ export async function hireFromSourcingScreen(
       erp: "skipped",
       linkedIn: true,
       screen: "command",
-      transport: "fake",
+      transport: "fixture",
       steps: [],
       vacancyClose: null,
       vacancyKwargs: null,
@@ -123,21 +225,7 @@ export async function hireFromSourcingScreen(
     stage: input.stage,
   };
   if (!connectorRuntimeConfigured(env)) {
-    const fake = createFakeOdooFetch();
-    const hired = await runSourcingThroughHired(payload, FAKE_ODOO_ENV, fake.fetch);
-    const vacancy = vacancyFacts(fake.calls);
-    return {
-      ok: hired.ok,
-      erp: hired.erp,
-      linkedIn: hired.linkedIn,
-      screen: input.screen,
-      transport: "fake",
-      steps: hired.steps.map(shownStep),
-      vacancyClose: vacancy.close,
-      vacancyKwargs: vacancy.kwargs,
-      hrJobStateSent: vacancy.stateSent,
-      error: hired.error,
-    };
+    return hireWithFixtureConnectors(input, payload);
   }
   const hired = await runSourcingThroughHired(payload, hireEnvForRoute(env, false), liveFetch);
   return {

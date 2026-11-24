@@ -21,6 +21,8 @@ interface ShownHire {
   hrJobStateSent?: boolean;
   error?: string;
   steps?: { action: string; skipped?: boolean; ok?: boolean }[];
+  unset?: { ok?: boolean; erp?: string; linkedIn?: boolean; fetchCount?: number };
+  connectors?: { erp?: string; hired?: boolean; ok?: boolean; linkedIn?: boolean; hosts?: string[] }[];
 }
 
 function hireKey(screen: SourcingScreen, id: string): string {
@@ -35,7 +37,7 @@ function usableEmail(email: string | undefined): string | undefined {
   return trimmed;
 }
 
-/** One hire action for a sourcing screen. The server chooses the fake Odoo or the live connector. */
+/** One hire action for a sourcing screen. Fixture env shows SMART, API, MCP, and unset. */
 export function SourcingHirePanel({
   screen,
   candidate,
@@ -74,7 +76,39 @@ export function SourcingHirePanel({
     }
   }
 
-  const vacancy = result ? JSON.stringify(result.vacancyClose ?? null) : "";
+  const shown =
+    result?.transport === "fixture"
+      ? {
+          ok: result.ok ?? false,
+          transport: "fixture",
+          linkedIn: result.linkedIn ?? false,
+          unset: {
+            ok: result.unset?.ok ?? false,
+            erp: result.unset?.erp ?? "skipped",
+            linkedIn: result.unset?.linkedIn ?? false,
+            fetchCount: result.unset?.fetchCount ?? 0,
+          },
+          connectors: (result.connectors ?? []).map((connector) => ({
+            erp: connector.erp,
+            hired: connector.hired ?? false,
+            ok: connector.ok ?? false,
+            linkedIn: connector.linkedIn ?? false,
+            hosts: connector.hosts ?? [],
+          })),
+          error: result.error,
+        }
+      : result
+        ? {
+            ok: result.ok ?? false,
+            erp: result.erp ?? "skipped",
+            linkedIn: result.linkedIn ?? false,
+            transport: result.transport ?? "live",
+            steps: (result.steps ?? []).map((step) => step.action).join(","),
+            vacancyClose: result.vacancyClose ?? null,
+            hrJobStateSent: result.hrJobStateSent ?? false,
+            error: result.error,
+          }
+        : null;
 
   return (
     <section className="rounded-2xl border border-line bg-surface p-4" data-testid={`sourcing-hire-${screen}`}>
@@ -96,25 +130,12 @@ export function SourcingHirePanel({
           {pending ? "Hiring…" : "Hire into ERP"}
         </Button>
       </div>
-      {result ? (
+      {shown ? (
         <pre
           className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-3 text-sm text-ink"
           data-testid={`sourcing-hire-${screen}-result`}
         >
-          {JSON.stringify(
-            {
-              ok: result.ok ?? false,
-              erp: result.erp ?? "skipped",
-              linkedIn: result.linkedIn ?? false,
-              transport: result.transport ?? "fake",
-              steps: (result.steps ?? []).map((step) => step.action).join(","),
-              vacancyClose: vacancy ? JSON.parse(vacancy) : null,
-              hrJobStateSent: result.hrJobStateSent ?? false,
-              error: result.error,
-            },
-            null,
-            2,
-          )}
+          {JSON.stringify(shown, null, 2)}
         </pre>
       ) : null}
     </section>

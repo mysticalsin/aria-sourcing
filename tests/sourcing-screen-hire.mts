@@ -19,6 +19,18 @@ const fixture = {
   stage: "Hired",
 };
 
+function fixtureOutcome(result: Awaited<ReturnType<typeof hireFromSourcingScreen>>) {
+  const byErp = Object.fromEntries((result.connectors ?? []).map((connector) => [connector.erp, connector]));
+  return {
+    transport: result.transport,
+    ok: result.ok,
+    unset: result.unset,
+    smart: byErp.smart,
+    api: byErp.api,
+    mcp: byErp.mcp,
+  };
+}
+
 let liveCalls = 0;
 const search = await hireFromSourcingScreen(
   { ...fixture, screen: "search" },
@@ -28,25 +40,36 @@ const search = await hireFromSourcingScreen(
     throw new Error("live fetch");
   },
 );
+const searchOutcome = fixtureOutcome(search);
 ok(
-  "search hires on the fake Odoo when no connector is configured",
+  "search uses fixture SMART, API, and MCP, and unset stays skipped",
   liveCalls === 0 &&
-    search.ok === true &&
-    search.erp === "odoo" &&
-    search.linkedIn === true &&
-    search.transport === "fake" &&
-    search.steps.map((step) => step.action).join(",") === "job,applicant,stage,hire" &&
-    search.steps[2]?.skipped === true &&
-    JSON.stringify(search.vacancyClose) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
-    JSON.stringify(search.vacancyKwargs) === "{}" &&
-    search.hrJobStateSent === false,
+    searchOutcome.transport === "fixture" &&
+    searchOutcome.ok === true &&
+    searchOutcome.unset?.ok === true &&
+    searchOutcome.unset?.erp === "skipped" &&
+    searchOutcome.unset?.linkedIn === true &&
+    searchOutcome.unset?.fetchCount === 0 &&
+    searchOutcome.smart?.hired === true &&
+    searchOutcome.api?.hired === true &&
+    searchOutcome.mcp?.hired === true &&
+    (searchOutcome.smart?.hosts ?? []).every((host) => host.startsWith("https://smart.example.test/")) &&
+    (searchOutcome.api?.hosts ?? []).every((host) => host.startsWith("https://hire-api.example.test/")) &&
+    (searchOutcome.mcp?.hosts ?? []).every((host) => host.startsWith("https://hire-mcp.example.test/")),
 );
 
 for (const screen of ["shortlist", "candidate", "command"] as const) {
   const result = await hireFromSourcingScreen({ ...fixture, screen, idempotencyKey: `${screen}-fixture` }, { NODE_ENV: "test" });
+  const outcome = fixtureOutcome(result);
   ok(
-    `${screen} reaches the same fake hire`,
-    result.transport === "fake" && result.ok === true && result.erp === "odoo" && result.linkedIn === true,
+    `${screen} reaches the same fixture hire`,
+    outcome.transport === "fixture" &&
+      outcome.ok === true &&
+      outcome.unset?.erp === "skipped" &&
+      outcome.unset?.fetchCount === 0 &&
+      outcome.smart?.hired === true &&
+      outcome.api?.hired === true &&
+      outcome.mcp?.hired === true,
   );
 }
 
@@ -64,7 +87,7 @@ const live = await hireFromSourcingScreen({ ...fixture, screen: "command" }, liv
   return odooExecuteResponse(body, () => 11);
 }) as typeof fetch);
 ok(
-  "a configured public connector uses the live transport instead of the fake",
+  "a configured public connector uses the live transport instead of the fixture",
   live.transport === "live" && live.ok === true && live.erp === "odoo" && seen.every((url) => url === "https://203.0.113.50/jsonrpc"),
 );
 
@@ -106,13 +129,13 @@ const routeHosts = absoluteHosts(route);
 const hireHosts = absoluteHosts(hireLib);
 const panelHosts = absoluteHosts(panel);
 const seenHosts = seen.map((url) => new URL(url).hostname);
+const allowedFixtureHosts = new Set(["smart.example.test", "hire-api.example.test", "hire-mcp.example.test"]);
 ok(
-  "hire makes no request except the stubbed public host",
+  "hire makes no request except fixture hosts or the stubbed public host",
   route.includes("hireFromSourcingScreen") &&
     routeHosts.length === 0 &&
     panelHosts.length === 0 &&
-    hireHosts.length > 0 &&
-    hireHosts.every((host) => host === "odoo.example.test") &&
+    hireHosts.every((host) => allowedFixtureHosts.has(host)) &&
     liveCalls === 0 &&
     refusedCalls === 0 &&
     seenHosts.length > 0 &&

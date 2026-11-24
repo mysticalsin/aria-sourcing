@@ -12,9 +12,10 @@ import { hireFromSourcingScreen, SOURCING_SCREENS } from "@/lib/sourcing-screen-
 export const runtime = "nodejs";
 
 /**
- * Hire one candidate from a sourcing screen. Uses the in-repo fake Odoo when
- * no live connector is configured. A complete runtime connector uses the same
- * public HTTPS path as POST /api/hire. This route does not call LinkedIn.
+ * Hire one candidate from a sourcing screen. With no live connector, fixture
+ * env runs SMART, the generic HTTPS API, and MCP on in-process stubs, and the
+ * unset case stays skipped. A complete runtime connector uses the same public
+ * HTTPS path as POST /api/hire. This route does not call LinkedIn.
  */
 const SourcingHireSchema = z.object({
   screen: z.enum(SOURCING_SCREENS),
