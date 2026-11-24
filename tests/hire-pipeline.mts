@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
+import { odooExecuteResponse } from "../src/lib/fake-odoo";
 import { envForHireRequest, runSourcingThroughHired } from "../src/lib/mcp-client";
+import { runSyntheticHireDemo } from "../src/lib/synthetic-hire-demo";
 
 let pass = 0;
 let fail = 0;
@@ -16,55 +18,6 @@ function jsonResponse(status: number, body: unknown, headers?: Record<string, st
     status,
     headers: { "content-type": "application/json", ...headers },
   });
-}
-
-/** hr.job fields present on Odoo 16, 18, and 19. `state` was removed in Odoo 16. */
-const HR_JOB_FIELDS = new Set([
-  "active",
-  "company_id",
-  "contract_type_id",
-  "department_id",
-  "description",
-  "employee_ids",
-  "expected_employees",
-  "name",
-  "no_of_employee",
-  "no_of_recruitment",
-  "requirements",
-  "sequence",
-]);
-
-function unknownHrJobField(body: { params?: { method?: string; args?: unknown[] } }): string | null {
-  if (body.params?.method !== "execute_kw" || body.params.args?.[3] !== "hr.job") return null;
-  const positional = body.params.args[5];
-  if (!Array.isArray(positional)) return null;
-  const method = body.params.args[4];
-  const vals =
-    method === "create"
-      ? Array.isArray(positional[0])
-        ? positional[0][0]
-        : undefined
-      : method === "write"
-        ? positional[1]
-        : undefined;
-  if (!vals || typeof vals !== "object" || Array.isArray(vals)) return null;
-  for (const field of Object.keys(vals)) {
-    if (!HR_JOB_FIELDS.has(field)) return field;
-  }
-  return null;
-}
-
-function odooExecuteResponse(body: { params?: { method?: string; args?: unknown[] } }, nextId: () => number) {
-  if (body.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
-  const kw = body.params?.args?.[6];
-  if (kw && typeof kw === "object" && !Array.isArray(kw) && Object.keys(kw).length > 0) {
-    return jsonResponse(200, { error: { message: "TypeError: unexpected keyword argument" } });
-  }
-  const field = unknownHrJobField(body);
-  if (field) {
-    return jsonResponse(200, { error: { message: `ValueError: Invalid field '${field}' on model 'hr.job'` } });
-  }
-  return jsonResponse(200, { result: nextId() });
 }
 
 const input = {
@@ -477,6 +430,36 @@ ok(
     !connectorDemo.HIRE_CONNECTOR &&
     !connectorDemo.ODOO_API_KEY &&
     !connectorDemo.SMART_TOKEN,
+);
+
+const synthetic = await runSyntheticHireDemo();
+ok(
+  "synthetic fixture hire closes that vacancy with no_of_recruitment only",
+  synthetic.hired.ok === true &&
+    synthetic.hired.erp === "odoo" &&
+    synthetic.hired.linkedIn === true &&
+    synthetic.fixture.applicantName === "Fixture Candidate North" &&
+    synthetic.fixture.provenance === "synthetic" &&
+    JSON.stringify(synthetic.vacancyClose) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
+    !JSON.stringify(synthetic.vacancyClose).includes("state"),
+);
+ok(
+  "synthetic demo talks only to the in-repo fake Odoo",
+  synthetic.odooHosts.length > 0 && synthetic.odooHosts.every((url) => url === "https://odoo.example.test/jsonrpc"),
+);
+ok(
+  "unset connector on the synthetic fixture returns erp skipped and linkedIn true",
+  synthetic.unset.ok === true &&
+    synthetic.unset.erp === "skipped" &&
+    synthetic.unset.linkedIn === true &&
+    synthetic.unset.steps.length === 0 &&
+    synthetic.unset.fetchCount === 0,
+);
+const demoSource = readFileSync(new URL("../src/lib/synthetic-hire-demo.ts", import.meta.url), "utf8");
+const demoPage = readFileSync(new URL("../src/app/demo/hire/page.tsx", import.meta.url), "utf8");
+ok(
+  "the synthetic hire demo does not call LinkedIn",
+  !demoSource.includes("linkedin.com") && !demoPage.includes("linkedin.com") && !demoSource.includes("api.linkedin"),
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
