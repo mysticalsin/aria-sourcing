@@ -72,7 +72,7 @@ export default async function SyntheticHirePage() {
           </CardHeader>
           <CardBody>
             <p className="mb-4 text-sm text-muted" data-testid="odoo-result">
-              Connector <span data-testid="selected-connector">odoo</span> selected. Result: {demo.hired.ok ? "ok" : "failed"} · erp {demo.hired.erp} · linkedIn {String(demo.hired.linkedIn)}
+              Connector <span data-testid="selected-connector">{demo.hired.erp}</span> selected. Result: {demo.hired.ok ? "ok" : "failed"} · erp {demo.hired.erp} · linkedIn {String(demo.hired.linkedIn)}
             </p>
             <ol className="flex flex-col gap-3">
               {demo.hired.steps.map((step) => (
@@ -104,9 +104,9 @@ export default async function SyntheticHirePage() {
                 </div>
               </dl>
               <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Write</p>
-              <pre className="mt-2 overflow-x-auto rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-write">{vacancy}</pre>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-write">{vacancy}</pre>
               <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Kwargs</p>
-              <pre className="mt-2 overflow-x-auto rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-kwargs">{kwargs}</pre>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-kwargs">{kwargs}</pre>
               <p className="mt-4 text-sm text-muted">
                 hr.job fields sent: <span data-testid="hr-job-fields">{demo.hrJobFields.join(",")}</span>. hr.job.state sent: <span data-testid="hr-job-state-sent">{demo.hrJobStateSent ? "yes" : "no"}</span>.
               </p>
@@ -126,7 +126,7 @@ export default async function SyntheticHirePage() {
             <p className="text-sm text-muted">
               The same fixture, with HIRE_CONNECTOR unset. Odoo, SMART, the generic API, and MCP are all unset. Sourcing still completes and no upstream request is sent.
             </p>
-            <pre className="mt-4 overflow-x-auto rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="unset-result">{unsetResult}</pre>
+            <pre className="mt-4 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="unset-result">{unsetResult}</pre>
             <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
                 <dt className="text-xs font-bold uppercase tracking-wider text-muted">ok</dt>
