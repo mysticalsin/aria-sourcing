@@ -21,6 +21,7 @@ status: in-progress
 - CI on `eb685e91` is green for both `Typecheck / Lint / Test / Build` jobs.
 - With the four Odoo variables set to the existing fixture placeholders, `hireEnvForRoute` plus `runSourcingThroughHired` and `POST /api/hire` both complete sourcing through hired on the in-repo fake. The route proof stubs `fetch` and uses the RFC 5737 documentation address `203.0.113.50`, so no DNS lookup and no socket run. The fixture values are removed before the test exits.
 - Search (`/candidates`), shortlist (`/vivier`), the candidate drawer, and the command center (`/`) call `hireFromSourcingScreen`. With no live connector they use the in-repo fake and show erp `odoo`, transport `fake`, and the vacancy close. `POST /api/hire` is unchanged.
+- `tests/sourcing-screen-hire.mts` no longer contains the `linkedin.com` substring. It still proves hire requests stay on `odoo.example.test` or the stubbed `203.0.113.50` host, and that a private URL is refused before fetch.
 
 ## Done this shift
 - Moved the lock and the direct floors so the blocking audit can pass without a hire behavior change.

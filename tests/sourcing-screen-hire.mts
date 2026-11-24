@@ -92,8 +92,32 @@ const files: Record<SourcingScreen, string> = {
 for (const screen of screens) {
   ok(`${screen} screen renders the hire panel`, files[screen].includes(`screen="${screen}"`) && files[screen].includes("SourcingHirePanel"));
 }
+function absoluteHosts(source: string): string[] {
+  const hosts: string[] = [];
+  for (const match of source.matchAll(/https?:\/\/[^\s"'`)]+/g)) {
+    hosts.push(new URL(match[0]).hostname);
+  }
+  return hosts;
+}
 const route = readFileSync(new URL("../src/app/api/hire/sourcing/route.ts", import.meta.url), "utf8");
-ok("the sourcing hire route calls the shared hire function", route.includes("hireFromSourcingScreen") && !route.includes("linkedin.com"));
+const hireLib = readFileSync(new URL("../src/lib/sourcing-screen-hire.ts", import.meta.url), "utf8");
+const panel = readFileSync(new URL("../src/components/hire/sourcing-hire-panel.tsx", import.meta.url), "utf8");
+const routeHosts = absoluteHosts(route);
+const hireHosts = absoluteHosts(hireLib);
+const panelHosts = absoluteHosts(panel);
+const seenHosts = seen.map((url) => new URL(url).hostname);
+ok(
+  "hire makes no request except the stubbed public host",
+  route.includes("hireFromSourcingScreen") &&
+    routeHosts.length === 0 &&
+    panelHosts.length === 0 &&
+    hireHosts.length > 0 &&
+    hireHosts.every((host) => host === "odoo.example.test") &&
+    liveCalls === 0 &&
+    refusedCalls === 0 &&
+    seenHosts.length > 0 &&
+    seenHosts.every((host) => host === "203.0.113.50"),
+);
 
 console.log(`RESULT sourcing-screen-hire: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
