@@ -61,6 +61,10 @@ export function odooExecuteResponse(body: OdooRpcBody, nextId: () => number): Re
   if (field) {
     return jsonResponse(200, { error: { message: `ValueError: Invalid field '${field}' on model 'hr.job'` } });
   }
+  // Odoo write returns true. A new id would label the closed vacancy as a different record.
+  if (body.params?.method === "execute_kw" && body.params.args?.[4] === "write") {
+    return jsonResponse(200, { result: true });
+  }
   return jsonResponse(200, { result: nextId() });
 }
 
