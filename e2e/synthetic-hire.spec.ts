@@ -1,12 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const shots = process.env.ARIA_E2E_SHOT_DIR ?? "e2e-artifacts/local/screenshots";
 
-async function shot(page: Page, name: string) {
+async function shot(page: Page, name: string, locator?: Locator, fullPage = true) {
   mkdirSync(shots, { recursive: true });
-  await page.screenshot({ path: join(shots, `${name}.png`), fullPage: true });
+  const path = join(shots, `${name}.png`);
+  if (locator) await locator.screenshot({ path });
+  else await page.screenshot({ path, fullPage });
 }
 
 function hostsOf(text: string): string[] {
@@ -103,5 +105,68 @@ test("the synthetic hire demo closes the fixture vacancy without a live connecto
   expect(registrableHostCount(html, "linkedin.com")).toBe(0);
   expect(registrableHostCount(html, "azure.com")).toBe(0);
   expect(outside).toEqual([]);
-  await shot(page, "02-connectors-hired");
+  await shot(page, "02-connectors-hired", page.locator("#synthetic-connectors"));
+});
+
+test.describe("phone width", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("sourcing without a connector stays readable, then each hire is on screen", async ({ page }) => {
+    const outside: string[] = [];
+    page.on("request", (request) => {
+      let hostname = "";
+      try {
+        hostname = new URL(request.url()).hostname;
+      } catch {
+        outside.push(request.url());
+        return;
+      }
+      if (hostname !== "127.0.0.1" && hostname !== "localhost") outside.push(request.url());
+    });
+
+    await page.goto("/demo/hire");
+    await expect(page.getByRole("heading", { name: "Synthetic sourcing to hired" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("fixture-applicant")).toHaveText("Fixture Candidate North");
+    await expect(page.getByText("LinkedIn calls: 0")).toBeVisible();
+
+    const unset = page.getByTestId("unset-result");
+    await unset.scrollIntoViewIfNeeded();
+    const unsetBox = await unset.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      text: el.textContent ?? "",
+    }));
+    expect(unsetBox.scrollWidth).toBeLessThanOrEqual(unsetBox.clientWidth + 1);
+    expect(JSON.parse(unsetBox.text)).toEqual({ ok: true, erp: "skipped", linkedIn: true });
+    expect(unsetBox.text.split("\n").some((line) => line.includes('"linkedIn"'))).toBe(true);
+    await expect(page.getByTestId("unset-fetches")).toHaveText("0");
+    await shot(page, "03-phone-no-connector", page.locator("#synthetic-unset"));
+
+    await expect(page.getByTestId("selected-connector")).toHaveText("odoo");
+    await expect(page.getByTestId("odoo-step-hire")).toContainText("written");
+    for (const id of ["odoo-hosts", "connector-smart-hosts", "connector-api-hosts", "connector-mcp-hosts"]) {
+      const hostBox = await page.getByTestId(id).evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(hostBox.scrollWidth).toBeLessThanOrEqual(hostBox.clientWidth + 1);
+    }
+    expect(hostsOf((await page.getByTestId("connector-smart-hosts").textContent()) ?? "")).toEqual([
+      "https://smart.example.test/api/hire/hr.job",
+      "https://smart.example.test/api/hire/hr.applicant",
+      "https://smart.example.test/api/hire/hr.applicant",
+      "https://smart.example.test/api/hire/hr.applicant",
+    ]);
+    for (const erp of ["smart", "api", "mcp"] as const) {
+      await expect(page.getByTestId(`connector-${erp}-outcome`)).toHaveText("hired");
+    }
+    const pageWidth = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(pageWidth.scrollWidth).toBeLessThanOrEqual(pageWidth.clientWidth + 1);
+    expect(outside).toEqual([]);
+    await page.getByTestId("connector-mcp").evaluate((el) => el.scrollIntoView({ block: "center", inline: "nearest" }));
+    await shot(page, "04-phone-connectors", undefined, false);
+  });
 });

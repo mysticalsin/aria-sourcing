@@ -371,5 +371,49 @@ ok("missing generic api env returns ok:false", missingApi.ok === false && missin
 ok("missing mcp env returns ok:false", missingMcp.ok === false && missingMcp.error.includes("HIRE_MCP_URL"));
 ok("missing generic api and mcp env does not call fetch", missingConnectorFetches === 0);
 
+let foreignOdooFetches = 0;
+const foreignOdoo = await odooHireConnector(odooEnv, (async () => {
+  foreignOdooFetches += 1;
+  return jsonResponse(200, { result: 7 });
+}) as typeof fetch).call({ ...call, model: "../admin" });
+ok("odoo refuses a model outside hr.job and hr.applicant", foreignOdoo.ok === false && foreignOdooFetches === 0);
+
+const odooThrown = await odooHireConnector(odooEnv, (async () => {
+  throw new Error("connect failed secret");
+}) as typeof fetch).call(call);
+ok(
+  "odoo transport errors stay in the result and do not echo the api key",
+  odooThrown.ok === false && !odooThrown.error.includes("secret"),
+);
+const odooBadJson = await odooHireConnector(odooEnv, (async () => new Response("not-json", { status: 200 })) as typeof fetch).call(call);
+ok("odoo invalid json stays in the result", odooBadJson.ok === false && !odooBadJson.error.includes("secret"));
+
+const smartNumeric = await smartHireConnector(smartEnv, (async () => jsonResponse(200, { id: 15 })) as typeof fetch).call(call);
+ok("smart accepts a positive numeric id", smartNumeric.ok === true && smartNumeric.ok && smartNumeric.id === "15");
+const smartThrown = await smartHireConnector(smartEnv, (async () => {
+  throw new Error("connect failed smart-token");
+}) as typeof fetch).call(call);
+ok(
+  "smart transport errors stay in the result and do not echo the token",
+  smartThrown.ok === false && !smartThrown.error.includes("smart-token"),
+);
+const smartBadJson = await smartHireConnector(smartEnv, (async () => new Response("not-json", { status: 200 })) as typeof fetch).call(call);
+ok("smart invalid json stays in the result", smartBadJson.ok === false && !smartBadJson.error.includes("smart-token"));
+
+let mcpToolCallsAfterFailedNotice = 0;
+const mcpNotice = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+    if (body.method === "tools/call") mcpToolCallsAfterFailedNotice += 1;
+    if (body.method === "notifications/initialized") return responseWith(500, { error: "nope" });
+    return responseWith(200, { result: { serverInfo: { name: "fake-hire" } } }, { "mcp-session-id": "sess-1" });
+  }) as typeof fetch,
+).call(call);
+ok(
+  "a failed mcp initialized notification does not call the tool",
+  mcpNotice.ok === false && mcpNotice.error === "mcp initialized http 500" && mcpToolCallsAfterFailedNotice === 0,
+);
+
 console.log(`RESULT hire-connector: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
