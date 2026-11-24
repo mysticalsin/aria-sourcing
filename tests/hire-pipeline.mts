@@ -108,6 +108,19 @@ ok(
   "the fake Odoo rejects an unknown hr.job field before a hire can succeed",
   (rejectedState as { error?: { message?: string } }).error?.message === "ValueError: Invalid field 'state' on model 'hr.job'",
 );
+const writeTrue = await odooExecuteResponse(
+  {
+    params: {
+      method: "execute_kw",
+      args: ["mantu", 7, "secret", "hr.job", "write", [[11], { no_of_recruitment: 0 }], {}],
+    },
+  },
+  () => 99,
+).json();
+ok(
+  "a fake Odoo write returns true and does not mint a new record id",
+  (writeTrue as { result?: unknown }).result === true,
+);
 
 calls.length = 0;
 nextId = 10;
@@ -135,7 +148,7 @@ ok(
     JSON.stringify(createdJobs[0]?.params.args[5]) === JSON.stringify([[{ name: "Need Alpha" }]]) &&
     JSON.stringify(createdJobs[1]?.params.args[5]) === JSON.stringify([[{ name: "Need Beta" }]]) &&
     JSON.stringify(closedJobs[0]?.params.args[5]) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
-    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[14], { no_of_recruitment: 0 }]),
+    JSON.stringify(closedJobs[1]?.params.args[5]) === JSON.stringify([[13], { no_of_recruitment: 0 }]),
 );
 
 const stagedCalls: { url: string; init?: RequestInit }[] = [];
@@ -433,6 +446,7 @@ ok(
 );
 
 const synthetic = await runSyntheticHireDemo();
+const closedStep = synthetic.hired.steps.find((step) => step.action === "hire");
 ok(
   "synthetic fixture hire closes that vacancy with no_of_recruitment only",
   synthetic.hired.ok === true &&
@@ -441,7 +455,10 @@ ok(
     synthetic.fixture.applicantName === "Fixture Candidate North" &&
     synthetic.fixture.provenance === "synthetic" &&
     JSON.stringify(synthetic.vacancyClose) === JSON.stringify([[11], { no_of_recruitment: 0 }]) &&
-    !JSON.stringify(synthetic.vacancyClose).includes("state"),
+    !JSON.stringify(synthetic.vacancyClose).includes("state") &&
+    closedStep?.model === "hr.job" &&
+    closedStep.method === "write" &&
+    closedStep.id === "11",
 );
 ok(
   "synthetic demo talks only to the in-repo fake Odoo",
