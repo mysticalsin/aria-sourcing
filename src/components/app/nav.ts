@@ -12,6 +12,7 @@ import {
   History,
   Brain,
   Coins,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -86,6 +87,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
     match: CANDIDATE_TABS.map((t) => t.href),
   },
   { href: "/funnel", label: "Pipeline", icon: Workflow, section: "Recruit", description: "Hiring pipeline by stage" },
+  { href: "/demo/hire", label: "Synthetic hire", icon: UserCheck, section: "Recruit", description: "Fixture sourcing through hired on the fake Odoo" },
   { href: "/outreach", label: "Outreach", icon: Send, section: "Engage", description: "Messages awaiting approval" },
   { href: "/replies", label: "Replies", icon: MessageSquareReply, section: "Engage", description: "Candidate replies" },
   { href: "/calendar", label: "Calendar", icon: CalendarDays, section: "Engage", description: "Interview bookings" },
