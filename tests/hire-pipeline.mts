@@ -472,6 +472,27 @@ ok(
     synthetic.unset.steps.length === 0 &&
     synthetic.unset.fetchCount === 0,
 );
+ok(
+  "synthetic odoo write keeps the created job id and empty kwargs",
+  synthetic.jobCreateId === "11" &&
+    JSON.stringify(synthetic.vacancyKwargs) === "{}" &&
+    synthetic.hrJobStateSent === false &&
+    synthetic.hrJobFields.includes("name") &&
+    synthetic.hrJobFields.includes("no_of_recruitment") &&
+    !synthetic.hrJobFields.includes("state"),
+);
+ok(
+  "synthetic SMART, generic api, and MCP each hire on a fixture host",
+  synthetic.connectors.map((item) => item.erp).join(",") === "smart,api,mcp" &&
+    synthetic.connectors.every(
+      (item) =>
+        item.hired === true &&
+        item.ok === true &&
+        item.linkedIn === true &&
+        item.hosts.length > 0 &&
+        item.hosts.every((host) => host.startsWith("https://") && new URL(host).hostname.endsWith(".example.test")),
+    ),
+);
 function linkedInUrlCount(source: string): number {
   let count = 0;
   for (const match of source.matchAll(/https?:\/\/[^\s"'`<>)]+/g)) {
