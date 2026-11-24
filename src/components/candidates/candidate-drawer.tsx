@@ -33,7 +33,6 @@ import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { isCandidateErasureTombstone } from "@/lib/candidate-privacy";
 import {
   buildHireRequest,
-  closeMatchingVacancy,
   hireStatusText,
   vacancyClosedByThisHire,
   localHireCompletes,
@@ -856,7 +855,6 @@ export function CandidateDrawer({
       });
       return;
     }
-    const [closedVacancy] = closeMatchingVacancy(campaign ? [campaign] : [], campaign?.id ?? null);
     const trail = buildHireTrail({
       who: settings.operatorName,
       when: new Date().toISOString(),
@@ -865,7 +863,7 @@ export function CandidateDrawer({
       stageFrom,
       stageTo: "Hired",
       steps: outcome.steps,
-      vacancyClosed: vacancyClosedByThisHire(outcome.vacancyClosed, closedVacancy?.status),
+      vacancyClosed: vacancyClosedByThisHire(outcome.vacancyClosed, campaign?.status),
     });
     setHireResult({ ...outcome, trail });
     actions.recordHiredCandidate(candidateIdForHire, trail);

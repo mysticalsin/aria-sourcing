@@ -132,9 +132,9 @@ export function localHireCompletes(outcome: HireUiOutcome): outcome is Extract<H
   return outcome.ok === true && outcome.linkedIn === true;
 }
 
-/** Current drawer rule: a local Filled vacancy counts as this hire's close. */
-export function vacancyClosedByThisHire(connectorClosed: boolean, localStatus?: string): boolean {
-  return connectorClosed || localStatus === "Filled";
+/** Only the connector close from this hire fills the campaign. A local or pre-existing status does not. */
+export function vacancyClosedByThisHire(connectorClosed: boolean, _localStatus?: string): boolean {
+  return connectorClosed;
 }
 
 /** One hire fills that vacancy and leaves every other vacancy unchanged. */

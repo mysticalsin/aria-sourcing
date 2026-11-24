@@ -200,9 +200,11 @@ ok(
     vacancies[0]?.status === "Interviewing",
 );
 ok(
-  "the drawer closes the hired vacancy in the one trail write",
+  "the drawer records a connector close and does not fill from a local vacancy",
   !drawer.includes("Consider marking") &&
-    drawer.includes("closeMatchingVacancy") &&
+    !drawer.includes("closeMatchingVacancy") &&
+    !recordBody.includes('status === "Filled"') &&
+    recordBody.includes("vacancyClosedByThisHire(outcome.vacancyClosed, campaign?.status)") &&
     drawer.includes("recordHiredCandidate") &&
     !drawer.includes("updateCampaign") &&
     drawer.includes('data-vacancy-status="filled"') &&
