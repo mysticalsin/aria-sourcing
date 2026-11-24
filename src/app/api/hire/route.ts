@@ -7,7 +7,7 @@ import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { runSourcingThroughHired } from "@/lib/mcp-client";
+import { envForHireRequest, runSourcingThroughHired } from "@/lib/mcp-client";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * Move one sourced applicant from job opening through hire.
  * Odoo (hr.job, hr.applicant, stage, hire) when Odoo env is complete,
  * otherwise SMART. With neither system configured, LinkedIn sourcing
- * still completes and no ERP request is sent.
+ * still completes and no ERP request is sent. Demo mode never reaches an ERP.
  */
 const HireSchema = z.object({
   idempotencyKey: z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/),
@@ -73,6 +73,6 @@ export async function POST(req: NextRequest) {
   const validated = await validateBody(req, HireSchema, { maxBytes: 8_000 });
   if (!validated.ok) return validated.response;
 
-  const result = await runSourcingThroughHired(validated.data, process.env);
+  const result = await runSourcingThroughHired(validated.data, envForHireRequest(process.env, supabaseEnabled));
   return NextResponse.json(result, { status: result.ok ? 200 : 502 });
 }

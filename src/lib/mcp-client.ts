@@ -437,6 +437,19 @@ function smartHireConfigured(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env.SMART_URL && env.SMART_TOKEN);
 }
 
+const ERP_ENV_KEYS = ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_API_KEY", "SMART_URL", "SMART_TOKEN"] as const;
+
+/**
+ * Demo requests have no authenticated workspace user, so they must never
+ * spend the deployment's Odoo or SMART credentials.
+ */
+export function envForHireRequest(env: NodeJS.ProcessEnv, liveAuthenticated: boolean): NodeJS.ProcessEnv {
+  if (liveAuthenticated) return env;
+  const scoped: NodeJS.ProcessEnv = { ...env };
+  for (const key of ERP_ENV_KEYS) delete scoped[key];
+  return scoped;
+}
+
 function presentValues(values: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
