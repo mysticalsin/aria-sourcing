@@ -20,6 +20,7 @@ status: in-progress
 - Draft PR https://github.com/mysticalsin/aria-sourcing/pull/319 only. Not merged. Not deployed. PRs 313, 317, and 318 were not updated.
 - CI on `eb685e91` is green for both `Typecheck / Lint / Test / Build` jobs.
 - With the four Odoo variables set to the existing fixture placeholders, `hireEnvForRoute` plus `runSourcingThroughHired` and `POST /api/hire` both complete sourcing through hired on the in-repo fake. The route proof stubs `fetch` and uses the RFC 5737 documentation address `203.0.113.50`, so no DNS lookup and no socket run. The fixture values are removed before the test exits.
+- Search (`/candidates`), shortlist (`/vivier`), the candidate drawer, and the command center (`/`) call `hireFromSourcingScreen`. With no live connector they use the in-repo fake and show erp `odoo`, transport `fake`, and the vacancy close. `POST /api/hire` is unchanged.
 
 ## Done this shift
 - Moved the lock and the direct floors so the blocking audit can pass without a hire behavior change.

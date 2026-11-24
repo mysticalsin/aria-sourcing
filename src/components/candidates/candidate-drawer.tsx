@@ -14,6 +14,7 @@ import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
+import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
@@ -947,6 +948,16 @@ export function CandidateDrawer({
               {c.stage}
             </Badge>
           </div>
+          <SourcingHirePanel
+            screen="candidate"
+            label="Candidate hire"
+            candidate={{
+              id: c.id,
+              name: c.name,
+              email: c.email,
+              jobName: campaign?.title ?? c.currentTitle,
+            }}
+          />
           <div className="flex flex-wrap gap-2">
             {STAGE_ACTIONS.map((stage) => (
               <Button
