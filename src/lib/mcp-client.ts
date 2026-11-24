@@ -6,7 +6,9 @@
 import type { AuthQueryParam } from "./types";
 import { fetchPublicUrl, type PublicFetchInit } from "@/lib/api/public-fetch";
 import {
+  genericApiHireConnector,
   linkedInSourcingRunsWithoutErp,
+  mcpToolHireConnector,
   odooHireConnector,
   smartHireConnector,
   type HireConnector,
@@ -411,8 +413,10 @@ export interface SourcingThroughHiredInput {
   stage: string;
 }
 
+export type HireErpKind = "odoo" | "smart" | "api" | "mcp";
+
 export interface SourcingThroughHiredStep {
-  erp: "odoo" | "smart";
+  erp: HireErpKind;
   model: "hr.job" | "hr.applicant";
   action: "job" | "applicant" | "stage" | "hire";
   method: "create" | "write";
@@ -423,7 +427,7 @@ export interface SourcingThroughHiredStep {
 
 export interface SourcingThroughHiredResult {
   ok: boolean;
-  erp: "odoo" | "smart" | "skipped";
+  erp: HireErpKind | "skipped";
   linkedIn: boolean;
   steps: SourcingThroughHiredStep[];
   error?: string;
@@ -437,11 +441,32 @@ function smartHireConfigured(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env.SMART_URL && env.SMART_TOKEN);
 }
 
-const ERP_ENV_KEYS = ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_API_KEY", "SMART_URL", "SMART_TOKEN"] as const;
+function apiHireConfigured(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.HIRE_API_URL && env.HIRE_API_TOKEN);
+}
+
+function mcpHireConfigured(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.HIRE_MCP_URL && env.HIRE_MCP_TOKEN);
+}
+
+const ERP_ENV_KEYS = [
+  "ODOO_URL",
+  "ODOO_DB",
+  "ODOO_USERNAME",
+  "ODOO_API_KEY",
+  "SMART_URL",
+  "SMART_TOKEN",
+  "HIRE_API_URL",
+  "HIRE_API_TOKEN",
+  "HIRE_MCP_URL",
+  "HIRE_MCP_TOKEN",
+  "HIRE_MCP_TOOL",
+  "HIRE_CONNECTOR",
+] as const;
 
 /**
  * Demo requests have no authenticated workspace user, so they must never
- * spend the deployment's Odoo or SMART credentials.
+ * spend deployment credentials for Odoo, SMART, the generic API, or MCP.
  */
 export function envForHireRequest(env: NodeJS.ProcessEnv, liveAuthenticated: boolean): NodeJS.ProcessEnv {
   if (liveAuthenticated) return env;
@@ -454,10 +479,42 @@ function presentValues(values: Record<string, unknown>): Record<string, unknown>
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
 
+function hireConnectorConfigured(kind: HireErpKind, env: NodeJS.ProcessEnv): boolean {
+  if (kind === "odoo") return odooHireConfigured(env);
+  if (kind === "smart") return smartHireConfigured(env);
+  if (kind === "api") return apiHireConfigured(env);
+  return mcpHireConfigured(env);
+}
+
+function connectorFor(kind: HireErpKind, env: NodeJS.ProcessEnv, fetchImpl?: typeof fetch): HireConnector {
+  if (kind === "odoo") return odooHireConnector(env, fetchImpl);
+  if (kind === "smart") return smartHireConnector(env, fetchImpl);
+  if (kind === "api") return genericApiHireConnector(env, fetchImpl);
+  return mcpToolHireConnector(env, fetchImpl);
+}
+
+function selectHireConnector(env: NodeJS.ProcessEnv): HireErpKind | "skipped" | { error: string } {
+  const requested = env.HIRE_CONNECTOR;
+  if (requested) {
+    if (requested !== "odoo" && requested !== "smart" && requested !== "api" && requested !== "mcp") {
+      return { error: "HIRE_CONNECTOR must be odoo, smart, api, or mcp" };
+    }
+    if (!hireConnectorConfigured(requested, env)) return { error: `${requested} connector is not configured` };
+    return requested;
+  }
+  if (odooHireConfigured(env)) return "odoo";
+  if (smartHireConfigured(env)) return "smart";
+  if (apiHireConfigured(env)) return "api";
+  if (mcpHireConfigured(env)) return "mcp";
+  return "skipped";
+}
+
 /**
  * Run one sourced applicant from job creation through hire.
- * Odoo is used when its env is complete, otherwise SMART. When both are
- * absent, LinkedIn sourcing still completes and no ERP request is sent.
+ * Odoo is used when its env is complete, otherwise SMART, otherwise the
+ * generic HTTPS API, otherwise the MCP hire tool. HIRE_CONNECTOR selects
+ * one path. When none are configured, LinkedIn sourcing still completes
+ * and no upstream request is sent.
  */
 export async function runSourcingThroughHired(
   input: SourcingThroughHiredInput,
@@ -468,17 +525,14 @@ export async function runSourcingThroughHired(
   if (!linkedIn) {
     return { ok: false, erp: "skipped", linkedIn: false, steps: [], error: "LinkedIn sourcing is not available." };
   }
-  if (odooHireConfigured(env)) {
-    return runErpHire("odoo", odooHireConnector(env, fetchImpl), input);
-  }
-  if (smartHireConfigured(env)) {
-    return runErpHire("smart", smartHireConnector(env, fetchImpl), input);
-  }
-  return { ok: true, erp: "skipped", linkedIn: true, steps: [] };
+  const selected = selectHireConnector(env);
+  if (selected === "skipped") return { ok: true, erp: "skipped", linkedIn: true, steps: [] };
+  if (typeof selected === "object") return { ok: false, erp: "skipped", linkedIn: true, steps: [], error: selected.error };
+  return runErpHire(selected, connectorFor(selected, env, fetchImpl), input);
 }
 
 async function runErpHire(
-  erp: "odoo" | "smart",
+  erp: HireErpKind,
   connector: HireConnector,
   input: SourcingThroughHiredInput,
 ): Promise<SourcingThroughHiredResult> {
