@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ARIA and Odoo</title>
+<!-- Source of docs/images/aria-odoo-overview.png (shown in docs/odoo.md).
+     Render with any headless browser at a 1600x1000 viewport, device scale 2. -->
+<style>
+  :root {
+    --ink: #1a0033;
+    --ink-soft: #4d3566;
+    --muted: #7a6a8c;
+    --paper: #faf7fc;
+    --line: #e9e0f1;
+    --aria: #8600db;
+    --aria-deep: #6a00ad;
+    --aria-soft: #f3e6fc;
+    --odoo: #714b67;
+    --odoo-soft: #f4edf2;
+    --teal: #017e84;
+    --teal-soft: #e4f3f3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 1000px; }
+  body {
+    font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    padding: 44px 56px 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 22px;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { display: flex; align-items: flex-end; justify-content: space-between; }
+  h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  h1 .plus { color: var(--muted); font-weight: 500; padding: 0 6px; }
+  h1 .aria { color: var(--aria); }
+  h1 .odoo { color: var(--odoo); }
+  header p { margin-top: 8px; font-size: 18px; color: var(--ink-soft); max-width: 900px; line-height: 1.4; }
+  .legend { display: flex; gap: 18px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  main { display: grid; grid-template-columns: 430px 1fr 430px; gap: 28px; align-items: stretch; }
+  .panel {
+    border-radius: 24px;
+    background: #fff;
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 6px rgba(26,0,51,.05), 0 18px 40px rgba(26,0,51,.07);
+    padding: 26px 26px 22px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .panel .top { display: flex; align-items: center; gap: 14px; }
+  .badge {
+    width: 50px; height: 50px; border-radius: 15px; display: grid; place-items: center;
+    color: #fff; font-weight: 800; font-size: 20px; letter-spacing: .02em;
+  }
+  .aria-panel .badge { background: linear-gradient(135deg, var(--aria), #b04de0); }
+  .odoo-panel .badge { background: linear-gradient(135deg, var(--odoo), #9a6d8f); }
+  .panel h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
+  .panel .role { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+  .aria-panel .role { color: var(--aria); }
+  .odoo-panel .role { color: var(--odoo); }
+  .panel ul { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  .panel li { display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: start; }
+  .ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; }
+  .aria-panel .ico { background: var(--aria-soft); color: var(--aria); }
+  .odoo-panel .ico { background: var(--odoo-soft); color: var(--odoo); }
+  .ico svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .panel li b { display: block; font-size: 16px; font-weight: 700; line-height: 1.25; }
+  .panel li span { display: block; font-size: 14px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+  .owner { margin-top: auto; font-size: 13px; color: var(--ink-soft); border-top: 1px dashed var(--line); padding-top: 12px; }
+  .owner strong { color: var(--ink); }
+
+  .flows { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 6px 0; }
+  .flow { position: relative; padding: 0 6px; }
+  .flow svg.arrow { width: 100%; height: 26px; display: block; }
+  .flow .card {
+    margin-top: 6px; border-radius: 16px; padding: 12px 16px 12px 14px; background: #fff;
+    border: 1px solid var(--line); display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center;
+  }
+  .num { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 16px; }
+  .to-odoo .num { background: var(--aria); }
+  .to-aria .num { background: var(--teal); }
+  .flow h3 { font-size: 17px; font-weight: 800; line-height: 1.2; }
+  .flow h3 em { font-style: normal; font-weight: 600; font-size: 13px; color: var(--muted); margin-left: 6px; }
+  .flow p { font-size: 14px; color: var(--ink-soft); line-height: 1.35; margin-top: 2px; }
+
+  .journey {
+    border-radius: 20px; background: #fff; border: 1px solid var(--line); padding: 18px 24px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .journey .label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .track { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; }
+  .steps { display: flex; align-items: center; gap: 8px; }
+  .steps.right { justify-content: flex-start; }
+  .step { padding: 9px 14px; border-radius: 999px; font-size: 15px; font-weight: 700; white-space: nowrap; }
+  .aria-steps .step { background: var(--aria-soft); color: var(--aria-deep); }
+  .odoo-steps .step { background: var(--odoo-soft); color: var(--odoo); }
+  .odoo-steps .step.hired { background: var(--odoo); color: #fff; }
+  .chev { color: #c8b8d8; font-weight: 800; }
+  .handoff {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 6px;
+  }
+  .handoff .pill { background: var(--ink); color: #fff; border-radius: 12px; padding: 9px 14px; font-weight: 800; font-size: 15px; white-space: nowrap; }
+  .handoff small { font-size: 12px; color: var(--muted); }
+  .scale { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; font-size: 13px; color: var(--muted); }
+  .scale div:first-child { border-top: 3px solid var(--aria); padding-top: 6px; }
+  .scale div:last-child { border-top: 3px solid var(--odoo); padding-top: 6px; }
+
+  footer { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .rule { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; font-size: 14px; color: var(--ink-soft); line-height: 1.35; }
+  .rule .ico { width: 30px; height: 30px; border-radius: 9px; background: #efe8f6; color: var(--ink); }
+  .rule .ico svg { width: 16px; height: 16px; }
+  .rule b { color: var(--ink); }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1><span class="aria">ARIA</span><span class="plus">+</span><span class="odoo">Odoo</span>: who does what</h1>
+      <p>ARIA finds and engages the right people. Odoo Recruitment runs the hiring. They work as one pipeline, with one clear hand-off in the middle.</p>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--aria)"></i>ARIA → Odoo</span>
+      <span><i style="background:var(--teal)"></i>Odoo → ARIA</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel aria-panel">
+      <div class="top">
+        <div class="badge">A</div>
+        <div><h2>ARIA</h2><div class="role">Find &amp; engage</div></div>
+      </div>
+      <ul>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+          <div><b>Finds people who did not apply</b><span>Searches public profiles (web, GitHub, LinkedIn) for each open position</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+          <div><b>Scores every profile</b><span>A /100 fit against the brief, with the evidence behind it</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div>
+          <div><b>Makes the first contact</b><span>Email and LinkedIn messages, each one approved by a recruiter</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div><b>Follows the replies</b><span>Spots who is interested, keeps a talent pool for later needs</span></div></li>
+      </ul>
+      <div class="owner">Owns: <strong>prospects</strong>, before anyone has applied.</div>
+    </section>
+
+    <section class="flows">
+      <div class="flow to-aria">
+        <svg class="arrow" viewBox="0 0 600 26" preserveAspectRatio="none"><line x1="592" y1="13" x2="16" y2="13" stroke="#017e84" stroke-width="3" stroke-dasharray="1 0"/><path d="M18 3 4 13l14 10" fill="none" stroke="#017e84" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <div class="card"><div class="num">1</div><div><h3>A job opens<em>Odoo → ARIA</em></h3><p>Import an open Odoo job position: it becomes the campaign brief.</p></div></div>
+      </div>
+      <div class="flow to-odoo">
+        <svg class="arrow" viewBox="0 0 600 26" preserveAspectRatio="none"><line x1="8" y1="13" x2="584" y2="13" stroke="#8600db" stroke-width="3"/><path d="M582 3l14 10-14 10" fill="none" stroke="#8600db" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <div class="card"><div class="num">2</div><div><h3>“Send to Odoo”<em>ARIA → Odoo</em></h3><p>A recruiter picks a candidate: ARIA creates the applicant, with the score and evidence as a note.</p></div></div>
+      </div>
+      <div class="flow to-aria">
+        <svg class="arrow" viewBox="0 0 600 26" preserveAspectRatio="none"><line x1="592" y1="13" x2="16" y2="13" stroke="#017e84" stroke-width="3"/><path d="M18 3 4 13l14 10" fill="none" stroke="#017e84" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <div class="card"><div class="num">3</div><div><h3>Stage updates, live<em>Odoo → ARIA</em></h3><p>Interview, offer, hired or refused in Odoo: ARIA updates the candidate at once.</p></div></div>
+      </div>
+      <div class="flow to-odoo">
+        <svg class="arrow" viewBox="0 0 600 26" preserveAspectRatio="none"><line x1="8" y1="13" x2="584" y2="13" stroke="#8600db" stroke-width="3"/><path d="M582 3l14 10-14 10" fill="none" stroke="#8600db" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        <div class="card"><div class="num">4</div><div><h3>GDPR erasure<em>ARIA → Odoo</em></h3><p>Erase a candidate in ARIA and the applicant is deleted in Odoo (hired people stay with HR).</p></div></div>
+      </div>
+    </section>
+
+    <section class="panel odoo-panel">
+      <div class="top">
+        <div class="badge">O</div>
+        <div><h2>Odoo Recruitment</h2><div class="role">Hire &amp; manage</div></div>
+      </div>
+      <ul>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
+          <div><b>Job positions</b><span>The approved need: what to hire, how many, who recruits</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></div>
+          <div><b>Applications pipeline</b><span>Every applicant and their stage, in one place for HR</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></div>
+          <div><b>Interviews, offers, contracts</b><span>Scheduling, decisions and refusal reasons</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg></div>
+          <div><b>Hire and onboard</b><span>The hired applicant becomes an employee record</span></div></li>
+      </ul>
+      <div class="owner">Owns: <strong>applications and hires</strong>, the system of record.</div>
+    </section>
+  </main>
+
+  <section class="journey">
+    <div class="label">One candidate's journey</div>
+    <div class="track">
+      <div class="steps aria-steps" style="justify-content:flex-end">
+        <span class="step">Found</span><span class="chev">›</span>
+        <span class="step">Scored</span><span class="chev">›</span>
+        <span class="step">Contacted</span><span class="chev">›</span>
+        <span class="step">Interested</span>
+      </div>
+      <div class="handoff"><span class="pill">Send to Odoo</span><small>a recruiter's click</small></div>
+      <div class="steps odoo-steps right">
+        <span class="step">Applicant</span><span class="chev">›</span>
+        <span class="step">Interview</span><span class="chev">›</span>
+        <span class="step">Offer</span><span class="chev">›</span>
+        <span class="step hired">Hired</span>
+      </div>
+    </div>
+    <div class="scale"><div>in ARIA</div><div></div><div style="text-align:right">in Odoo, and visible in ARIA</div></div>
+  </section>
+
+  <footer>
+    <div class="rule"><div class="ico"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+      <div><b>Only chosen candidates enter Odoo.</b> Everyone else ARIA found stays in ARIA.</div></div>
+    <div class="rule"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg></div>
+      <div><b>After the hand-off, Odoo decides.</b> Its stages and outcomes win; ARIA follows.</div></div>
+    <div class="rule"><div class="ico"><svg viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+      <div><b>Secure link.</b> Odoo 19+ API, encrypted key, a recruiter-only user, no email sent from Odoo.</div></div>
+    <div class="rule"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div>
+      <div><b>Privacy built in.</b> Confidential profiles need a logged reveal; erasure reaches Odoo.</div></div>
+  </footer>
+</body>
+</html>

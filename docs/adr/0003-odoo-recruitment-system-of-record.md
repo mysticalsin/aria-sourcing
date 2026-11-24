@@ -1,6 +1,7 @@
 # ADR 0003 - Odoo Recruitment is the system of record; ARIA is the sourcing layer in front of it
 
-Date: 2026-11-23
+Date: 2026-11-23, amended 2026-11-24 (live updates, server-side
+confidentiality check, erasure, minimal Odoo rights)
 Status: proposed (built on branch `odoo`, waiting for the owner's review)
 Guide: `docs/odoo.md`
 
@@ -67,17 +68,34 @@ real Odoo 19.0 and 20.0 instances (`docker/odoo/`, `scripts/smoke-odoo.mts`):
      leaves Odoo because of ARIA. Idempotent: a claim row is taken before
      Odoo is called, and Odoo is searched (email, LinkedIn URL) before
      creating, so retries and double clicks never create a second applicant.
-   - Odoo -> ARIA: the campaign page reads the Odoo state of its handed-off
-     candidates and moves them in ARIA: forward only, except Odoo's outcomes
-     (hired, refused, reopened) which always apply. Refused "by applicant"
-     becomes Not interested. An admin maps custom Odoo stages to ARIA stages.
+   - Odoo -> ARIA: Odoo's state of the handed-off candidates moves them in
+     ARIA: forward only, except Odoo's outcomes (hired, refused, reopened)
+     which always apply. Refused "by applicant" becomes Not interested. An
+     admin maps custom Odoo stages to ARIA stages. The change is applied on
+     the server only (one note, one activity), from two triggers: an Odoo
+     automation rule calls ARIA's webhook the moment an ARIA applicant
+     changes (live updates), and opening a campaign reads Odoo again. Open
+     browsers pick the server's newer workspace up within about 15 seconds,
+     and only when they have nothing waiting to be saved.
+   - ARIA -> Odoo, erasure: anonymizing a candidate in ARIA deletes the
+     applicant ARIA created (and the contact Odoo created for it), unless the
+     applicant was hired: HR retention then applies and HR decides in Odoo.
+     ARIA keeps a receipt and a retry queue (`odoo_erasures`).
 3. **Connection.** One Odoo per workspace, configured by an admin in
    Settings > Odoo: address, database, API key of a technical Odoo user
-   (Recruitment officer rights). The key is encrypted at rest
-   (`DATA_ENCRYPTION_KEY`), never returned to the browser, and only ever sent
-   to the address it was entered for. The connection is tested against Odoo
-   before it is saved. ARIA calls Odoo; Odoo never calls ARIA.
-4. **Version.** Odoo 19 or later (JSON-2). Older versions are refused with a
+   with **Recruitment: Officer** only (checked: everything works, except
+   writing Odoo's privacy log and creating the live-update rule, which need
+   Odoo admin rights and degrade to ARIA's own receipt and a one-time manual
+   step). The key is encrypted at rest (`DATA_ENCRYPTION_KEY`), never
+   returned to the browser, and only ever sent to the address it was entered
+   for. The connection is tested against Odoo before it is saved. Odoo calls
+   ARIA only for live updates, on a secret URL whose token ARIA stores as a
+   SHA-256; a call is a ping that ARIA verifies by reading Odoo back.
+4. **Confidentiality.** A confidential profile (confidentiality mode on, no
+   outreach yet) is handed off only after a logged reveal in the last 24
+   hours, checked by the server against the workspace's own log, not only by
+   the hidden button.
+5. **Version.** Odoo 19 or later (JSON-2). Older versions are refused with a
    clear message, Odoo 18's separate candidate model included.
 
 ## Consequences
@@ -90,13 +108,15 @@ real Odoo 19.0 and 20.0 instances (`docker/odoo/`, `scripts/smoke-odoo.mts`):
   ARIA, which the DPO will want for the GDPR record.
 - The link tables hold Odoo ids: changing the Odoo address or database clears
   them (a different database means different ids).
-- New migration `0010_odoo_integration.sql` (three service-role tables and one
-  service-only function). No change to existing tables.
+- Migrations `0010_odoo_integration.sql` and `0011_odoo_push_privacy.sql`
+  (service-role tables and one service-only function). No change to existing
+  tables. The browser store gains a background refresh of the workspace
+  (also useful for the agents' server writes).
+- Odoo must reach ARIA for live updates (HTTPS in production). Without it,
+  stages still come back when a campaign is opened.
 
 ## Not done (follow-ups, `.scratch/odoo-integration/`)
 
-- Odoo -> ARIA push (Odoo automated action calling a signed ARIA webhook)
-  instead of reading on page load.
 - Sign-in with the same identity provider as Odoo; recruiter mapping
   (Odoo `recruiter_id` -> ARIA user).
 - Talent pools: refused-but-good applicants back into ARIA's #Vivier, and
