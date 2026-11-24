@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 3
 agent: cursor
-updated: 2026-11-24 10:56 -03
+updated: 2026-11-24 16:03 UTC
 status: in-progress
 ---
 
@@ -10,30 +10,37 @@ status: in-progress
 
 ## Current state
 - Branch `cursor/odoo-live-hire-path-9db8`, based on `vercel-demo` at `f2d0d3d07bdb8eb2bcb1e0d0bbd85e1cf99f9e7e`.
-- `npx tsc --noEmit && npm test` passed on this branch. Hire suites: `tests/hire-connector.mts` 62 passed, `tests/hire-pipeline.mts` 46 passed.
-- `/demo/hire` renders the synthetic fixture through the in-repo fake Odoo. Vacancy close is `[[11], { no_of_recruitment: 0 }]`, kwargs `{}`, `hr.job.state` not sent. Unset connector result is `{ ok: true, erp: "skipped", linkedIn: true }`.
-- `POST /api/hire` uses `hireEnvForRoute(process.env, supabaseEnabled)` and the public HTTPS transport. This machine had no `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, or `ODOO_API_KEY`. No live Odoo host was called.
-- Draft only. Not merged. Not deployed. PRs 311, 314, 308, 313, 315, 317, 318, and 289 were not updated.
+- Previous tip `754399f584e1943fd658c380daad03df101aad22` is still the hire feature. GitHub job `Typecheck / Lint / Test / Build` failed only at `npm audit --audit-level=high` after typecheck, lint, test, Obscura, and build succeeded.
+  - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408975864/job/138497299679
+  - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408933103/job/138497144231
+- That audit was 13 high + 2 critical, inherited from the `vercel-demo` lock. `next@16.2.9` was inside `9.3.4-canary.0 - 16.4.4`. `zod@3.25.76` is `<4.6.6` (GHSA-mrhx-c7xc-m3w5) and has no 3.x fix.
+- The audit fix on this branch resolves `next@16.4.6`, `zod@4.6.7` (override `"zod": "$zod"`), `@dust-tt/client@1.2.11`, `postcss@8.5.23`, `sharp@0.35.5`. Declared floors: `next@^16.4.6`, `zod@^4.6.7`, `@dust-tt/client@^1.2.11`, `postcss@^8.5.23`, `ip-address@^10.7.6`.
+- Local `npm audit --audit-level=high` exits 0 (`found 0 vulnerabilities`), including `npm ci` with npm 10.8.2 and npm 10.9.9. `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build` (Next.js 16.4.6, 58 pages) exited 0. Hire suites stayed `tests/hire-connector.mts` 62 passed, `tests/hire-pipeline.mts` 46 passed.
+- `/demo/hire` was not re-rendered this shift. Hire connector behavior was not edited. No `ODOO_*` values were set and no live Odoo host was called.
+- Draft PR https://github.com/mysticalsin/aria-sourcing/pull/319 only. Not merged. Not deployed. PRs 313, 317, and 318 were not updated.
 
 ## Done this shift
-- Added the hire connector, fake Odoo, synthetic demo page, and live `POST /api/hire` route.
-- Connector order when `HIRE_CONNECTOR` is unset: Odoo, SMART, generic HTTPS API, MCP, otherwise skipped.
-- SMART, the generic API, and MCP hire by writing `hr.applicant` `{ id, hired: true }`.
+- Moved the lock and the direct floors so the blocking audit can pass without a hire behavior change.
+- `@dust-tt/client` 1.2.6 bundled `@modelcontextprotocol/sdk@1.26.0`, which `npm audit fix` cannot rewrite. 1.2.11 is the published client whose SDK range is `^1.32.1`.
 
 ## Blockers
-- No live Odoo credentials in this environment, so the live call was not run.
+- GitHub Actions on the new tip is not confirmed yet.
+- `@dust-tt/client@1.2.11` declares `engines.node >=24.16.0`. CI uses Node 20. `npm ci` warns `EBADENGINE` and continues. `tests/dust.mts` passed under Node v20.20.2 (28 passed).
 
 ## Next steps
-1. Set `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, and `ODOO_API_KEY` on the server that should call Odoo. Leave them unset to keep the skip result.
-2. Optional: set `ODOO_HIRED_STAGE_ID` to a positive id. Unset skips the stage write and still closes the job.
-3. Keep this pull request a draft until a live call is reviewed. Do not merge it from this handoff.
+1. Read the GitHub check runs on the new tip. If `Typecheck / Lint / Test / Build` is green, record that job URL here and leave the PR a draft.
+2. If it is still red, use the job log. Do not loosen `npm audit --audit-level=high`.
+3. Keep this pull request a draft. Do not merge it and do not deploy it.
 
 ## Decisions made (don't relitigate)
 - Synthetic `/demo/hire` never sends runtime credentials. It uses the in-repo fake.
 - Live hire runs only when the connector env is complete. Private, loopback, and metadata hosts are refused.
 - Vacancy close never sends `hr.job.state`.
 - No secrets in git or in `_relay/`.
+- The audit gate stays blocking. Zod is 4.6.7 for the whole tree because `@dust-tt/client@1.2.11` still declares `zod@^3.23.8` and the advisory starts at 4.6.6.
+- Do not `npm audit fix --force`.
 
 ## Watch out
 - `POST /api/hire` will call the configured public HTTPS Odoo when all four variables are set, including when Supabase is off.
 - The existing MCP probe in `src/lib/mcp-client.ts` still uses its own fetch. The hire path uses `fetchPublicUrl`.
+- `@dust-tt/client@1.2.11` prints an engine warning on Node 20 and Node 22. The Dust tests passed on both.

@@ -20,7 +20,7 @@
     "test:obscura": "tsx tests/obscura-integration.mts"
   },
   "dependencies": {
-    "@dust-tt/client": "^1.2.6",
+    "@dust-tt/client": "^1.2.11",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
@@ -29,7 +29,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.456.0",
-    "next": "^16.2.6",
+    "next": "^16.4.6",
     "playwright-core": "^1.61.1",
     "postprocessing": "^6.39.1",
     "react": "^19.2.7",
@@ -38,7 +38,7 @@
     "tailwind-merge": "^2.5.4",
     "three": "^0.169.0",
     "troika-three-text": "^0.52.4",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
@@ -50,13 +50,14 @@
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.6",
     "playwright": "^1.61.1",
-    "postcss": "^8.4.49",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3"
   },
   "overrides": {
     "express-rate-limit": "^8.5.2",
-    "ip-address": "^10.2.0"
+    "ip-address": "^10.7.6",
+    "zod": "$zod"
   }
 }
