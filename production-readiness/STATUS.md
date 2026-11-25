@@ -1,6 +1,8 @@
 # Production Readiness Status
 
-**Date:** 2026-08-30
+**Date:** 2026-11-23
+
+Freshness refresh only. The source-candidate notes below are unchanged from 2026-08-30.
 
 This page describes source and release-gate status. It is not evidence that a
 particular production deployment is healthy.

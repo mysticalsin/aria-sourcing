@@ -7,6 +7,18 @@ candidates, guarded outreach, reply handling, booking workflows, executive
 visibility, and audit evidence with Supabase-backed live mode and a dry-run demo
 mode.
 
+## Synthetic loops
+
+These loops are fixtures from the dry-run demo. The people are synthetic
+(`Ada Example`, `Jan Fixture`, and the other `Fixture` / `Demo` names). No
+customer profile, cookie, or live send is in the frames.
+
+![Command Center in the synthetic demo](docs/media/command-center.gif)
+
+![Synthetic candidate ranking](docs/media/candidate-ranking.gif)
+
+![Exact-text approval for synthetic outreach](docs/media/exact-text-approval.gif)
+
 ## Current Stack
 
 Verified from `package.json` on 2026-07-14:
