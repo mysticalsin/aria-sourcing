@@ -21,6 +21,7 @@ status: in-progress
 - Demo (`envForHireRequest` with live auth false) drops every connector env var. Result is `{ ok: true, erp: "skipped", linkedIn: true }` and no fetch.
 - Gate after the QA fix: `npx tsc --noEmit` exit 0, `npm test` exit 0, including `tests/hire-connector.mts` (51), `tests/hire-pipeline.mts` (13), `tests/public-fetch-pin.mts` (13). Fakes only. No live host.
 - CI on that tip failed only `npm audit --audit-level=high` (13 high, 2 critical). The follow-up lockfile moves Next to 16.4.6, Zod to 4.6.7 (override so Dust uses it too), and the other patched transitive releases. `npm audit --audit-level=high` then reports 0 vulnerabilities.
+- The next CI run passed audit (`found 0 vulnerabilities`) and failed in gitleaks: a depth-1 checkout has no parent, so pull_request cannot resolve `<oldest commit>^` and push scans the whole tree. Checkout is now `fetch-depth: 0`.
 
 ## Done this shift
 - Added the generic API and MCP hire connectors on a branch off `vercel-demo`.
