@@ -88,6 +88,12 @@ ok(
 const falseApi = await genericApiHireConnector(apiEnv, (async () => jsonResponse(200, { result: false })) as typeof fetch).call(call);
 ok("a false generic api result is not a hire", falseApi.ok === false && falseApi.ok === false && falseApi.error === "api response missing id");
 
+const falseStringApi = await genericApiHireConnector(apiEnv, (async () => jsonResponse(200, { result: "false" })) as typeof fetch).call(call);
+ok("a string false generic api result is not a hire", falseStringApi.ok === false && falseStringApi.error === "api response missing id");
+
+const nullStringApi = await genericApiHireConnector(apiEnv, (async () => jsonResponse(200, { id: " null " })) as typeof fetch).call(call);
+ok("a string null generic api id is not a hire", nullStringApi.ok === false && nullStringApi.error === "api response missing id");
+
 const emptyApi = await genericApiHireConnector(apiEnv, (async () => jsonResponse(200, {})) as typeof fetch).call(call);
 ok("an empty generic api result is not a hire", emptyApi.ok === false && emptyApi.error === "api response missing id");
 
@@ -177,6 +183,73 @@ const emptyMcp = await mcpToolHireConnector(
 ).call(call);
 ok("an empty mcp tool result is not a hire", emptyMcp.ok === false && emptyMcp.error === "mcp tool returned no record");
 
+const stringFalseMcp = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "tools/call") {
+      return jsonResponse(200, { result: { content: [{ type: "text", text: "{\"result\":\"false\"}" }] } });
+    }
+    if (body.method === "notifications/initialized") return jsonResponse(202, {});
+    return jsonResponse(200, { result: { serverInfo: { name: "fake-hire" } } });
+  }) as typeof fetch,
+).call(call);
+ok("mcp text that only says false is not a hire", stringFalseMcp.ok === false && stringFalseMcp.error === "mcp tool returned no record");
+
+let mcpToolCallsAfterFailedInit = 0;
+const failedInit = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "initialize") return jsonResponse(200, { result: { serverInfo: { name: "fake-hire" } } }, { "mcp-session-id": "sess-1" });
+    if (body.method === "notifications/initialized") return jsonResponse(503, { error: "session rejected" });
+    mcpToolCallsAfterFailedInit += 1;
+    return jsonResponse(200, { result: { structuredContent: { id: "should-not-run" } } });
+  }) as typeof fetch,
+).call(call);
+ok(
+  "a failed mcp initialized notification does not call the hire tool",
+  failedInit.ok === false && failedInit.error === "mcp initialized http 503" && mcpToolCallsAfterFailedInit === 0,
+);
+
+function sseResponse(events: unknown[], headers?: Record<string, string>) {
+  const body = events
+    .map((event) => `event: message\ndata: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream", ...headers } });
+}
+
+const sseMcp = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "initialize") {
+      return sseResponse([{ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "fake-hire" } } }], {
+        "mcp-session-id": "sess-sse",
+      });
+    }
+    if (body.method === "notifications/initialized") return jsonResponse(202, {});
+    return sseResponse([
+      { jsonrpc: "2.0", method: "notifications/progress", params: { progress: 0 } },
+      { jsonrpc: "2.0", id: "hire-1", result: { content: [{ type: "text", text: JSON.stringify({ id: "mcp-sse" }) }] } },
+    ]);
+  }) as typeof fetch,
+).call(call);
+ok("mcp event-stream responses still return the tool record id", sseMcp.ok === true && sseMcp.ok && sseMcp.id === "mcp-sse");
+
+const sseError = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "tools/call") {
+      return sseResponse([{ jsonrpc: "2.0", id: "hire-1", result: { isError: true, content: [{ type: "text", text: `denied ${mcpToken}` }] } }]);
+    }
+    if (body.method === "notifications/initialized") return jsonResponse(202, {});
+    return jsonResponse(200, { result: { serverInfo: { name: "fake-hire" } } });
+  }) as typeof fetch,
+).call(call);
+ok("mcp event-stream errors do not echo the bearer token", sseError.ok === false && sseError.error.includes("denied") && !sseError.error.includes(mcpToken));
+
 const echoedMcp = await mcpToolHireConnector(
   mcpEnv,
   (async (_url: string, init?: RequestInit) => {
@@ -206,6 +279,32 @@ const mcpLocal = await mcpToolHireConnector(
 ).call(call);
 ok("mcp refuses a loopback endpoint", mcpLocal.ok === false && mcpUnsafeCalls === 0);
 
+let mappedCalls = 0;
+const mappedFetch = (async () => {
+  mappedCalls += 1;
+  return jsonResponse(200, { id: "metadata" });
+}) as typeof fetch;
+for (const url of [
+  "https://[::ffff:127.0.0.1]/",
+  "https://[::ffff:169.254.169.254]/",
+  "https://[::ffff:10.0.0.1]/",
+  "https://[fe90::1]/",
+  "https://[64:ff9b::a9fe:a9fe]/",
+  "https://[2002:a9fe:a9fe::]/",
+]) {
+  const before = mappedCalls;
+  const refused = await genericApiHireConnector(
+    { NODE_ENV: "test", HIRE_API_URL: url, HIRE_API_TOKEN: apiToken },
+    mappedFetch,
+  ).call(call);
+  const mcpRefused = await mcpToolHireConnector(
+    { NODE_ENV: "test", HIRE_MCP_URL: url, HIRE_MCP_TOKEN: mcpToken },
+    mappedFetch,
+  ).call(call);
+  ok(`generic api refuses non-public ${url}`, refused.ok === false && mappedCalls === before);
+  ok(`mcp refuses non-public ${url}`, mcpRefused.ok === false && mappedCalls === before);
+}
+
 let missingFetches = 0;
 const countingFetch = (async () => {
   missingFetches += 1;
@@ -227,6 +326,38 @@ const odooFetch = (async (url: string, init?: RequestInit) => {
 const odoo = await odooHireConnector(odooEnv, odooFetch).call(call);
 ok("odoo json-rpc still returns the execute_kw id", odoo.ok === true && odoo.ok && odoo.id === "42");
 ok("odoo still posts authenticate then execute_kw without following redirects", odooCalls.length === 2 && odooCalls[0]?.init?.redirect === "error" && odooCalls[1]?.url === "https://odoo.example.test/jsonrpc");
+const odooExecute = JSON.parse(String(odooCalls[1]?.init?.body)) as { params: { method: string; args: unknown[] } };
+ok(
+  "odoo create passes vals positionally and does not invent a field",
+  odooExecute.params.method === "execute_kw" &&
+    odooExecute.params.args[3] === "hr.applicant" &&
+    odooExecute.params.args[4] === "create" &&
+    JSON.stringify(odooExecute.params.args[5]) === JSON.stringify([[{ name: "Ada" }]]) &&
+    JSON.stringify(odooExecute.params.args[6]) === "{}" &&
+    !JSON.stringify(odooExecute.params.args).includes("x_idempotency_key"),
+);
+
+const odooWriteCalls: { params?: { method?: string; args?: unknown[] } }[] = [];
+const odooWrite = await odooHireConnector(odooEnv, (async (_url: string, init?: RequestInit) => {
+  odooWriteCalls.push(JSON.parse(String(init?.body)) as { params?: { method?: string; args?: unknown[] } });
+  if (odooWriteCalls.at(-1)?.params?.method === "authenticate") return jsonResponse(200, { result: 7 });
+  return jsonResponse(200, { result: true });
+}) as typeof fetch).call({ ...call, method: "write", values: { id: "42", stage: "Hired" } });
+ok(
+  "odoo write addresses the record positionally",
+  odooWrite.ok === true &&
+    odooWrite.ok &&
+    odooWrite.id === "42" &&
+    JSON.stringify(odooWriteCalls[1]?.params?.args?.[5]) === JSON.stringify([[42], { stage: "Hired" }]) &&
+    JSON.stringify(odooWriteCalls[1]?.params?.args?.[6]) === "{}",
+);
+
+let foreignOdooCalls = 0;
+const foreignOdoo = await odooHireConnector(odooEnv, (async () => {
+  foreignOdooCalls += 1;
+  return jsonResponse(200, { result: 1 });
+}) as typeof fetch).call({ ...call, model: "res.users" });
+ok("odoo refuses a model outside hr.job and hr.applicant", foreignOdoo.ok === false && foreignOdooCalls === 0);
 
 const falseOdoo = await odooHireConnector(odooEnv, (async (_url: string, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body)) as { params?: { method?: string } };

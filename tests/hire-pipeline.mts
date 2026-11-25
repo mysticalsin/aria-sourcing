@@ -135,6 +135,16 @@ const failed = await runSourcingThroughHired(input, { ...apiEnv, HIRE_CONNECTOR:
 }) as typeof fetch);
 ok("a false generic api result stops the pipeline before later writes", failed.ok === false && failed.erp === "api" && stopped === 1);
 
+let stringFalseCalls = 0;
+const stringFalse = await runSourcingThroughHired(input, { ...apiEnv, HIRE_CONNECTOR: "api" }, (async () => {
+  stringFalseCalls += 1;
+  return jsonResponse(200, { result: "false" });
+}) as typeof fetch);
+ok(
+  "a string false generic api result stops the pipeline before later writes",
+  stringFalse.ok === false && stringFalse.erp === "api" && stringFalseCalls === 1,
+);
+
 const odooCalls: Captured[] = [];
 let odooId = 10;
 const odooFetch = (async (url: string, init?: RequestInit) => {
@@ -149,9 +159,22 @@ const odooHired = await runSourcingThroughHired(
   { NODE_ENV: "test", ODOO_URL: "https://odoo.example.test/", ODOO_DB: "mantu", ODOO_USERNAME: "api", ODOO_API_KEY: "fake-odoo-key", HIRE_API_URL: "https://hire-api.example.test", HIRE_API_TOKEN: "fake-api-token" },
   odooFetch,
 );
+const odooExecutes = odooCalls
+  .map((entry) => JSON.parse(String(entry.init?.body)) as { params?: { method?: string; args?: unknown[] } })
+  .filter((body) => body.params?.method === "execute_kw");
 ok(
   "configured Odoo stays ahead of the generic api",
   odooHired.ok === true && odooHired.erp === "odoo" && odooCalls.length === 8 && odooCalls.every((entry) => entry.url === "https://odoo.example.test/jsonrpc"),
+);
+ok(
+  "odoo pipeline writes are positional and do not send an invented field",
+  odooExecutes.length === 4 &&
+    JSON.stringify(odooExecutes[0]?.params?.args?.[5]) === JSON.stringify([[{ name: "Staff Engineer", department: "Engineering" }]]) &&
+    JSON.stringify(odooExecutes[0]?.params?.args?.[6]) === "{}" &&
+    (odooExecutes[1]?.params?.args?.[5] as [Record<string, unknown>[]])?.[0]?.[0]?.job_id === "11" &&
+    JSON.stringify(odooExecutes[2]?.params?.args?.[5]) === JSON.stringify([[12], { stage: "Hired" }]) &&
+    JSON.stringify(odooExecutes[3]?.params?.args?.[5]) === JSON.stringify([[12], { hired: true }]) &&
+    odooExecutes.every((body) => !JSON.stringify(body).includes("x_idempotency_key")),
 );
 
 const demoEnv = envForHireRequest(

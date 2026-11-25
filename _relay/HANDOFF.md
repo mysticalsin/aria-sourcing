@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 3
 agent: cursor-grok
-updated: 2026-11-23 15:43 America/Sao_Paulo
+updated: 2026-11-25 15:06 America/Sao_Paulo
 status: in-progress
 ---
 
@@ -14,13 +14,17 @@ status: in-progress
 - Connector order when `HIRE_CONNECTOR` is unset: Odoo JSON-RPC, SMART, generic HTTPS API (`HIRE_API_URL` + `HIRE_API_TOKEN`), MCP hire tool (`HIRE_MCP_URL` + `HIRE_MCP_TOKEN`, tool `HIRE_MCP_TOOL` or `hire`).
 - `HIRE_CONNECTOR=api|mcp|odoo|smart` forces that path.
 - Default transport is `fetchPublicUrl` (`src/lib/api/public-fetch.ts`): public HTTPS, DNS pinned, redirects not followed. Base URLs reject embedded credentials, queries, fragments, and blocked hosts.
-- A false or empty upstream payload is an error. Error text is scrubbed.
+- A false, empty, `"false"`, or `"null"` upstream payload is an error. Error text is scrubbed.
+- Odoo `execute_kw` uses positional `create([[vals]])` / `write([[id], vals])` with empty kwargs. It does not send `x_idempotency_key`. Models other than `hr.job` and `hr.applicant` are refused before fetch.
+- MCP `notifications/initialized` must return HTTP 2xx before `tools/call`. `text/event-stream` JSON-RPC frames are accepted. The last frame with `result` or `error` is the message.
+- `isPrivateIp` blocks IPv4-mapped, IPv4-compatible, NAT64, and 6to4 addresses when the embedded IPv4 is private, plus `fe80::/10`. `https://[::ffff:169.254.169.254]/` serializes to `::ffff:a9fe:a9fe` and is refused before fetch.
 - Demo (`envForHireRequest` with live auth false) drops every connector env var. Result is `{ ok: true, erp: "skipped", linkedIn: true }` and no fetch.
-- Gate on this shift: `npx tsc --noEmit` exit 0, `npm test` exit 0, including `tests/hire-connector.mts` (30), `tests/hire-pipeline.mts` (11), `tests/public-fetch-pin.mts` (4). Fakes only.
+- Gate after the QA fix: `npx tsc --noEmit` exit 0, `npm test` exit 0, including `tests/hire-connector.mts` (51), `tests/hire-pipeline.mts` (13), `tests/public-fetch-pin.mts` (13). Fakes only. No live host.
 
 ## Done this shift
 - Added the generic API and MCP hire connectors on a branch off `vercel-demo`.
 - Kept the Odoo JSON-RPC and SMART hire calls in the same module. They were not present on `vercel-demo` (`f2d0d3d0`). Frozen tip `#287` `7eb1fa9c` was not pushed or retargeted. `#291`–`#294` were not used as a base.
+- QA fix on draft `#307`: string false/null ids, MCP initialized HTTP status plus SSE frames, positional Odoo `execute_kw`, and embedded private IPv6. Draft stays a draft. No live host was contacted.
 
 ## Blockers
 - none

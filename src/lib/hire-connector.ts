@@ -86,13 +86,76 @@ async function send(
   }
 }
 
+/**
+ * Streamable HTTP may answer with SSE when the client accepts
+ * `text/event-stream`. A progress notification can precede the JSON-RPC
+ * response, so the last data frame that carries `result` or `error` wins.
+ * The raw frame is never copied into an error string.
+ */
+function jsonRpcFromEventStream(text: string): { ok: true; value: unknown } | { ok: false } {
+  let matched: unknown = null;
+  for (const block of text.split(/\r?\n\r?\n/)) {
+    const data: string[] = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith(":") || !line.startsWith("data:")) continue;
+      data.push(line.slice(5).replace(/^ /, ""));
+    }
+    if (!data.length) continue;
+    const raw = data.join("\n").trim();
+    if (!raw || raw === "[DONE]") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: false };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    if ("result" in parsed || "error" in parsed) matched = parsed;
+  }
+  if (matched == null) return { ok: false };
+  return { ok: true, value: matched };
+}
+
 async function readJson(response: Response, secrets: string[]): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   try {
+    const type = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (type.includes("text/event-stream")) {
+      const parsed = jsonRpcFromEventStream(await response.text());
+      if (!parsed.ok) return { ok: false, error: "upstream event stream had no json-rpc message" };
+      return parsed;
+    }
     return { ok: true, value: await response.json() };
   } catch (err) {
     const message = err instanceof Error ? err.message : "invalid json";
     return { ok: false, error: scrubbed(message, secrets) };
   }
+}
+
+function odooRecordRef(value: unknown): number | null {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+/**
+ * Odoo create(vals_list) and write(ids, vals) take positional arguments.
+ * A non-empty kwargs object is the shape real Odoo rejects with TypeError.
+ * `x_idempotency_key` is not a field on stock hr.job or hr.applicant; the
+ * JSON-RPC id already carries the idempotency key.
+ */
+function odooPositional(input: HireCall): { ok: true; args: unknown[] } | { ok: false; error: string } {
+  const vals = { ...input.values };
+  delete vals.id;
+  if (input.method === "create") return { ok: true, args: [[vals]] };
+  if (input.method === "write") {
+    const id = odooRecordRef(input.values.id);
+    if (id == null) return { ok: false, error: "odoo write requires a record id" };
+    return { ok: true, args: [[id], vals] };
+  }
+  return { ok: false, error: "odoo method must be create or write" };
 }
 
 function odooRecordId(result: unknown, input: HireCall): string | null {
@@ -103,7 +166,12 @@ function odooRecordId(result: unknown, input: HireCall): string | null {
 }
 
 function positiveId(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    // Match the top-level string guard: these are failed payloads, not record ids.
+    if (!trimmed || trimmed === "false" || trimmed === "null") return null;
+    return trimmed;
+  }
   if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
   return null;
 }
@@ -177,6 +245,10 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (!url || !db || !user || !key) return missing("odoo", "ODOO_URL, ODOO_DB, ODOO_USERNAME, or ODOO_API_KEY");
       const base = publicHttpsBase(url);
       if (!base) return { ok: false, error: "odoo ODOO_URL must be a public https URL without credentials" };
+      const refused = assertHireModel("odoo", input.model);
+      if (refused) return refused;
+      const positional = odooPositional(input);
+      if (!positional.ok) return positional;
       const endpoint = `${base}/jsonrpc`;
       const secrets = [key, user];
       const auth = await send(
@@ -216,7 +288,7 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
             params: {
               service: "object",
               method: "execute_kw",
-              args: [db, uid, key, input.model, input.method, [], { ...input.values, x_idempotency_key: input.idempotencyKey }],
+              args: [db, uid, key, input.model, input.method, positional.args, {}],
             },
           }),
         },
@@ -360,8 +432,9 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
       const initBody = await readJson(init.response, secrets);
       if (!initBody.ok) return initBody;
       const initJson = initBody.value as { result?: unknown; error?: { message?: string } };
+      if (initJson.error) return { ok: false, error: scrubbed(initJson.error.message ?? "mcp initialize failed", secrets) };
       if (!initJson.result || typeof initJson.result !== "object") {
-        return { ok: false, error: scrubbed(initJson.error?.message ?? "mcp initialize failed", secrets) };
+        return { ok: false, error: scrubbed("mcp initialize failed", secrets) };
       }
       const session = init.response.headers.get("mcp-session-id") ?? undefined;
       const notified = await send(
@@ -375,6 +448,7 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
         secrets,
       );
       if (!notified.ok) return notified;
+      if (!notified.response.ok) return { ok: false, error: `mcp initialized http ${notified.response.status}` };
       const call = await send(
         fetchImpl,
         base,
