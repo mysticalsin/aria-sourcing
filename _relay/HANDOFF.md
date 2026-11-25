@@ -12,7 +12,7 @@ status: in-progress
 - Branch `cursor/a13-sweep-e2e-stress-2aad`. Draft PR https://github.com/mysticalsin/aria-sourcing/pull/305 stays draft. Not merged. Base is `vercel-demo`.
 - Previous tip `04ef74eef235824b4cdefa025b440a0e89020d91`, tree `44dd4ff26e5864c2eb5c4cf96fbf656ae54a6b3e`.
 - This shift fixes the copied sweep harness so it matches this compose file. `npx tsc --noEmit` exit 0. `npm test` exit 0, including `tests/sweep-harness.mts` (6 passed).
-- `npm audit --audit-level=high` is unchanged as a gate. The lockfile now clears it: Next `16.4.6`, Zod `4.6.7` (override, same as #307), `@dust-tt/client` `1.2.11` which depends on `@modelcontextprotocol/sdk` `^1.32.1`. `npx tsc --noEmit`, `npm test`, and `npm audit --audit-level=high` (`found 0 vulnerabilities`) exited 0 before the audit-fix push. Image scan, release gate, flyctl, gitleaks, and database security were not changed.
+- `npm audit --audit-level=high` is unchanged as a gate and reports no vulnerabilities. Checkout uses `fetch-depth: 0` so gitleaks can see parent commits. A depth-1 checkout made pull_request fail on `04ef74ee^..HEAD` and made the push scan treat the tip as a root commit. Image scan, release gate, flyctl, and database security were not changed.
 
 ## Done this shift
 - Overlay memory caps name `kong` (96m) instead of an imageless `gateway`, and cap `obscura` at 1024m. Merged caps stay under 6 GiB.
