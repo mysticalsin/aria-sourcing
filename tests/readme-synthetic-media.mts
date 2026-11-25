@@ -1,7 +1,7 @@
 /**
  * README loops must be short synthetic GIFs that exist in the repo.
  */
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
@@ -72,8 +72,15 @@ function gifSeconds(bytes: Buffer): number | null {
 }
 
 check("README names the loops as synthetic", /synthetic/i.test(README));
+check("README names the fixture people", README.includes("Ada Example") && README.includes("Jan Fixture"));
+check("README does not embed the hired-gate loop", !README.includes("hired-gate.gif"));
 check("README keeps the manifest pointer", README.includes("tests/test-manifest.mjs"));
 check("README keeps the typecheck:tests gate", README.includes("npm run typecheck:tests"));
+
+const recorderPath = path.join(ROOT, "scripts/record-readme-gifs.mjs");
+check("recorder exists for this branch's demo", existsSync(recorderPath));
+const recorder = existsSync(recorderPath) ? readFileSync(recorderPath, "utf8") : "";
+check("recorder stays on the dry-run demo", recorder.includes("hermes-sourcing:v1") && !/ODOO|hired-gate|password/i.test(recorder));
 
 for (const relative of LOOPS) {
   check(`README embeds ${relative}`, README.includes(`](${relative})`));
@@ -82,6 +89,7 @@ for (const relative of LOOPS) {
   const seconds = gifSeconds(bytes);
   check(`${relative} is under 3 MB`, size > 0 && size <= MAX_BYTES);
   check(`${relative} loops in at most 8 seconds`, seconds != null && seconds <= MAX_SECONDS);
+  check(`${relative} repeats`, bytes.includes(Buffer.from("NETSCAPE2.0")));
 }
 
 console.log(`RESULT readme-synthetic-media: ${pass} passed, ${fail} failed`);

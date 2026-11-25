@@ -15,7 +15,7 @@ production procedure remains
 | Initial authority | `provision-first-admin.sh`, `seed-cloud-admin.sh`, `provision-agent-framework-authority.mjs` |
 | Agent frameworks | `agent-framework-configuration.mjs`, `agent-framework-heartbeat-worker.mjs` |
 | Sourcing learning | `configure-sourcing-learning.mjs`, `run-sourcing-learning.mjs`, `review-sourcing-lesson.mjs` |
-| Acceptance and probes | `acceptance-campaign-dry-run.sh`, `smoke-source-live.mts`, `probe-tavily-mcp.mts`, `test-fly-db-volume.sh` |
+| Acceptance and probes | `acceptance-campaign-dry-run.sh`, `smoke-source-live.mts`, `probe-tavily-mcp.mts`, `test-fly-db-volume.sh`, `record-readme-gifs.mjs` |
 | Test diagnostics | `run-tests-sandbox.mjs` |
 
 ## Script rules
