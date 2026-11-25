@@ -5,6 +5,7 @@ import type {
   ScoringWeights,
 } from "./types";
 import { clamp, round } from "./utils";
+import { skillsObservedIn } from "./sourcing/skill-evidence";
 import {
   candidateIsFarFromEurope,
   candidateMatchesEurope,
@@ -37,7 +38,17 @@ const DIMENSION_LABELS: Record<keyof ScoringWeights, string> = {
   activity: "Signal & activity",
 };
 
-const UNKNOWN_ANCHOR = 30;
+/**
+ * Scoring model version. Candidates scored by an older model are rescored when
+ * the workspace loads (store/migrations.ts). Model 2 (2026-11-25): a criterion
+ * the profile does not show yet counts as neutral (50) instead of a near-fail
+ * (30), and a skill not seen in a public snippet is unknown, not missing.
+ */
+export const SCORING_MODEL = 2;
+
+/** A requested criterion the profile does not show yet: neither a match nor a
+ *  mismatch. A verified mismatch scores low on its own. */
+export const UNKNOWN_SCORE = 50;
 const SCORE_DIMENSIONS: (keyof ScoringWeights)[] = [
   "skills",
   "experience",
@@ -57,7 +68,7 @@ const ACTIVITY_SIGNAL_RE = new RegExp(
 );
 
 // One rationale for every "role asked, candidate value missing" dimension.
-const UNKNOWN_RATIONALE = "Requested but candidate value unknown - counted as unverified.";
+const UNKNOWN_RATIONALE = `Requested, unknown so far (not shown in the profile): counts as neutral (${UNKNOWN_SCORE}) until verified.`;
 
 type ApplicabilityState = "scored" | "not_applicable" | "unknown";
 
@@ -76,35 +87,103 @@ function overlapCount(a: string[], b: string[]): number {
   return lower(a).filter((x) => setB.has(x)).length;
 }
 
+/** Lower case without accents: "Montréal" matches "Montreal". */
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
+}
+
 function locationMatchesRegion(location: string, region: string): boolean {
-  if (region.trim().toLowerCase() === "global") return true;
-  const loc = location.trim().toLowerCase();
-  const reg = region.trim().toLowerCase();
+  if (fold(region) === "global") return true;
+  const loc = fold(location);
+  const reg = fold(region);
   if (!loc || !reg) return false;
   if (locationMatchesEuropeMacro(loc, reg)) return true;
   const escaped = reg
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     .replace(/\s+/g, "\\s+");
-  return Boolean(escaped) && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(location);
+  return Boolean(escaped) && new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(loc);
 }
 
-/* ---- Individual dimension scorers (all return 0-100) --------------------- */
+/* ---- Skills ------------------------------------------------------------------ */
 
-function scoreSkills(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
+const SKILL_ALIASES: Record<string, string> = {
+  golang: "go",
+  postgres: "postgresql",
+  psql: "postgresql",
+  k8s: "kubernetes",
+  js: "javascript",
+  ecmascript: "javascript",
+  ts: "typescript",
+  csharp: "c#",
+  dotnet: ".net",
+  net: ".net",
+  aws: "amazonwebservices",
+  gcp: "googlecloud",
+  googlecloudplatform: "googlecloud",
+  ml: "machinelearning",
+  ai: "artificialintelligence",
+};
+
+/** One spelling per skill: "React.js", "ReactJS" and "react" are the same. */
+function canonicalSkill(skill: string): string {
+  let compact = fold(skill).replace(/[^a-z0-9+#]/g, "");
+  if (compact.length >= 5 && compact.endsWith("js")) compact = compact.slice(0, -2);
+  return SKILL_ALIASES[compact] ?? compact;
+}
+
+/** Which of `wanted` (as written in the brief) the candidate's skills cover:
+ *  same skill under another spelling, or every word of the brief's phrase
+ *  in one of the candidate's skills ("Python" in "Python 3"). */
+export function matchSkills(have: readonly string[], wanted: readonly string[]): { matched: string[]; unmatched: string[] } {
+  const canonical = new Set(have.map(canonicalSkill).filter(Boolean));
+  const matched: string[] = [];
+  const unmatched: string[] = [];
+  for (const skill of wanted) {
+    const hit = canonical.has(canonicalSkill(skill)) || have.some((item) => skillsObservedIn(item, [skill]).length > 0);
+    (hit ? matched : unmatched).push(skill);
+  }
+  return { matched, unmatched };
+}
+
+/**
+ * Whether the candidate's skill list is complete enough that a brief skill
+ * absent from it is missing, not merely unshown: a recruiter checked the
+ * skills ("Verify the profile"), an enrichment provider supplied them, or it is
+ * a full demo profile. A search snippet or a short bio is never complete.
+ */
+export function skillEvidenceComplete(c: Candidate): boolean {
+  return Boolean(c.skillsCheckedAt) || Boolean(c.enrichment?.fieldProvenance?.skills) || c.provenance === "synthetic" || c.provenance === undefined;
+}
+
+function scoreSkills(c: Candidate, jd: JobAnalysis): DimensionResult {
   const req = jd.requiredSkills;
   const nice = jd.niceToHaveSkills;
-  const reqHit = overlapCount(req, c.techStack);
-  const niceHit = overlapCount(nice, c.techStack);
-  const reqRatio = req.length ? reqHit / req.length : 0.7;
-  const niceRatio = nice.length ? niceHit / nice.length : 0;
-  const score = clamp(reqRatio * 82 + niceRatio * 18, 0, 100);
+  if (req.length === 0 && nice.length === 0) {
+    return { score: 0, rationale: "No skills in the brief.", state: "not_applicable" };
+  }
+  const complete = skillEvidenceComplete(c);
+  const r = matchSkills(c.techStack, req);
+  const n = matchSkills(c.techStack, nice);
+  // An unseen skill: missing on a complete profile, unknown on a partial one.
+  const unseen = complete ? 0 : UNKNOWN_SCORE;
+  const part = (hit: number, total: number) => (total ? (hit * 100 + (total - hit) * unseen) / total : null);
+  const reqPart = part(r.matched.length, req.length);
+  const nicePart = part(n.matched.length, nice.length);
+  const score = reqPart !== null && nicePart !== null ? reqPart * 0.85 + nicePart * 0.15 : (reqPart ?? nicePart ?? 0);
+  const counts = `${r.matched.length}/${req.length || "—"} required, ${n.matched.length}/${nice.length || "—"} nice-to-have skills`;
+  if (!complete && c.techStack.length === 0) {
+    return { score: UNKNOWN_SCORE, rationale: UNKNOWN_RATIONALE, state: "unknown" };
+  }
   return {
-    score,
-    rationale: `${reqHit}/${req.length || "—"} required, ${niceHit}/${
-      nice.length || "—"
-    } nice-to-have skills present.`,
+    score: clamp(score, 0, 100),
+    rationale: complete
+      ? `${counts} (checked profile).`
+      : `${counts} seen in the profile; the others are not shown yet and count as neutral (${UNKNOWN_SCORE}).`,
+    state: "scored",
   };
 }
+
+/* ---- Other dimensions (all return 0-100) ------------------------------------ */
 
 function scoreExperience(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
   const yrs = c.yearsExperience;
@@ -163,6 +242,12 @@ function scoreIndustry(c: Candidate, jd: JobAnalysis): { score: number; rational
       ? `Shares ${hit} target industry vertical${hit === 1 ? "" : "s"}.`
       : `Adjacent industries only.`,
   };
+}
+
+/** The brief says where the person should be (a place, regions, a timezone,
+ *  or a Europe focus). Without that, location is not scored. */
+function roleHasLocation(jd: JobAnalysis): boolean {
+  return jd.regions.length > 0 || Boolean(jd.location?.trim()) || Boolean(jd.timezone?.trim()) || jobAnalysisIsEuropeFocused(jd);
 }
 
 function scoreLocation(c: Candidate, jd: JobAnalysis): { score: number; rationale: string } {
@@ -269,16 +354,11 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
   const activity = scoreActivity(candidate);
   const roleRequestsExperience = jd.minYearsExperience != null || jd.maxYearsExperience != null;
   const hasActivitySignal = ACTIVITY_SIGNAL_RE.test(candidate.recentActivity.toLowerCase());
+  const locationRequested = roleHasLocation(jd);
+  const candidateHasLocation = Boolean(candidate.location.trim() || candidate.timezone.trim());
 
   return {
-    skills: {
-      ...skills,
-      state: candidate.techStack.length > 0 ? "scored" : "unknown",
-      rationale:
-        candidate.techStack.length > 0
-          ? skills.rationale
-          : UNKNOWN_RATIONALE,
-    },
+    skills,
     experience: {
       ...experience,
       state: !roleRequestsExperience
@@ -324,9 +404,10 @@ function classifyDimensions(candidate: Candidate, jd: JobAnalysis): Record<keyof
     },
     location: {
       ...location,
-      state: candidate.location.trim() || candidate.timezone.trim() ? "scored" : "unknown",
-      rationale:
-        candidate.location.trim() || candidate.timezone.trim()
+      state: !locationRequested ? "not_applicable" : candidateHasLocation ? "scored" : "unknown",
+      rationale: !locationRequested
+        ? "No location in the brief."
+        : candidateHasLocation
           ? location.rationale
           : UNKNOWN_RATIONALE,
     },
@@ -358,7 +439,7 @@ export function scoreCandidate(
     const dim = dims[key];
     const excluded = dim.state === "not_applicable" || denom === 0;
     const weight = excluded ? 0 : effectiveWeight(weights, key) / denom;
-    const effectiveScore = dim.state === "unknown" ? UNKNOWN_ANCHOR : dim.score;
+    const effectiveScore = dim.state === "unknown" ? UNKNOWN_SCORE : dim.score;
     const displayScore = excluded ? dim.score : effectiveScore;
     const contribution = excluded ? 0 : effectiveScore * weight;
     return {

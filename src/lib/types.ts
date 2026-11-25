@@ -378,6 +378,10 @@ export interface Candidate {
   matchScore: number;
   matchBreakdown: MatchBreakdownItem[];
   techStack: string[];
+  /** When a recruiter checked this candidate's skills against the profile
+   *  ("Verify the profile"). From then on a brief skill missing from
+   *  `techStack` counts as missing, not as not shown (scoring.ts). */
+  skillsCheckedAt?: string;
   /** Enriched work-history lines, formatted "Title @ Company (dates)", newest
    *  first. Provider free-text from an enrichment provider — displayed to recruiters but
    *  deliberately NOT parsed into `yearsExperience` (dates are unstructured; see
@@ -954,6 +958,10 @@ export interface SystemSettings {
   humanApprovalGate: boolean;
   dryRunMode: boolean;
   minScoreToContact: number;
+  /** false: a message to a candidate scored under `minScoreToContact` can be
+   *  approved (with a warning). Absent or true: it cannot. Automatic outreach
+   *  batches always pick candidates at the minimum score or more. */
+  enforceMinScoreToContact?: boolean;
   /** Match-score cutoffs mapping to the Mantu Star Rating (TopGun/A/B/C/D).
    *  A score ≥ topGun is a TOP GUN, ≥ a is an A player, ≥ b a B, ≥ c a C, else D. */
   starRatingThresholds?: { topGun: number; a: number; b: number; c: number };

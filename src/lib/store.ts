@@ -3990,6 +3990,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         // keeps a repeat allocation run from piling up duplicate drafts.
         if (s.outreach.some((m) => m.candidateId === c.id && m.status === "Needs Approval")) return false;
         if (poolKind === "interested") return c.stage === "Interested";
+        // Automatic batches always keep the floor, even when Settings turns
+        // the approval block off (that switch is for a recruiter's own pick).
         return c.matchScore >= s.settings.minScoreToContact && stageRank(c.stage) < 1;
       });
       const activeSeats = s.seats.filter((x) => x.status === "active");

@@ -18,6 +18,12 @@ export const DEDUPE_WINDOW_DAYS = 90;
 
 /* ---- Rule 2 + 3 + 4: outreach approval gate ------------------------------ */
 
+/** Whether a score under `minScoreToContact` blocks approving a message
+ *  (Settings > Approval gate). On unless explicitly turned off. */
+export function contactFloorBlocks(settings: Pick<SystemSettings, "enforceMinScoreToContact">): boolean {
+  return settings.enforceMinScoreToContact !== false;
+}
+
 export interface ApprovalContext {
   candidate: Candidate;
   message: OutreachMessage;
@@ -55,11 +61,17 @@ export function checkOutreachApproval(ctx: ApprovalContext): ApprovalResult {
   const warnings: string[] = [];
   const checks: ApprovalCheck[] = [];
 
-  // Rule 2 — score before contacting
+  // Rule 2 — score before contacting (a blocker unless turned off in Settings)
   if (candidate.matchScore < settings.minScoreToContact) {
-    const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
-    blockers.push(detail);
-    checks.push({ rule: "Match score", status: "block", detail });
+    if (contactFloorBlocks(settings)) {
+      const detail = `Match score ${candidate.matchScore} is below the ${settings.minScoreToContact} contact floor.`;
+      blockers.push(detail);
+      checks.push({ rule: "Match score", status: "block", detail });
+    } else {
+      const detail = `Match score ${candidate.matchScore} is below ${settings.minScoreToContact}; the contact floor is off in Settings.`;
+      warnings.push(detail);
+      checks.push({ rule: "Match score", status: "warn", detail });
+    }
   } else {
     checks.push({
       rule: "Match score",

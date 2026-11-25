@@ -65,7 +65,9 @@ import { genId, isoDaysBefore, isoHoursBefore, round, SEED_NOW } from "./utils";
 // provider and each task has its own model tier (see defaultSavedModels).
 // STATE_VERSION 19 - brief extraction gets its own task (Haiku, structured output).
 // STATE_VERSION 20 - roadmap placeholder integration cards removed from stored workspaces.
-export const STATE_VERSION = 21;
+// STATE_VERSION 21 - the retired Apify cards are dropped too.
+// STATE_VERSION 22 - scoring model 2 (scoring.ts): stored candidates are rescored.
+export const STATE_VERSION = 22;
 
 /* ---- LLM config defaults ------------------------------------------------- */
 

@@ -70,6 +70,8 @@ export function recordVerifiedEvidence(state: WorkspaceState, id: string, input:
     return { ok: false, error: "These details match another candidate. Review the existing record before merging identities." };
   }
   let updated = { ...candidate, email, linkedinUrl, techStack: skills, yearsExperience, location, industryExperience, companyStageExperience,
+    // The recruiter ticked the skills the profile shows: unticked ones are missing.
+    ...(input.skills !== undefined ? { skillsCheckedAt: at } : {}),
     ...(input.lawfulBasis ? { lawfulBasis: input.lawfulBasis, lawfulBasisSource: "operator_selection" as const, lawfulBasisRecordedAt: at } : {}),
     notes: [{ id: noteId, text: `${input.lawfulBasis ? `Contact basis ${input.lawfulBasis}` : "Profile/contact facts"} recorded by operator. Evidence: ${source}`, at }, ...(candidate.notes ?? [])] };
   if (updated.enrichment) {

@@ -746,6 +746,7 @@ function OutreachView() {
                     <span className="text-muted">Min score to contact</span>
                     <span className="font-semibold tabular-nums text-ink">
                       {settings.minScoreToContact}
+                      {settings.enforceMinScoreToContact === false ? " (warning only)" : ""}
                     </span>
                   </div>
                 </div>

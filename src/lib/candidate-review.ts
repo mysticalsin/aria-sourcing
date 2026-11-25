@@ -1,4 +1,5 @@
 import type { Campaign, Candidate, OutreachChannel, SystemSettings } from "./types";
+import { matchSkills } from "./scoring";
 import { isCandidateErasureTombstone } from "./candidate-privacy";
 import { recordedCandidateLawfulBasis } from "./candidate-lawful-basis";
 import { evaluateNeedReadiness } from "./needs/readiness";
@@ -7,12 +8,16 @@ import { campaignAllowsLiveSourcing } from "./sourcing/campaign-lifecycle";
 export type CandidateReviewStep = "blocked" | "brief" | "fit" | "contact" | "permission" | "draft";
 
 /** A next action for review, never an authorization to send a message. */
-export function candidateReview(candidate: Candidate, campaign: Campaign | undefined, settings: Pick<SystemSettings, "minScoreToContact">) {
-  const observed = new Set(candidate.techStack.map((s) => s.trim().toLowerCase()));
-  // Match the scoring engine's exact, case-insensitive skill comparison.
+export function candidateReview(
+  candidate: Candidate,
+  campaign: Campaign | undefined,
+  settings: Pick<SystemSettings, "minScoreToContact" | "enforceMinScoreToContact">,
+) {
+  // The scoring engine's skill comparison (spellings, aliases, phrase words).
   const required = campaign?.jobAnalysis.requiredSkills ?? [];
-  const missingSkills = required.filter((s) => !observed.has(s.trim().toLowerCase()));
-  const observedSkills = required.filter((s) => observed.has(s.trim().toLowerCase()));
+  const { matched: observedSkills, unmatched: missingSkills } = matchSkills(candidate.techStack, required);
+  // With the floor off (Settings), a low score alone no longer asks to verify fit.
+  const belowFloor = settings.enforceMinScoreToContact !== false && candidate.matchScore < settings.minScoreToContact;
   const step = (key: CandidateReviewStep, label: string, detail: string) => ({ key, label, detail, observedSkills, missingSkills });
   if (isCandidateErasureTombstone(candidate) || candidate.complianceFlags.doNotContact || candidate.complianceFlags.suppressed || candidate.complianceFlags.unsubscribed || candidate.stage === "Suppressed") {
     return step("blocked", "Contact blocked", "This profile is excluded. Do not enrich or prepare new outreach.");
@@ -23,7 +28,7 @@ export function candidateReview(candidate: Candidate, campaign: Campaign | undef
   if (!campaign || !campaignAllowsLiveSourcing(campaign.status) || !evaluateNeedReadiness(campaign.jobAnalysis).ready) {
     return step("brief", "Review campaign", "Complete an active campaign brief before qualifying this profile.");
   }
-  if (!Number.isFinite(candidate.matchScore) || candidate.matchScore < settings.minScoreToContact || missingSkills.length > 0 || (candidate.yearsExperience == null && (campaign.jobAnalysis.minYearsExperience != null || campaign.jobAnalysis.maxYearsExperience != null))) {
+  if (!Number.isFinite(candidate.matchScore) || belowFloor || missingSkills.length > 0 || (candidate.yearsExperience == null && (campaign.jobAnalysis.minYearsExperience != null || campaign.jobAnalysis.maxYearsExperience != null))) {
     return step("fit", "Verify fit", "Review the source evidence and missing requirements. Enrichment may add evidence; a score alone is not a hiring decision.");
   }
   if (!candidate.email.trim()) {

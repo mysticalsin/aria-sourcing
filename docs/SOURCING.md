@@ -184,16 +184,24 @@ with no email shouldn't collide on that absence.
 
 ## 3. Signal-aware scoring
 
-`src/lib/scoring.ts` (migration-era commit `bc31d54`, "signal-aware composite — exclude/
-anchor no-signal dimensions") is the deterministic scorer. It replaced a version that
-silently scored every dimension even when the candidate had no data for it — which
-fabricated a midpoint value (usually ~50) for roughly a third of the composite on a
-typical candidate.
+`src/lib/scoring.ts` is the deterministic scorer: one /100 composite of six
+weighted dimensions, with a per-dimension `rationale` the drawer shows.
+
+**Model 2 (2026-11-25).** The owner saw most sourced profiles under 40. On the
+local workspace, all eleven LinkedIn profiles found by web search scored 22-32:
+experience, industry and location are never in a search snippet, and each
+counted as 30; worse, a snippet naming 1 of 7 required skills scored the skills
+dimension 12, below a profile with no skill seen at all (30), because a skill
+not shown in 160 characters counted as missing. Model 2 fixes both: what a
+profile does not show is **unknown** (neutral, 50), not a near-fail, and only a
+checked or complete profile can show that a skill is missing. The same eleven
+profiles now score 50-58; profiles with verified data move up or down from
+there. Stored candidates are rescored once when the workspace loads
+(`STATE_VERSION` 22, `store/migrations.ts`).
 
 ### The six weighted dimensions
 
 ```ts
-// src/lib/scoring.ts:9-16
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   skills: 34,
   experience: 22,
@@ -206,66 +214,48 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
 
 | Dimension | Default weight | What it measures |
 |---|---|---|
-| Skills match | 34 | Overlap of `techStack` against `requiredSkills`/`niceToHaveSkills` |
-| Experience fit | 22 | `yearsExperience` vs. the JD's min/max band |
+| Skills match | 34 | The brief's required (85%) and nice-to-have (15%) skills found in `techStack` |
+| Experience fit | 22 | `yearsExperience` vs. the brief's min/max band |
 | Company-stage fit | 12 | Overlap with `companyStageTarget` (Seed → Public) |
 | Industry overlap | 12 | Overlap with `industryExperience` |
-| Location & timezone | 10 | Region/timezone match, remote-aware |
-| Signal & activity | 10 | Recency/strength of public activity signal (commits, posts, etc.) |
+| Location & timezone | 10 | Region/place/timezone match, remote-aware, accent-insensitive |
+| Signal & activity | 10 | Recency/strength of a public activity signal |
 
-### The three-state model
+### Three states per dimension
 
-Each dimension is classified into one of three states before it's allowed to contribute
-to the composite (`classifyDimensions`, `scoring.ts:199-275`):
+- **`scored`**: the candidate has data for it; the dimension's own scorer runs.
+- **`not_applicable`**: the brief does not ask for it (no years band, no stage
+  target, no industry, no skills, no place/region/timezone/Europe focus, no
+  activity signal). It is left out and the other weights fill the 100 points.
+- **`unknown`**: the brief asks, the profile does not show it yet. It counts as
+  `UNKNOWN_SCORE = 50` and says so: "Requested, unknown so far (not shown in the
+  profile): counts as neutral (50) until verified." A verified mismatch (too few
+  years, far from the region, a skill missing from a checked profile) scores
+  low on its own.
 
-- **`scored`** — the candidate has real data for this dimension; the dimension's own
-  scoring function runs normally.
-- **`not_applicable`** — the *role* never asked for this signal (e.g. no
-  `minYearsExperience`/`maxYearsExperience` on the JD, so "Experience fit" is excluded
-  entirely rather than scored against nothing).
-- **`unknown`** — the role *did* ask, but the candidate's value is missing. Rather than
-  score this as an invented midpoint, it's anchored to a fixed low-confidence value:
+### Skills: seen, missing, or not shown
 
-```ts
-// src/lib/scoring.ts:27
-const UNKNOWN_ANCHOR = 30;
-```
+`matchSkills` compares across spellings and aliases ("ReactJS" = "React",
+"Golang" = "Go", "Postgres" = "PostgreSQL", "k8s" = "Kubernetes") and accepts a
+skill when every word of the brief's phrase is in one of the candidate's skills
+("Python" in "Python 3"). Each brief skill found counts 100. One not found
+counts 0 when the skill list is complete (`skillEvidenceComplete`: a recruiter
+checked the skills in "Verify the profile", which sets `skillsCheckedAt`; an
+enrichment provider supplied them; or a full demo profile), and 50 otherwise
+(a snippet or a short bio is never complete). A brief without nice-to-have
+skills scores the required ones over the full 100.
 
-### Composite = sum of contributions
+### Composite and the contact floor
 
-```ts
-// src/lib/scoring.ts:289-311
-const applicable = SCORE_DIMENSIONS.filter((key) => dims[key].state !== "not_applicable");
-const denom = applicable.reduce((sum, key) => sum + effectiveWeight(weights, key), 0);
-
-const breakdown = SCORE_DIMENSIONS.map((key) => {
-  const dim = dims[key];
-  const excluded = dim.state === "not_applicable" || denom === 0;
-  const weight = excluded ? 0 : effectiveWeight(weights, key) / denom;
-  const effectiveScore = dim.state === "unknown" ? UNKNOWN_ANCHOR : dim.score;
-  const contribution = excluded ? 0 : effectiveScore * weight;
-  return { key, score: round(clamp(...)), weight: round(weight, 3), contribution: round(contribution, 1), rationale: dim.rationale };
-});
-const composite = breakdown.reduce((sum, item) => sum + item.contribution, 0);
-```
-
-- **`not_applicable`** dimensions are excluded from both the weight denominator and the
-  sum — the remaining applicable dimensions are re-normalized to fill the full 100 points
-  (a role with no experience band, no stage target, and no industry preference still
-  scores out of 100 using only skills/location/activity).
-- **`unknown`** dimensions stay in the denominator (they *were* requested) but contribute
-  at the fixed `UNKNOWN_ANCHOR = 30` rather than their raw computed score, so a missing
-  signal always drags the composite down instead of landing at a flattering ~50-70
-  fabricated midpoint.
-- Every dimension's `rationale` string is preserved in the returned `breakdown`
-  (`MatchBreakdownItem[]`) so the UI can render an honest, per-dimension "why this score"
-  explanation — including `UNKNOWN_RATIONALE = "Requested but candidate value unknown -
-  counted as unverified."` (`scoring.ts:47`) for anchored dimensions.
-
-The net effect: roughly a third of the composite that used to be fabricated
-midpoint noise on a typical sparse candidate is now either honestly excluded
-(role didn't ask) or honestly penalized (role asked, data's missing) — never silently
-invented.
+The composite is the weight-normalised sum over the applicable dimensions; the
+breakdown keeps every weight, contribution and rationale. Settings >
+Approval gate holds the minimum score to contact (default 70) and a switch,
+"Block messages below the minimum score" (`enforceMinScoreToContact`, on by
+default). Off, a message to a lower-scored candidate can be approved with a
+warning in the approval checks (`rules.ts`), and the candidate's next action no
+longer asks to verify fit for the score alone (`candidate-review.ts`).
+Automatic outreach batches keep the floor either way, and the campaign
+autopilot keeps its own minimum score.
 
 ---
 
@@ -555,7 +545,7 @@ Postgres, GoTrue, PostgREST, Caddy gateway). See [`DOCKER.md`](../DOCKER.md).
 
 1. Overview — two-mode runtime, fail-closed production posture
 2. The sourcing pipeline — providers, sourcing agent, discover→map→score→dedupe→commit, dedupe keys, 90-day recontact window
-3. Signal-aware scoring — six dimensions, three-state model, `UNKNOWN_ANCHOR`
+3. Signal-aware scoring — six dimensions, three states, unknown = neutral 50 (model 2), the contact floor switch
 4. Enrichment — cost-ascending waterfall, per-field provenance, homed experience/education/languages
 5. The candidate corpus — shadow mirror, tenant-isolated read RPC, person-identity model
 6. Compliance & safety — never-auto-send, RLS, GDPR erasure, lawful basis, discrimination-proxy filter, LinkedIn policy

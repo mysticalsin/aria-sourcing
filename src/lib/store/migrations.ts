@@ -1,7 +1,10 @@
 import { defaultIntegrations } from "../integrations";
 import { buildSeedState, defaultSettings, seedInterviewers, STATE_VERSION } from "../seed";
+import { isCandidateErasureTombstone } from "../candidate-privacy";
+import { scoreCandidate } from "../scoring";
+import { effectiveWeights } from "../skills";
 import { DEFAULT_STAR_THRESHOLDS, deriveLeadSource, deriveStarRating } from "../tania";
-import type { WorkspaceState } from "../types";
+import type { Candidate, WorkspaceState } from "../types";
 import { demoStateAllowsCandidatePersistence } from "./demo-persistence";
 
 /** Browser key of the synthetic demo workspace. */
@@ -61,6 +64,18 @@ export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState 
       ? keptDefaults
       : { ...keptDefaults, extraction: "model_claude_haiku" };
   const starT = parsed.settings?.starRatingThresholds ?? DEFAULT_STAR_THRESHOLDS;
+  // STATE_VERSION 22 — scoring model 2 (scoring.ts): every candidate of a
+  // known campaign is rescored. A star rating that was derived from the old
+  // score follows the new one; one a recruiter set by hand is kept.
+  const rescore = (parsed.version ?? 0) < 22;
+  const campaignsById = new Map((parsed.campaigns ?? []).map((campaign) => [campaign.id, campaign]));
+  const rescored = (c: Candidate): Candidate => {
+    const campaign = campaignsById.get(c.campaignId);
+    if (!rescore || !campaign?.jobAnalysis || !Array.isArray(c.techStack)) return c;
+    const { score, breakdown } = scoreCandidate(c, campaign.jobAnalysis, effectiveWeights(campaign.scoringWeights, parsed.skills ?? []));
+    const derivedBefore = c.starRating !== undefined && c.starRating === deriveStarRating(c.matchScore, starT);
+    return { ...c, matchScore: score, matchBreakdown: breakdown, ...(derivedBefore ? { starRating: deriveStarRating(score, starT) } : {}) };
+  };
   return {
     ...parsed,
     version: STATE_VERSION,
@@ -68,11 +83,18 @@ export function migrateToCurrentVersion(parsed: WorkspaceState): WorkspaceState 
     campaigns: parsed.campaigns ?? [],
     // STATE_VERSION 13 — backfill the TAnIA layer (lead source + star rating) on
     // any candidate that predates it, without clobbering explicit values.
-    candidates: (parsed.candidates ?? []).map((c) => ({
-      ...c,
-      leadSource: c.leadSource ?? deriveLeadSource(c),
-      starRating: c.starRating ?? deriveStarRating(c.matchScore, starT),
-    })),
+    // An erased candidate's tombstone must stay byte-for-byte what the erasure
+    // wrote: the database refuses a workspace that changes it ("candidate
+    // erasure tombstone blocks workspace reimport"). No migration touches it.
+    candidates: (parsed.candidates ?? []).map((c) => {
+      if (isCandidateErasureTombstone(c)) return c;
+      const next = rescored(c);
+      return {
+        ...next,
+        leadSource: next.leadSource ?? deriveLeadSource(next),
+        starRating: next.starRating ?? deriveStarRating(next.matchScore, starT),
+      };
+    }),
     // STATE_VERSION 13 — inbound chatbox queue.
     chatboxSubmissions: parsed.chatboxSubmissions ?? [],
     outreach: parsed.outreach ?? [],

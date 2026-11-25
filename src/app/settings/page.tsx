@@ -56,6 +56,7 @@ import {
   Cpu,
   Info,
   ChevronDown,
+  Gauge,
 } from "lucide-react";
 import {
   SETTINGS_N_TO_TAB,
@@ -688,13 +689,25 @@ export default function SettingsPage() {
                     checked={settings.dryRunMode}
                     onCheckedChange={(v) => setToggle({ dryRunMode: v }, "Dry-run mode", v)}
                   />
+                  <ToggleRow
+                    id="enforceMinScoreToContact"
+                    icon={<Gauge className="h-4 w-4" />}
+                    label="Block messages below the minimum score"
+                    description={`On: a message to a candidate scored under ${settings.minScoreToContact} cannot be approved. Off: it can, with a warning in the approval checks. Automatic outreach batches still pick candidates at ${settings.minScoreToContact} or more.`}
+                    checked={settings.enforceMinScoreToContact !== false}
+                    onCheckedChange={(v) => setToggle({ enforceMinScoreToContact: v }, "Minimum score block", v)}
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <Field
                     label="Minimum score to contact"
                     htmlFor="minScoreToContact"
-                    hint="Candidates below this match score are never contacted (0–100)."
+                    hint={
+                      settings.enforceMinScoreToContact === false
+                        ? "Recommended floor (0–100): below it, approval shows a warning. Automatic batches stay at or above it."
+                        : "Messages to candidates below this match score cannot be approved (0–100)."
+                    }
                   >
                     <Input
                       id="minScoreToContact"

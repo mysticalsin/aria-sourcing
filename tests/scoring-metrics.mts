@@ -128,8 +128,8 @@ const thinHighSkill = scoreCandidate(
   DEFAULT_SCORING_WEIGHTS,
 );
 ok(
-  "signal-aware scoring: skills-only-high candidate stays below MIN_SCORE_FLOOR 70",
-  thinHighSkill.score < 70,
+  "signal-aware scoring: a skills-only profile ranks below the same profile with verified experience and location",
+  thinHighSkill.score < verifiedExperience.score,
 );
 
 const broadVerified = scoreCandidate(
