@@ -12,7 +12,7 @@ status: in-progress
 - Branch `cursor/a13-sweep-e2e-stress-2aad`. Draft PR https://github.com/mysticalsin/aria-sourcing/pull/305 stays draft. Not merged. Base is `vercel-demo`.
 - Previous tip `04ef74eef235824b4cdefa025b440a0e89020d91`, tree `44dd4ff26e5864c2eb5c4cf96fbf656ae54a6b3e`.
 - This shift fixes the copied sweep harness so it matches this compose file. `npx tsc --noEmit` exit 0. `npm test` exit 0, including `tests/sweep-harness.mts` (6 passed).
-- Inherited CI on the previous tip: Typecheck / Lint / Test / Build failed at `npm audit --audit-level=high` after the obscura tests (9 passed). Those audit, image, release-gate, flyctl, gitleaks, and database-security checks were not changed.
+- `npm audit --audit-level=high` is unchanged as a gate. The lockfile now clears it: Next `16.4.6`, Zod `4.6.7` (override, same as #307), `@dust-tt/client` `1.2.11` which depends on `@modelcontextprotocol/sdk` `^1.32.1`. `npx tsc --noEmit`, `npm test`, and `npm audit --audit-level=high` (`found 0 vulnerabilities`) exited 0 before the audit-fix push. Image scan, release gate, flyctl, gitleaks, and database security were not changed.
 
 ## Done this shift
 - Overlay memory caps name `kong` (96m) instead of an imageless `gateway`, and cap `obscura` at 1024m. Merged caps stay under 6 GiB.
@@ -20,6 +20,7 @@ status: in-progress
 - The sandbox path no longer runs `iptables-legacy -P FORWARD ACCEPT`. The 172.16.0.0/12 bridge rule is unchanged and still gated by `scripts/sandbox-bridge.sh`.
 - Journey send and `APP_URL` / `ODOO_URL` checks use the URL host (`e2e/integration/loopback-url.mjs`). Lookalike hosts and query-string loopback text are refused.
 - `stress/sql/daily-cap.sql` no longer claims its body is `supabase/migrations/0013_exact_body_hash.sql`. That file is not on this branch. The disposable function is not `0013_outreach_approval_race_safety.sql`.
+- Non-breaking `npm audit fix`, then Zod `^4.6.7` plus the same override #307 uses. High and critical advisories, including the bundled MCP SDK via Dust `1.2.11`, are gone.
 
 ## Blockers
 - `tests/container-runtime.mts` still imports megabranch modules that are not in this checkout (`scripts/container-runtime.mjs`, `supabaseConnectSources`, `isLoopbackHttpOrigin`, `odoo_addons/aria_recruitment/`, `services/ingest/Dockerfile`). It is not on `npm test`.
