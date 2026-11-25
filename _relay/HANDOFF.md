@@ -20,6 +20,7 @@ status: in-progress
 - `isPrivateIp` blocks IPv4-mapped, IPv4-compatible, NAT64, and 6to4 addresses when the embedded IPv4 is private, plus `fe80::/10`. `https://[::ffff:169.254.169.254]/` serializes to `::ffff:a9fe:a9fe` and is refused before fetch.
 - Demo (`envForHireRequest` with live auth false) drops every connector env var. Result is `{ ok: true, erp: "skipped", linkedIn: true }` and no fetch.
 - Gate after the QA fix: `npx tsc --noEmit` exit 0, `npm test` exit 0, including `tests/hire-connector.mts` (51), `tests/hire-pipeline.mts` (13), `tests/public-fetch-pin.mts` (13). Fakes only. No live host.
+- CI on that tip failed only `npm audit --audit-level=high` (13 high, 2 critical). The follow-up lockfile moves Next to 16.4.6, Zod to 4.6.7 (override so Dust uses it too), and the other patched transitive releases. `npm audit --audit-level=high` then reports 0 vulnerabilities.
 
 ## Done this shift
 - Added the generic API and MCP hire connectors on a branch off `vercel-demo`.
