@@ -1,52 +1,41 @@
 ---
 project: MSourcing / ARIA
-shift: 436
-agent: cursor-cloud
-updated: 2026-08-30T11:22Z
-status: post-merge-e2e-green
+shift: 3
+agent: cursor-qa
+updated: 2026-11-25 16:10 America/Sao_Paulo
+status: in-progress
 ---
 
-# Handoff — Shift 436
+# Handoff — PR #299 red QA
 
 ## Current state
-
-- **PR #51 MERGED** → merge commit `d9e8cd0862e4d8f1803478e772be57b7368ad0a3`
-- **integration** tip = **main** tip = `d9e8cd0` (FF-synced)
-- **Fly** `aria-mantu-app` build **matches** tip · `/api/ready` → `ok:true` · migration `0079_autopilot_enqueue_approval_hash_bind.sql`
-- No other open Aria READY PRs (only #14 dependabot + #3 draft on vercel-demo — left alone)
-- Whole-workflow authenticated E2E **PASS** on live Fly
+- Draft PR https://github.com/mysticalsin/aria-sourcing/pull/299 stays draft. Not merged. PR body was not edited.
+- Branch `cursor/a07-rust-router-1aac`. Previous tip `145a54e2cc350ca90650cba70192d2d683194b11`. Fix commit `1b0d163593fd7141e121853d57b69ff99061e558` is pushed. This baton commit only records that push.
+- Inherited CI reds (npm audit, image scan, release gate, flyctl, gitleaks, database security) were not changed.
 
 ## Done this shift
-
-1. Confirmed/merged PR #51 (Europe scoring-quality + US-state dampening)
-2. FF-synced `main` → integration tip `d9e8cd0`
-3. Deployed Fly slim (preserve 0079 migration identity); ready build = tip
-4. Local `npx tsx tests/scoring-quality.mts` → 23 passed (EU>US/Asia)
-5. Authenticated E2E click-through all product paths; screenshots + JSON report
+- Failing tests, then fixes, for the 90-day recontact parser, profile identity ports, C ABI row identity, caller cancellation, and a panic that kept a budget reservation.
+- `cargo +stable test --locked --workspace` in `core/` passed.
+- `go test -count=1` and `-race` in `services/router` passed.
+- `cargo +stable build --release --locked -p aria-ffi` and `go test` in `core/go/aria` passed.
+- The TypeScript app was not changed, so `npx tsc` and `npm test` were not run.
 
 ## Blockers
-
-- None for product workflow
-- Graph / Microsoft / HeyReach HOLD unchanged (not chased)
-- Meta WhatsApp templates empty on Outreach (expected under HOLD)
+- none in this diff. Draft stays draft. MERGE HOLD.
 
 ## Next steps
-
-```bash
-curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
-# Optional: owner Graph/HeyReach reconnect when ready
-```
+1. Leave #299 draft. Do not merge, do not touch main, do not force-push.
+2. Do not edit the PR body.
+3. Inherited reds stay as they are.
 
 ## Decisions made (don't relitigate)
-
-- #49 closed permanently; #51 was the Europe successor — now merged
-- Keep focused Europe/EMEA geo+scoring slice — no megapr #36 reopen
-- Slim Fly deploy preserves live 0079 migration identity (tip tree ledger ends 0054)
-- Ignore Vercel/GHA budget noise
+- A date-time with no zone is UTC. The window does not follow the machine zone.
+- `T24:00:00` is the next UTC midnight. Second 60 is not a contact.
+- A non-default port is part of the profile identity. `:443` and `:80` stay omitted.
+- Display name is not a dedupe or entity key. The C ABI writes per input index.
+- A cancelled caller context is returned. It is not a fallback classification.
+- A provider panic still re-panics as `ErrInfra` and releases the reservation.
 
 ## Watch out
-
-- Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
-- `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
-- E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
-- Report: `/opt/cursor/artifacts/e2e-workflow-report.json`
+- Do not retarget this PR onto `vercel-demo` or merge it.
+- `core/target/` is build output. Do not commit it.
