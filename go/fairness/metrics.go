@@ -19,6 +19,13 @@ type cohort struct {
 	members   []member
 }
 
+// cohortKey is the attribute and the value themselves. Joining them with a
+// delimiter would merge two consented groups when that byte appears in a label.
+type cohortKey struct {
+	attribute string
+	group     string
+}
+
 func (c cohort) counts() (n, selected, rankSum int, exposure float64) {
 	sort.Slice(c.members, func(i, j int) bool { return c.members[i].id < c.members[j].id })
 	n = len(c.members)
@@ -41,7 +48,7 @@ func exposureAt(rank int) float64 {
 }
 
 func collectCohorts(run Run) (cohorts []cohort, discarded int, warnings []string) {
-	index := map[string]int{}
+	index := map[cohortKey]int{}
 	for _, c := range run.Candidates {
 		if c.ProtectedGroup != nil && !labelUsable(c.ProtectedGroup) {
 			discarded++
@@ -53,7 +60,7 @@ func collectCohorts(run Run) (cohorts []cohort, discarded int, warnings []string
 		}
 		attr := strings.TrimSpace(c.ProtectedGroup.Attribute)
 		value := strings.TrimSpace(c.ProtectedGroup.Value)
-		key := attr + "\x00" + value
+		key := cohortKey{attribute: attr, group: value}
 		i, ok := index[key]
 		if !ok {
 			i = len(cohorts)

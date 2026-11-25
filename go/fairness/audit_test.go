@@ -1,6 +1,7 @@
 package fairness_test
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -418,6 +419,189 @@ func TestBadCutoffIsRejected(t *testing.T) {
 	}
 	_, err := fairness.Audit(run, fairness.Options{})
 	if err == nil || !strings.Contains(err.Error(), "cutoff") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestAvatarAliasesArePhotoProxies(t *testing.T) {
+	a := candidate("a", 1, "declared-a", true)
+	a.Features["avatarUrl"] = "https://example.test/synthetic.png"
+	b := candidate("b", 2, "declared-b", true)
+	b.Features["Avatar"] = true
+	run := fairness.Run{
+		RunID:           "synthetic-avatar",
+		Seed:            1,
+		SelectionCutoff: 2,
+		Candidates:      []fairness.Candidate{a, b},
+	}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 1})
+	if checkNamed(t, rep, fairness.CheckProxies).Verdict != fairness.VerdictWarn {
+		t.Fatalf("proxy verdict=%s flags=%+v", checkNamed(t, rep, fairness.CheckProxies).Verdict, rep.Proxies)
+	}
+	if len(rep.Proxies) != 1 || rep.Proxies[0].Feature != "photo" {
+		t.Fatalf("proxies=%+v", rep.Proxies)
+	}
+	if ids := rep.Proxies[0].CandidateIDs; len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
+		t.Fatalf("photo ids=%v", ids)
+	}
+}
+
+func TestNumericPostcodeAndStringGraduationYearAreFlagged(t *testing.T) {
+	a := candidate("a", 1, "declared-a", true)
+	a.Features["zip"] = float64(94107)
+	b := candidate("b", 2, "declared-b", true)
+	b.Features["graduationYear"] = " 2014 "
+	c := candidate("c", 3, "declared-a", true)
+	c.Features["postcode"] = ""
+	c.Features["graduationYear"] = "not-a-year"
+	c.Features["photo"] = false
+	d := candidate("d", 4, "declared-b", true)
+	d.Features["postcode"] = json.Number("10001")
+	run := fairness.Run{
+		RunID:           "synthetic-proxy-types",
+		Seed:            1,
+		SelectionCutoff: 4,
+		Candidates:      []fairness.Candidate{a, b, c, d},
+	}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 1})
+	got := map[string]fairness.ProxyFlag{}
+	for _, f := range rep.Proxies {
+		got[f.Feature] = f
+	}
+	postcode, ok := got["postcode"]
+	if !ok || len(postcode.CandidateIDs) != 2 || postcode.CandidateIDs[0] != "a" || postcode.CandidateIDs[1] != "d" {
+		t.Fatalf("postcode=%+v all=%+v", postcode, rep.Proxies)
+	}
+	year, ok := got["graduationYear"]
+	if !ok || len(year.CandidateIDs) != 1 || year.CandidateIDs[0] != "b" {
+		t.Fatalf("graduation=%+v", year)
+	}
+	for _, f := range rep.Proxies {
+		for _, id := range f.CandidateIDs {
+			if id == "c" {
+				t.Fatalf("blank or non-year values were flagged: %+v", rep.Proxies)
+			}
+		}
+	}
+	if checkNamed(t, rep, fairness.CheckProxies).Verdict != fairness.VerdictWarn {
+		t.Fatal("typed proxies must warn")
+	}
+}
+
+func TestNullByteDoesNotMergeDistinctGroups(t *testing.T) {
+	// Attribute g has a selected group and an unselected group. A second
+	// label concatenates to the same bytes as the unselected one. Counting
+	// those selected people in the unselected group turns 0/10 into 90/100
+	// and the four-fifths result into a pass.
+	var cs []fairness.Candidate
+	for i := 0; i < 10; i++ {
+		high := candidate(pid("h", i), i+1, "declared-a", true)
+		high.ProtectedGroup.Attribute = "g"
+		high.ProtectedGroup.Value = "high"
+		low := candidate(pid("l", i), 101+i, "declared-b", true)
+		low.ProtectedGroup.Attribute = "g"
+		low.ProtectedGroup.Value = "a\x00b"
+		cs = append(cs, high, low)
+	}
+	for i := 0; i < 90; i++ {
+		extra := candidate(pid("e", i), 11+i, "declared-a", true)
+		extra.ProtectedGroup.Attribute = "g\x00a"
+		extra.ProtectedGroup.Value = "b"
+		cs = append(cs, extra)
+	}
+	run := fairness.Run{RunID: "synthetic-nul-group", Seed: 1, SelectionCutoff: 100, Candidates: cs}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 10})
+	low := fourFifths(t, rep, "a\x00b")
+	if low.N != 10 || low.Selected != 0 || !low.AdverseImpact || low.Verdict != fairness.VerdictFail {
+		t.Fatalf("low=%+v", low)
+	}
+	if rep.Verdict != fairness.VerdictFail {
+		t.Fatalf("verdict=%s", rep.Verdict)
+	}
+}
+
+func TestBothMarkersStillRunACounterfactual(t *testing.T) {
+	person := candidate("only", 1, "declared-a", true)
+	person.Text = "[marker:she] [marker:he] skill:synthetic"
+	scorer := fnScorer{fn: func(v fairness.ScoreView) (float64, error) {
+		if strings.Contains(v.Text, "[marker:she]") {
+			return 0, nil
+		}
+		return 1, nil
+	}}
+	run := fairness.Run{
+		RunID:           "synthetic-both-markers",
+		Seed:            1,
+		SelectionCutoff: 1,
+		Candidates:      []fairness.Candidate{person},
+	}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 1, Epsilon: 1e-6, Scorer: scorer})
+	if rep.Counterfactual.Verdict != fairness.VerdictFail || len(rep.Counterfactual.Cases) == 0 {
+		t.Fatalf("both tokens skipped the swap: %+v", rep.Counterfactual)
+	}
+}
+
+func TestOneSidedMarkerWinsOverAnAmbiguousPair(t *testing.T) {
+	person := candidate("only", 1, "declared-a", true)
+	person.Text = "[marker:she] [marker:he] [marker:her] skill:synthetic"
+	scorer := fnScorer{fn: func(v fairness.ScoreView) (float64, error) {
+		if strings.Contains(v.Text, "[marker:her]") {
+			return 0, nil
+		}
+		return 1, nil
+	}}
+	run := fairness.Run{
+		RunID:           "synthetic-one-sided-marker",
+		Seed:            1,
+		SelectionCutoff: 1,
+		Candidates:      []fairness.Candidate{person},
+	}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 1, Epsilon: 1e-6, Scorer: scorer})
+	if rep.Counterfactual.Verdict != fairness.VerdictFail {
+		t.Fatalf("one-sided her/his swap was not the counterfactual: %+v", rep.Counterfactual)
+	}
+	sawHer := false
+	for _, item := range rep.Counterfactual.Cases {
+		if item.Kind == "gender-marker" && item.From == "[marker:her]" && item.To == "[marker:his]" && !item.Within {
+			sawHer = true
+		}
+	}
+	if !sawHer {
+		t.Fatalf("cases=%+v", rep.Counterfactual.Cases)
+	}
+}
+
+func TestMarkdownKeepsGroupDelimitersInOneCell(t *testing.T) {
+	run := ratioRun(20, 20, 20, 15)
+	poison := "declared-b\n| spoof | 1 | 1 | 1.000000 | false | Pass | x"
+	for i := range run.Candidates {
+		if run.Candidates[i].ProtectedGroup != nil && run.Candidates[i].ProtectedGroup.Value == "declared-b" {
+			run.Candidates[i].ProtectedGroup.Value = poison
+		}
+	}
+	rep := mustAudit(t, run, fairness.Options{MinGroupSize: 10})
+	md := rep.Markdown()
+	if strings.Contains(md, "\n| spoof") {
+		t.Fatal("group name broke the markdown table")
+	}
+	row := fourFifths(t, rep, poison)
+	if !row.AdverseImpact || row.Verdict != fairness.VerdictFail {
+		t.Fatalf("row=%+v", row)
+	}
+}
+
+func TestTrimmedIDsAreDuplicates(t *testing.T) {
+	run := fairness.Run{
+		RunID:           "synthetic-trim-id",
+		Seed:            1,
+		SelectionCutoff: 2,
+		Candidates: []fairness.Candidate{
+			candidate("a", 1, "declared-a", true),
+			candidate(" a", 2, "declared-b", true),
+		},
+	}
+	_, err := fairness.Audit(run, fairness.Options{})
+	if err == nil || !strings.Contains(err.Error(), "duplicate id") {
 		t.Fatalf("err=%v", err)
 	}
 }

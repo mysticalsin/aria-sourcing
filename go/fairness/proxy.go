@@ -2,6 +2,7 @@ package fairness
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -45,13 +46,9 @@ func flagProxies(run Run) (flags []ProxyFlag, verdict Verdict, detail string) {
 }
 
 func proxyFeature(key string) (string, bool) {
-	switch canonKey(key) {
-	case "postcode", "postalcode", "zip", "zipcode":
-		return "postcode", true
-	case "graduationyear", "gradyear":
-		return "graduationYear", true
-	case "photopresent", "photo", "hasphoto":
-		return "photo", true
+	switch class := featureClass(key); class {
+	case "postcode", "graduationYear", "photo":
+		return class, true
 	default:
 		return "", false
 	}
@@ -60,11 +57,21 @@ func proxyFeature(key string) (string, bool) {
 func proxyValuePresent(feature string, value any) bool {
 	switch feature {
 	case "graduationYear":
+		if _, ok := asNumber(value); ok {
+			return true
+		}
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		_, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		return err == nil
+	case "postcode":
+		if text, ok := value.(string); ok {
+			return strings.TrimSpace(text) != ""
+		}
 		_, ok := asNumber(value)
 		return ok
-	case "postcode":
-		text, ok := value.(string)
-		return ok && strings.TrimSpace(text) != ""
 	case "photo":
 		switch v := value.(type) {
 		case bool:

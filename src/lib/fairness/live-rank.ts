@@ -56,6 +56,9 @@ const stripped = new Set([
   "hasphoto",
   "avatar",
   "avatarurl",
+  "protectedgroup",
+  "protected",
+  "grouplabel",
 ]);
 
 function canon(key: string): string {
@@ -84,16 +87,20 @@ export function auditLiveScore(
   }
   if ("yearsExperience" in features && features.yearsExperience != null) {
     const years = Number(features.yearsExperience);
-    const altYears = years >= 10 ? 3 : 12;
+    const altYears = Number.isFinite(years) && years >= 10 ? 3 : 12;
     const alt = { ...scrubbed, yearsExperience: altYears };
     proxies.push({
       feature: "yearsExperience",
-      delta: Math.abs(score(alt) - score({ ...scrubbed, yearsExperience: years })),
+      delta: Math.abs(score(alt) - baseline),
     });
   }
   let verdict: FairnessVerdict = "Pass";
   let detail = "every score call used scrubbed features";
-  if (proxies.some((item) => item.delta > epsilon)) {
+  const nonFinite = !Number.isFinite(baseline) || proxies.some((item) => !Number.isFinite(item.delta));
+  if (nonFinite) {
+    verdict = "Warn";
+    detail = "a score was not finite; a human reviews the live ranker";
+  } else if (proxies.some((item) => item.delta > epsilon)) {
     verdict = "Warn";
     detail = "location or years of experience changed the score; a human reviews that proxy";
   }
@@ -107,7 +114,8 @@ export function auditLiveScore(
   };
 }
 
-const protectedLine = /\b(gender|ethnicity|race|religion|disability|postcode|photo)\b/i;
+const protectedLine =
+  /\b(?:gender(?:\s*-?\s*identity|\s*id)?|sex|racial(?:\s+group)?|race|ethnic(?:ity|\s+group)?|religio(?:n|us(?:\s+belief)?)|faith|disabilit(?:y|ies)|disabled|handicap|post(?:al)?\s*-?\s*code|zip(?:\s*-?\s*code)?|graduation(?:\s+year)?|grad\s*-?\s*year|date\s+of\s+birth|birth\s*year|year\s+of\s+birth|dob|age(?:\s*years)?|photos?|photograph|avatar(?:\s*url)?|protected(?:\s+group)?|group\s+label)\b/i;
 
 export function auditLivePrompt(prompt: string): PromptAudit {
   const kept = prompt

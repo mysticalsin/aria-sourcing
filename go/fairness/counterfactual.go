@@ -120,17 +120,28 @@ func textSwaps(text string) []textSwap {
 }
 
 func swapToken(text string, pairs [][2]string) (swapped, from, to string, ok bool) {
+	var fallback, fallbackFrom, fallbackTo string
+	haveFallback := false
 	for _, pair := range pairs {
 		hasA := strings.Contains(text, pair[0])
 		hasB := strings.Contains(text, pair[1])
 		switch {
 		case hasA && hasB:
-			continue
+			// Both forms are present. Keep looking for a one-sided pair, and
+			// otherwise drop this side so the text is still perturbed.
+			if !haveFallback {
+				fallback = strings.ReplaceAll(text, pair[0], pair[1])
+				fallbackFrom, fallbackTo = pair[0], pair[1]
+				haveFallback = true
+			}
 		case hasA:
 			return strings.ReplaceAll(text, pair[0], pair[1]), pair[0], pair[1], true
 		case hasB:
 			return strings.ReplaceAll(text, pair[1], pair[0]), pair[1], pair[0], true
 		}
+	}
+	if haveFallback {
+		return fallback, fallbackFrom, fallbackTo, true
 	}
 	return "", "", "", false
 }

@@ -20,10 +20,10 @@ func validate(run Run) error {
 		if id == "" {
 			return errors.New("fairness: empty id")
 		}
-		if _, ok := seenID[c.ID]; ok {
+		if _, ok := seenID[id]; ok {
 			return fmt.Errorf("fairness: duplicate id %s", c.ID)
 		}
-		seenID[c.ID] = struct{}{}
+		seenID[id] = struct{}{}
 		if c.Rank < 1 {
 			return errors.New("fairness: rank must be positive")
 		}
