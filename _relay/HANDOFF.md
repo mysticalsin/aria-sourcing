@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 3
 agent: cursor
-updated: 2026-11-23 16:35 America/Sao_Paulo
+updated: 2026-11-25 17:00 America/Sao_Paulo
 status: in-progress
 ---
 
@@ -14,11 +14,13 @@ status: in-progress
 - HeyReach is a server-side token channel. It is off by default. The public account view is `/api/contacts/account` and never includes the token. A missing token shows "Add your account" linking to `/settings#linkedin-account`.
 - Sends go through the fake HeyReach MCP `send_message` tool only when the channel is on and an unused exact-text approval matches. Channel off or a missing token refuses the send.
 - People search is `aria/people-search` with a fake Apify transport. Results are synthetic and capped at 8. LinkedIn scraper actor ids are refused. No live HeyReach, Apify, or LinkedIn call exists in this slice.
-- Gate on this shift: `npx tsc --noEmit && npm test` green, including `tests/contact-chat.mts`.
+- Gate on this shift: `npx tsc --noEmit && npm test` green, including `tests/contact-chat.mts`. `npm audit --audit-level=high` is clean on this tip.
+- Lockfile: `next` 16.4.6, `eslint-config-next` 16.4.6, `zod` ^4.6.7 (override), `@dust-tt/client` 1.2.11. `@modelcontextprotocol/sdk` is overridden to 1.32.2; the vulnerable 1.26.0 bundled copy is gone.
 
 ## Done this shift
 - Added `src/lib/contact-chat/` (account view, server memory, fake HeyReach MCP, fake Apify people search, send).
 - Added `/contacts`, `/api/contacts/*`, the settings LinkedIn account step, and the Contacts nav item.
+- Cleared the high npm audit on this branch with Next 16.4.6, Zod ^4.6.7, and the patched MCP SDK range. Audit gate stays `--audit-level=high`.
 
 ## Blockers
 - none
@@ -38,3 +40,4 @@ status: in-progress
 ## Watch out
 - `src/lib/contact-chat/memory.ts` is server-only. Client components must import `account-view.ts` only.
 - The token lives on `globalThis` so duplicated module instances share one record. Reset it with `resetContactChatMemory()` in tests.
+- `@dust-tt/client@1.2.11` declares `engines.node >= 24.16.0`. CI installs with Node 20, so npm prints an engine warning. The client is still inside the existing `^1.2.6` range.
