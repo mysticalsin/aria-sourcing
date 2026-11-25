@@ -2,7 +2,7 @@
 project: MSourcing / ARIA
 shift: 3
 agent: cursor
-updated: 2026-11-25 17:00 America/Sao_Paulo
+updated: 2026-11-25 17:05 America/Sao_Paulo
 status: in-progress
 ---
 
@@ -21,6 +21,7 @@ status: in-progress
 - Added `src/lib/contact-chat/` (account view, server memory, fake HeyReach MCP, fake Apify people search, send).
 - Added `/contacts`, `/api/contacts/*`, the settings LinkedIn account step, and the Contacts nav item.
 - Cleared the high npm audit on this branch with Next 16.4.6, Zod ^4.6.7, and the patched MCP SDK range. Audit gate stays `--audit-level=high`.
+- CI checkout is `fetch-depth: 0` so gitleaks can resolve the parent of the oldest PR commit.
 
 ## Blockers
 - none
