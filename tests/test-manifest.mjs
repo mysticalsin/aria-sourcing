@@ -230,6 +230,7 @@ export const testManifest = {
     {"id":"sourcing-loop-ignition-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/sourcing-loop-ignition-route.mts"]},
     {"id":"shortlist-approval-route","executable":"node","argv":["--experimental-test-module-mocks","--import","tsx","--test","tests/shortlist-approval-route.mts"]},
     {"id":"sourcing-loop-worker","executable":"tsx","argv":["tests/sourcing-loop-worker.mts"]},
+    {"id":"interviewer-flag","executable":"tsx","argv":["tests/interviewer-flag.mts"]},
   ],
   groups: {
     "pretest": [
@@ -437,6 +438,7 @@ export const testManifest = {
       "sourcing-loop-ignition-route",
       "shortlist-approval-route",
       "sourcing-loop-worker",
+      "interviewer-flag",
       "test-manifest-contract",
     ],
     "posttest": [
