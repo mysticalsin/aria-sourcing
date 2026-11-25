@@ -325,9 +325,14 @@ func (r *Router) Route(ctx context.Context, req Request) (Result, error) {
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	comp, call, err := r.call(ctx, r.small, TierSmall, req, promptLimit(req, false))
+	comp, call, err := r.callHeld(h, func() (Completion, ProviderCall, error) {
+		return r.call(ctx, r.small, TierSmall, req, promptLimit(req, false))
+	})
 	if err != nil {
 		r.ledger.cancel(h)
+		if cerr := ctx.Err(); cerr != nil {
+			return Result{}, cerr
+		}
 		return r.providerFallback(m, req, acc, start, err)
 	}
 	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
@@ -369,9 +374,14 @@ func (r *Router) runBig(ctx context.Context, m *Machine, req Request, key string
 		r.ledger.cancel(h)
 		return Result{}, err
 	}
-	comp, call, err := r.call(ctx, r.big, TierBig, req, 0)
+	comp, call, err := r.callHeld(h, func() (Completion, ProviderCall, error) {
+		return r.call(ctx, r.big, TierBig, req, 0)
+	})
 	if err != nil {
 		r.ledger.cancel(h)
+		if cerr := ctx.Err(); cerr != nil {
+			return Result{}, cerr
+		}
 		return r.providerFallback(m, req, acc, start, err)
 	}
 	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
@@ -398,9 +408,14 @@ func (r *Router) retrySmallTrimmed(ctx context.Context, m *Machine, req Request,
 	if err != nil {
 		return Result{}, err
 	}
-	comp, call, err := r.call(ctx, r.small, TierSmall, req, promptLimit(req, true))
+	comp, call, err := r.callHeld(h, func() (Completion, ProviderCall, error) {
+		return r.call(ctx, r.small, TierSmall, req, promptLimit(req, true))
+	})
 	if err != nil {
 		r.ledger.cancel(h)
+		if cerr := ctx.Err(); cerr != nil {
+			return Result{}, cerr
+		}
 		return r.providerFallback(m, req, acc, start, err)
 	}
 	if err := r.ledger.commit(h, call.InputTokens+call.OutputTokens, call.USD); err != nil {
@@ -532,6 +547,20 @@ func (r *Router) finish(res Result) {
 	))
 }
 
+// callHeld releases the reservation when the provider panics. The panic is
+// still ErrInfra, with the provider value removed, and the ceiling is not
+// left holding a reservation that will never commit.
+func (r *Router) callHeld(h hold, fn func() (Completion, ProviderCall, error)) (comp Completion, call ProviderCall, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.ledger.cancel(h)
+			panic(rec)
+		}
+	}()
+	comp, call, err = fn()
+	return comp, call, err
+}
+
 func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request, inputLimit int) (Completion, ProviderCall, error) {
 	if p == nil {
 		return Completion{}, ProviderCall{}, errNilProvider
@@ -550,8 +579,14 @@ func (r *Router) call(ctx context.Context, p Provider, tier Tier, req Request, i
 		MaxTokens: r.maxTokens(req, tier),
 	}
 	comp, lat, err := r.attempt(ctx, p, creq)
+	if err != nil && ctx.Err() != nil {
+		return Completion{}, ProviderCall{}, ctx.Err()
+	}
 	if isTimeout(err) {
 		comp, lat, err = r.attempt(ctx, p, creq)
+		if err != nil && ctx.Err() != nil {
+			return Completion{}, ProviderCall{}, ctx.Err()
+		}
 		if isTimeout(err) {
 			r.infra.Add(1)
 			return Completion{}, ProviderCall{}, ErrInfra

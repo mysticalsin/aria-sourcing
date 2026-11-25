@@ -2,8 +2,14 @@
 //!
 //! Profile identity follows `candidateProfileIdentity` in `src/lib/rules.ts`:
 //! http(s) URLs collapse host + path, dropping `www.` and a trailing slash,
-//! and dropping the query string on linkedin.com and github.com. Anything else
-//! is the trimmed lowercased original string.
+//! and dropping the query string on linkedin.com and github.com. The host
+//! keeps a non-default port, so `:444` does not collapse into the default
+//! origin. Anything else is the trimmed lowercased original string.
+//!
+//! The 90-day window uses the same instants as `Date.parse`: `Z`, numeric
+//! offsets, a UTC date-only form, and `T24:00:00` as the next midnight.
+//! A date-time with no zone is UTC, so the window does not follow the
+//! machine zone. Invalid values, including second 60, do not count as contact.
 //!
 //! Entity resolution is the transitive closure of those strong keys (email,
 //! LinkedIn, GitHub, source URL). A shared display name is not a key. The
@@ -43,6 +49,8 @@ pub struct Skipped {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DedupeOutput {
     pub accepted: Vec<Person>,
+    /// Indexes into `incoming`. Callers must not match rows by display name.
+    pub accepted_indexes: Vec<usize>,
     pub skipped: Vec<Skipped>,
 }
 
@@ -59,10 +67,18 @@ pub fn profile_identity(value: &str) -> String {
     }
     match Url::parse(trimmed) {
         Ok(url) if url.scheme() == "http" || url.scheme() == "https" => {
-            let host = url.host_str().unwrap_or("").to_lowercase();
-            let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+            let mut hostname = url.host_str().unwrap_or("").to_lowercase();
+            if let Some(stripped) = hostname.strip_prefix("www.") {
+                hostname = stripped.to_string();
+            }
+            // `Url::port` is `None` for the scheme default, so :443 matches
+            // the bare host. Any other port is a different origin.
+            let host = match url.port() {
+                Some(port) => format!("{hostname}:{port}"),
+                None => hostname.clone(),
+            };
             let path = url.path().trim_end_matches('/').to_lowercase();
-            if host == "linkedin.com" || host == "github.com" {
+            if hostname == "linkedin.com" || hostname == "github.com" {
                 format!("{host}{path}")
             } else {
                 match url.query() {
@@ -75,36 +91,119 @@ pub fn profile_identity(value: &str) -> String {
     }
 }
 
+/// Instants accepted by `Date.parse` for the forms Aria stores.
+/// Extra fractional digits are truncated to milliseconds, not rounded.
+/// `T24:00:00.000Z` is the next UTC midnight. Second 60 is rejected.
 fn parse_js_instant_ms(value: &str) -> Option<i64> {
     let bytes = value.as_bytes();
-    if bytes.len() != 24
-        || bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || bytes[10] != b'T'
+    if bytes.len() < 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    let year = parse_digits(&bytes[0..4])? as i32;
+    let month = parse_digits(&bytes[5..7])?;
+    let day = parse_digits(&bytes[8..10])?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    if bytes.len() == 10 {
+        return Some(civil_ms(year, month, day, 0, 0, 0, 0));
+    }
+    if bytes.len() < 19
+        || (bytes[10] != b'T' && bytes[10] != b't')
         || bytes[13] != b':'
         || bytes[16] != b':'
-        || bytes[19] != b'.'
-        || bytes[23] != b'Z'
     {
         return None;
     }
-    let year: i32 = std::str::from_utf8(&bytes[0..4]).ok()?.parse().ok()?;
-    let month: u32 = std::str::from_utf8(&bytes[5..7]).ok()?.parse().ok()?;
-    let day: u32 = std::str::from_utf8(&bytes[8..10]).ok()?.parse().ok()?;
-    let hour: u32 = std::str::from_utf8(&bytes[11..13]).ok()?.parse().ok()?;
-    let minute: u32 = std::str::from_utf8(&bytes[14..16]).ok()?.parse().ok()?;
-    let second: u32 = std::str::from_utf8(&bytes[17..19]).ok()?.parse().ok()?;
-    let millis: u32 = std::str::from_utf8(&bytes[20..23]).ok()?.parse().ok()?;
-    if !(1..=12).contains(&month) || hour > 23 || minute > 59 || second > 60 || millis > 999 {
+    let hour = parse_digits(&bytes[11..13])?;
+    let minute = parse_digits(&bytes[14..16])?;
+    let second = parse_digits(&bytes[17..19])?;
+    if minute > 59 || second > 59 || hour > 24 {
         return None;
     }
-    Some(
-        days_from_civil(year, month, day) * 86_400_000
-            + hour as i64 * 3_600_000
-            + minute as i64 * 60_000
-            + second as i64 * 1000
-            + millis as i64,
-    )
+    let mut index = 19;
+    let mut millis = 0u32;
+    if index < bytes.len() && bytes[index] == b'.' {
+        index += 1;
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        let digits = &bytes[start..index];
+        if digits.is_empty() {
+            return None;
+        }
+        millis = fold_millis(digits);
+    }
+    if hour == 24 && (minute != 0 || second != 0 || millis != 0) {
+        return None;
+    }
+    let offset = parse_zone(bytes, index)?;
+    Some(civil_ms(year, month, day, hour, minute, second, millis) - offset)
+}
+
+fn parse_digits(bytes: &[u8]) -> Option<u32> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut value = 0u32;
+    for &byte in bytes {
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        value = value * 10 + u32::from(byte - b'0');
+    }
+    Some(value)
+}
+
+fn fold_millis(digits: &[u8]) -> u32 {
+    let mut value = 0u32;
+    let take = digits.len().min(3);
+    for &byte in &digits[..take] {
+        value = value * 10 + u32::from(byte - b'0');
+    }
+    value * 10u32.pow((3 - take) as u32)
+}
+
+fn parse_zone(bytes: &[u8], index: usize) -> Option<i64> {
+    if index == bytes.len() {
+        return Some(0);
+    }
+    if (bytes[index] == b'Z' || bytes[index] == b'z') && index + 1 == bytes.len() {
+        return Some(0);
+    }
+    if bytes[index] != b'+' && bytes[index] != b'-' {
+        return None;
+    }
+    let sign: i64 = if bytes[index] == b'+' { 1 } else { -1 };
+    let rest = &bytes[index + 1..];
+    let (hour, minute) = if rest.len() == 5 && rest[2] == b':' {
+        (parse_digits(&rest[0..2])?, parse_digits(&rest[3..5])?)
+    } else if rest.len() == 4 {
+        (parse_digits(&rest[0..2])?, parse_digits(&rest[2..4])?)
+    } else {
+        return None;
+    };
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+    Some(sign * (i64::from(hour) * 3_600_000 + i64::from(minute) * 60_000))
+}
+
+fn civil_ms(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    millis: u32,
+) -> i64 {
+    days_from_civil(year, month, day) * 86_400_000
+        + i64::from(hour) * 3_600_000
+        + i64::from(minute) * 60_000
+        + i64::from(second) * 1000
+        + i64::from(millis)
 }
 
 /// Howard Hinnant's `days_from_civil`, days since Unix epoch.
@@ -129,6 +228,7 @@ pub fn dedupe_candidates(
     opts: DedupeOptions<'_>,
 ) -> DedupeOutput {
     let mut accepted = Vec::new();
+    let mut accepted_indexes = Vec::new();
     let mut skipped = Vec::new();
     let mut seen_email: HashSet<String> = existing
         .iter()
@@ -156,7 +256,7 @@ pub fn dedupe_candidates(
         .collect();
     let hiring = opts.current_company.map(|company| company.to_lowercase());
 
-    for person in incoming {
+    for (index, person) in incoming.iter().enumerate() {
         let email = person.email.trim().to_lowercase();
         let linkedin = profile_identity(&person.linkedin_url);
         let github = profile_identity(&person.github_url);
@@ -218,6 +318,7 @@ pub fn dedupe_candidates(
         }
 
         accepted.push(person.clone());
+        accepted_indexes.push(index);
         if !email.is_empty() {
             seen_email.insert(email);
         }
@@ -232,13 +333,20 @@ pub fn dedupe_candidates(
         }
     }
 
-    DedupeOutput { accepted, skipped }
+    DedupeOutput {
+        accepted,
+        accepted_indexes,
+        skipped,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntityCluster {
     pub entity_id: String,
+    /// Display names, in input order. Names are not unique.
     pub member_ids: Vec<String>,
+    /// Indexes into the input. This is the row identity.
+    pub member_indexes: Vec<usize>,
 }
 
 /// Transitive strong-key resolution. Empty keys never join two records.
@@ -303,9 +411,10 @@ pub fn resolve_entities(records: &[Person]) -> Vec<EntityCluster> {
             EntityCluster {
                 entity_id: format!("e-{}", members[0]),
                 member_ids: members
-                    .into_iter()
-                    .map(|index| records[index].name.clone())
+                    .iter()
+                    .map(|index| records[*index].name.clone())
                     .collect(),
+                member_indexes: members,
             }
         })
         .collect();

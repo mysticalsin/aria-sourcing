@@ -446,13 +446,11 @@ pub unsafe extern "C" fn aria_dedupe_batch(
                 now_ms,
             },
         );
-        let accepted: std::collections::HashSet<&str> = output
-            .accepted
-            .iter()
-            .map(|person| person.name.as_str())
-            .collect();
-        for (index, person) in incoming.iter().enumerate() {
-            *out_accept.add(index) = u32::from(accepted.contains(person.name.as_str()));
+        for index in 0..incoming.len() {
+            *out_accept.add(index) = 0;
+        }
+        for index in output.accepted_indexes {
+            *out_accept.add(index) = 1;
         }
         ARIA_OK
     })
@@ -482,10 +480,8 @@ pub unsafe extern "C" fn aria_resolve_entities(
                 .trim_start_matches("e-")
                 .parse::<u32>()
                 .unwrap_or(0);
-            for member in &cluster.member_ids {
-                if let Some(index) = people.iter().position(|person| person.name == *member) {
-                    *out_entity.add(index) = root;
-                }
+            for index in cluster.member_indexes {
+                *out_entity.add(index) = root;
             }
         }
         ARIA_OK

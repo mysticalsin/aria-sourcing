@@ -15,7 +15,7 @@ received -> budget_exceeded                 (hard stop before a model call)
 received -> small_model -> escalated -> budget_exceeded
 ```
 
-`done` and `budget_exceeded` are terminal. A shortlisted draft records `small_model -> escalated` and does not call the small provider.
+`done` and `budget_exceeded` are terminal. A shortlisted draft records `small_model -> escalated` and does not call the small provider. A cancelled caller context is returned as that error. It is not stored as a fallback classification, and the reservation for that call is released. A provider panic is still `ErrInfra` and also releases the reservation.
 
 ## Budgets
 
