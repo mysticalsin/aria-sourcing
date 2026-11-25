@@ -2,7 +2,16 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
 import { fetchPublicUrl } from "../src/lib/api/public-fetch";
-import { envForHireRequest, hireEnvForRoute, runSourcingThroughHired } from "../src/lib/mcp-client";
+import { clearHireIdempotency, envForHireRequest, hireEnvForRoute, runSourcingThroughHired as runSourcingThroughHiredRaw } from "../src/lib/mcp-client";
+
+async function runSourcingThroughHired(
+  input: Parameters<typeof runSourcingThroughHiredRaw>[0],
+  env?: Parameters<typeof runSourcingThroughHiredRaw>[1],
+  fetchImpl?: Parameters<typeof runSourcingThroughHiredRaw>[2],
+) {
+  clearHireIdempotency();
+  return runSourcingThroughHiredRaw(input, env, fetchImpl);
+}
 import { runSyntheticHireDemo } from "../src/lib/synthetic-hire-demo";
 
 let pass = 0;

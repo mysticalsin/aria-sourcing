@@ -189,20 +189,61 @@ export interface SourcingThroughHiredResult {
 
 type HireFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+function filled(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function odooHireConfigured(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.ODOO_URL && env.ODOO_DB && env.ODOO_USERNAME && env.ODOO_API_KEY);
+  return filled(env.ODOO_URL) && filled(env.ODOO_DB) && filled(env.ODOO_USERNAME) && filled(env.ODOO_API_KEY);
 }
 
 function smartHireConfigured(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.SMART_URL && env.SMART_TOKEN);
+  return filled(env.SMART_URL) && filled(env.SMART_TOKEN);
 }
 
 function apiHireConfigured(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.HIRE_API_URL && env.HIRE_API_TOKEN);
+  return filled(env.HIRE_API_URL) && filled(env.HIRE_API_TOKEN);
 }
 
 function mcpHireConfigured(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.HIRE_MCP_URL && env.HIRE_MCP_TOKEN);
+  return filled(env.HIRE_MCP_URL) && filled(env.HIRE_MCP_TOKEN);
+}
+
+type HireCallResult = { ok: true; id: string } | { ok: false; error: string };
+
+/** Successful steps only. A failed step stays retryable. Shared by overlapping requests in this process. */
+const hireMemory = new Map<string, Promise<HireCallResult>>();
+const HIRE_MEMORY_LIMIT = 500;
+
+export function clearHireIdempotency(): void {
+  hireMemory.clear();
+}
+
+function memoHire(connector: HireConnector, scope: string): HireConnector {
+  return {
+    kind: connector.kind,
+    call(input) {
+      const key = `${scope}|${input.idempotencyKey}|${input.model}|${input.method}`;
+      const existing = hireMemory.get(key);
+      if (existing) return existing;
+      const pending = connector.call(input).then(
+        (result) => {
+          if (!result.ok) hireMemory.delete(key);
+          return result;
+        },
+        (err: unknown) => {
+          hireMemory.delete(key);
+          throw err;
+        },
+      );
+      hireMemory.set(key, pending);
+      if (hireMemory.size > HIRE_MEMORY_LIMIT) {
+        const oldest = hireMemory.keys().next().value;
+        if (oldest && oldest !== key) hireMemory.delete(oldest);
+      }
+      return pending;
+    },
+  };
 }
 
 const ERP_ENV_KEYS = [
@@ -300,7 +341,9 @@ export async function runSourcingThroughHired(
   const selected = selectHireConnector(env);
   if (selected === "skipped") return { ok: true, erp: "skipped", linkedIn: true, steps: [] };
   if (typeof selected === "object") return { ok: false, erp: "skipped", linkedIn: true, steps: [], error: selected.error };
-  const connector = connectorFor(selected, env, fetchImpl);
+  const endpoint =
+    selected === "odoo" ? env.ODOO_URL : selected === "smart" ? env.SMART_URL : selected === "api" ? env.HIRE_API_URL : env.HIRE_MCP_URL;
+  const connector = memoHire(connectorFor(selected, env, fetchImpl), `${selected}|${(endpoint ?? "").trim().replace(/\/+$/, "")}`);
   if (selected === "odoo") return runOdooHire(connector, input, env);
   return runErpHire(selected, connector, input);
 }

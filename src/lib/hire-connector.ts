@@ -51,8 +51,32 @@ function scrubbed(message: string, secrets: string[]): string {
   return redactSecrets(out).slice(0, 200);
 }
 
+function rpcBody(value: unknown): { result?: unknown; error?: unknown } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as { result?: unknown; error?: unknown };
+}
+
+/** JSON-RPC errors are objects. A missing or non-string message must not throw. */
+function rpcErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (!error || typeof error !== "object" || Array.isArray(error)) return fallback;
+  const record = error as { message?: unknown; data?: unknown };
+  const data = record.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const nested = (data as { message?: unknown }).message;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+  }
+  if (typeof record.message === "string" && record.message.trim()) return record.message.trim();
+  return fallback;
+}
+
 function odooRecordId(result: unknown, input: HireCall): string | null {
-  if (result === true) return String(input.values.id ?? input.idempotencyKey);
+  // Odoo write returns true. create returns a new id. true is not a job id.
+  if (result === true) {
+    if (input.method !== "write") return null;
+    const id = odooRecordRef(input.values.id);
+    return id == null ? null : String(id);
+  }
   if (typeof result === "number" && Number.isSafeInteger(result) && result > 0) return String(result);
   if (Array.isArray(result) && typeof result[0] === "number" && result[0] > 0) return String(result[0]);
   return null;
@@ -179,10 +203,10 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
   return {
     kind: "odoo",
     async call(input) {
-      const url = env.ODOO_URL;
-      const db = env.ODOO_DB;
-      const user = env.ODOO_USERNAME;
-      const key = env.ODOO_API_KEY;
+      const url = env.ODOO_URL?.trim() ?? "";
+      const db = env.ODOO_DB?.trim() ?? "";
+      const user = env.ODOO_USERNAME?.trim() ?? "";
+      const key = env.ODOO_API_KEY?.trim() ?? "";
       if (!url || !db || !user || !key) return missing("odoo", "ODOO_URL, ODOO_DB, ODOO_USERNAME, or ODOO_API_KEY");
       const base = erpBase(url);
       if (!base) return { ok: false, error: "odoo ODOO_URL must be a public https URL without credentials" };
@@ -209,10 +233,11 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (!authRes.response.ok) return { ok: false, error: `odoo auth http ${authRes.response.status}` };
       const authJson = await readJson(authRes.response, secrets);
       if (!authJson.ok) return authJson;
-      const authBody = authJson.value as { result?: unknown; error?: { message?: string } };
+      const authBody = rpcBody(authJson.value);
+      if (!authBody) return { ok: false, error: "odoo auth failed" };
       const uid = authBody.result;
       if (typeof uid !== "number" || !Number.isSafeInteger(uid) || uid <= 0) {
-        return { ok: false, error: scrubbed(authBody.error?.message ?? "odoo auth failed", secrets) };
+        return { ok: false, error: scrubbed(rpcErrorMessage(authBody.error, "odoo auth failed"), secrets) };
       }
       const positional = odooPositional(input);
       if (!positional.ok) return positional;
@@ -239,8 +264,9 @@ export function odooHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike =
       if (!writeRes.response.ok) return { ok: false, error: `odoo write http ${writeRes.response.status}` };
       const writeJson = await readJson(writeRes.response, secrets);
       if (!writeJson.ok) return writeJson;
-      const writeBody = writeJson.value as { result?: unknown; error?: { message?: string } };
-      if (writeBody.error) return { ok: false, error: scrubbed(writeBody.error.message ?? "odoo execute_kw failed", secrets) };
+      const writeBody = rpcBody(writeJson.value);
+      if (!writeBody) return { ok: false, error: "odoo execute_kw failed" };
+      if (writeBody.error != null) return { ok: false, error: scrubbed(rpcErrorMessage(writeBody.error, "odoo execute_kw failed"), secrets) };
       const id = odooRecordId(writeBody.result, input);
       if (!id) return { ok: false, error: "odoo execute_kw returned no record" };
       return { ok: true, id };
@@ -252,8 +278,8 @@ export function smartHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLike 
   return {
     kind: "smart",
     async call(input) {
-      const raw = env.SMART_URL;
-      const token = env.SMART_TOKEN;
+      const raw = env.SMART_URL?.trim() ?? "";
+      const token = env.SMART_TOKEN?.trim() ?? "";
       if (!raw || !token) return missing("smart", "SMART_URL or SMART_TOKEN");
       const base = erpBase(raw);
       if (!base) return { ok: false, error: "smart SMART_URL must be a public https URL without credentials" };
@@ -289,8 +315,8 @@ export function genericApiHireConnector(env: NodeJS.ProcessEnv, fetchImpl: Fetch
     async call(input) {
       const refused = assertHireModel("api", input.model);
       if (refused) return refused;
-      const raw = env.HIRE_API_URL;
-      const token = env.HIRE_API_TOKEN;
+      const raw = env.HIRE_API_URL?.trim() ?? "";
+      const token = env.HIRE_API_TOKEN?.trim() ?? "";
       if (!raw || !token) return missing("api", "HIRE_API_URL or HIRE_API_TOKEN");
       const base = erpBase(raw);
       if (!base) return { ok: false, error: "api HIRE_API_URL must be a public https URL without credentials" };
@@ -328,9 +354,9 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
     async call(input) {
       const refused = assertHireModel("mcp", input.model);
       if (refused) return refused;
-      const raw = env.HIRE_MCP_URL;
-      const token = env.HIRE_MCP_TOKEN;
-      const toolName = env.HIRE_MCP_TOOL || "hire";
+      const raw = env.HIRE_MCP_URL?.trim() ?? "";
+      const token = env.HIRE_MCP_TOKEN?.trim() ?? "";
+      const toolName = env.HIRE_MCP_TOOL?.trim() || "hire";
       if (!raw || !token) return missing("mcp", "HIRE_MCP_URL or HIRE_MCP_TOKEN");
       if (!MCP_TOOL_NAME.test(toolName)) return { ok: false, error: "mcp HIRE_MCP_TOOL is invalid" };
       const base = erpBase(raw);
@@ -368,9 +394,9 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
       if (!init.response.ok) return { ok: false, error: `mcp initialize http ${init.response.status}` };
       const initBody = await readJson(init.response, secrets);
       if (!initBody.ok) return initBody;
-      const initJson = initBody.value as { result?: unknown; error?: { message?: string } };
-      if (!initJson.result || typeof initJson.result !== "object") {
-        return { ok: false, error: scrubbed(initJson.error?.message ?? "mcp initialize failed", secrets) };
+      const initJson = rpcBody(initBody.value);
+      if (!initJson?.result || typeof initJson.result !== "object") {
+        return { ok: false, error: scrubbed(rpcErrorMessage(initJson?.error, "mcp initialize failed"), secrets) };
       }
       const session = init.response.headers.get("mcp-session-id") ?? undefined;
       const notified = await send(
@@ -412,8 +438,9 @@ export function mcpToolHireConnector(env: NodeJS.ProcessEnv, fetchImpl: FetchLik
       if (!call.response.ok) return { ok: false, error: `mcp tool http ${call.response.status}` };
       const callBody = await readJson(call.response, secrets);
       if (!callBody.ok) return callBody;
-      const callJson = callBody.value as { result?: unknown; error?: { message?: string } };
-      if (callJson.error) return { ok: false, error: scrubbed(callJson.error.message ?? "mcp tool failed", secrets) };
+      const callJson = rpcBody(callBody.value);
+      if (!callJson) return { ok: false, error: "mcp tool failed" };
+      if (callJson.error != null) return { ok: false, error: scrubbed(rpcErrorMessage(callJson.error, "mcp tool failed"), secrets) };
       if (callJson.result === false || callJson.result == null) return { ok: false, error: "mcp tool returned no record" };
       if (typeof callJson.result === "object" && (callJson.result as { isError?: unknown }).isError === true) {
         return { ok: false, error: scrubbed(mcpErrorText(callJson.result), secrets) };
