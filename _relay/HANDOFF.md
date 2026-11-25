@@ -1,84 +1,61 @@
 ---
 project: MSourcing / ARIA
-shift: 470
+shift: 471
 agent: claude-code
-updated: 2026-11-24
-status: odoo-followups-done-awaiting-owner-review
+updated: 2026-11-25
+status: scoring-model-2-and-floor-switch-on-branch-odoo
 ---
 
-# Handoff - Shift 470
+# Handoff - Shift 471
 
 ## Current state
 
-- Branch `odoo` (from mbe-branch e3fa3f59) pushed to origin/odoo on
-  2026-11-25 at the owner's request (PR not opened). Shift 470
-  commits: 9be60f72 (store background refresh), 6fc19b16 (Odoo live updates,
-  server-side confidentiality, erasure), 58979693 (docs + explainer image),
-  then this handoff. Gate green on the final tree (typecheck,
-  typecheck:tests, npm test, eslint on changed files); intermediate commits
-  gated in worktrees; `bash tests/schema-authority-db.sh` passed (5
-  scenarios, `odoo-integration` covers migration 0011).
-- mbe-branch and the owner's stack (aria-sourcing-*, port 3000) untouched;
-  migrations 0010/0011 are NOT applied there.
-- Running for the owner (disposable):
-  - Odoo 20 dev (project aria-odoo, http://localhost:8069, admin/admin, db
-    `aria`). Now has the Automation Rules app installed, the rule
-    "ARIA: applicant changed" (#3) pointing at the e2e ARIA, and an internal
-    user `aria-integration` with only "Recruitment / Officer" (its API key is
-    in the session scratchpad only, not in the repo).
-  - Disposable ARIA on branch `odoo` (project aria-odoo-e2e,
-    http://localhost:3010, admin@aria.local / admindemo123): Odoo connected
-    (admin key), live updates on. Remove both with
-    `docker compose -p aria-odoo-e2e down -v` and
-    `docker compose -f docker/odoo/docker-compose.yml down -v`.
+- Branch `odoo` (tracks origin/odoo). Shift 471 commit 01fdcedb (scoring
+  model 2 + contact-floor switch), then this handoff; pushed. Gate green
+  (typecheck, typecheck:tests, npm test, eslint on changed files).
+- mbe-branch and the owner's stack (port 3000) untouched: his workspace still
+  shows the old scores until it runs this code (STATE_VERSION 22 rescores on
+  load).
+- Disposable stacks still running (see shift 470 below for credentials):
+  Odoo 20 on :8069, ARIA `odoo` branch on :3010 (rescored by model 2; holds a
+  few "Dora Floor..." test drafts, one approved in dry-run).
 
 ## Done this shift
 
-- Owner asked (FR) to finish the four open points and to make an English
-  image explaining the ARIA/Odoo link.
-- Live updates: Odoo automation rule -> `POST /api/webhooks/odoo/[token]`
-  (token SHA-256 stored; ping only; ARIA reads the applicant back; 202 at
-  once via `after()`). Set-up/off in Settings > Odoo (`/api/integrations/odoo/push`),
-  automatic when the Odoo user is admin, else manual steps.
-- Stage changes are applied on the server only (`src/lib/integrations/odoo/sync.ts`)
-  by the webhook and by `POST /api/integrations/odoo/sync` on campaign open.
-  The store pulls newer server versions every 15 s when idle
-  (`pullRemoteWorkspace`, event `aria:workspace-pull`).
-- Confidentiality: hand-off refused (409 `confidential`) without a logged
-  reveal in 24 h when confidentiality mode is on and no outreach yet.
-- Erasure: `/api/admin/candidates/erasure` also erases the Odoo applicant
-  (`src/lib/integrations/odoo/erasure.ts`, receipts `odoo_erasures`, retry
-  in Settings > Odoo). Hired applicants kept for HR.
-- Minimal rights: Recruitment Officer alone works (Odoo 20); privacy.log and
-  automation rule need Odoo admin, both degrade cleanly.
-- Verified for real: smoke on Odoo 20 as admin and as Officer-only; browser
-  walk on the disposable stack: live update visible in 15 s without reload,
-  server refusal of an unrevealed profile, erasure deleted the Odoo
-  applicant and its contact.
-- Image: `docs/images/aria-odoo-overview.png` (+ HTML source), shown at the
-  top of `docs/odoo.md`.
+- Owner (FR): scores often under 40, probably a bug; add a Settings switch to
+  stop blocking contact under 70.
+- Diagnosis on the owner's real workspace (read-only, aggregates only; the
+  export was deleted): the 11 web-search LinkedIn profiles scored 22-32;
+  unknown experience/industry/location = 30 each, and 1/7 skills seen scored
+  skills 12 (< 30 for no skill seen).
+- Scoring model 2 (`src/lib/scoring.ts`): unknown = 50 neutral; skills
+  evidence-aware (`skillEvidenceComplete`, `skillsCheckedAt` set by the verify
+  form); `matchSkills` aliases; no nice-to-have cap at 82; location n/a when
+  the brief sets none; accent folding. Same 11 profiles: 50-58.
+- STATE_VERSION 22 migration rescores stored candidates (tombstones untouched;
+  derived star ratings follow).
+- Settings > Approval gate: "Block messages below the minimum score"
+  (`enforceMinScoreToContact`). Off = warning in `rules.ts`, no "Verify fit"
+  for the score alone; batches and autopilot keep their floor.
+- Browser walk on :3010: switch on -> "below the 70 contact floor" (blocked);
+  off -> "Approved: queued for send ... the contact floor is off in Settings".
+- Found and fixed during the walk: the first migration rescored an erasure
+  tombstone and every save failed ("candidate erasure tombstone blocks
+  workspace reimport"); test added.
 
 ## Blockers
 
-- None. Waiting for the owner's review of ADR 0003 and the erasure rule.
+- None.
 
 ## Next steps
 
-1. Owner: review ADR 0003 (still proposed) and the image; try it on
-   http://localhost:3010.
-2. Owner + DPO: confirm the erasure rule (hired applicants kept in Odoo; the
-   contact deleted only when Odoo created it for that application).
-3. Owner/IT: Odoo version and hosting; create the `aria-integration` user
-   (Recruitment Officer) and an RPC key; install Automation Rules for live
-   updates; make ARIA reachable from Odoo over HTTPS.
-4. Remaining follow-ups in `.scratch/odoo-integration/spec.md` (03 talent
-   pools / employees, 04 recruiter identity + SSO, 07 CRM needs, 08 Odoo
-   module); 02 not re-run on Odoo 19.
-5. To ship on mbe-branch: merge `odoo`, rebuild the owner's stack (applies
-   0010 + 0011), check `DATA_ENCRYPTION_KEY` in .env.local.
-6. Carried over from 468: demo campaign prep, empty AGENTS_LINKEDIN_ALLOWLIST
-   after the demo, `.scratch/linkedin-bridge/issues/01-...`, VM POC (07),
-   server config (10).
+1. Owner: look at the new scores (on :3010 or after merging); tune
+   `UNKNOWN_SCORE` (50) or the weights if the middle feels too high/low.
+2. Owner: decide about the autopilot: an unverified profile showing all
+   required skills and a matching location can now reach ~75, above the
+   autopilot's default minimum (70).
+3. Carried over from 470: ADR 0003 review, DPO on the Odoo erasure rule,
+   IT prerequisites, remaining Odoo follow-ups, merge `odoo` into mbe-branch.
 
 ## Decisions made (don't relitigate)
 
@@ -95,9 +72,11 @@ status: odoo-followups-done-awaiting-owner-review
 - Owner 2026-11-12: the untested features are to be validated without
   messaging real people. Autopilot demos and tests run with
   `AGENTS_LINKEDIN_ALLOWLIST` set (on this Mac: Tony's profile only).
-- Shift 466: the scoring rule stays (unknown requested dimension = 30), so a
-  public search result alone cannot reach the 70 floor. The way up is the
-  recruiter's "Verify the profile" form (drawer, Evidence tab).
+- Owner 2026-11-25 (shift 471) replaces the shift-466 scoring rule: scoring
+  model 2, a requested criterion a profile does not show counts as neutral
+  (50), and a skill missing from a snippet is unknown, not missing (see
+  docs/SOURCING.md section 3). A Settings switch can turn the 70 contact-floor
+  block into a warning (default: block).
 
 - Owner 2026-11-09 (shift 463/464), ADR 0002 (`docs/adr/0002-agents-runner.md`):
   an `agents` Compose service is allowed (amends ADR 0001). The campaign
@@ -166,6 +145,13 @@ status: odoo-followups-done-awaiting-owner-review
   recorded on synthetic demo profiles (owner, 2026-11-02).
 
 ## Watch out
+
+- Any workspace migration must leave erasure tombstones byte-identical
+  (`isCandidateErasureTombstone`): the DB trigger rejects the whole save
+  otherwise, and the app shows "Changes are not saved".
+- Scoring model 2 raised scores: the autopilot (min 70 by default) can now
+  pick unverified profiles that show every required skill. Its threshold is
+  per campaign (campaign page, Autopilot card).
 
 - Store background refresh (shift 470): `pullRemoteWorkspace` in
   `src/lib/store.ts` replaces local state with a newer server version only
