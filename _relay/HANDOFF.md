@@ -46,6 +46,7 @@ curl -sS https://aria-mantu-app.fly.dev/api/ready | jq '{ok,build,migration}'
 
 ## Watch out
 
+- Draft PR #302 is still a draft. Fairness QA fixed false passes (avatar and numeric proxies, NUL cohort keys, both-token counterfactuals, trimmed ids, markdown cells, live-rank scrub). Do not merge from this note.
 - Manifest freezes already bumped in #51 (app 152 / all 205 / parity 207)
 - `store-sourcing-actions` falseEuMatch expects Americas dampen ≤40
 - E2E screenshots: `/opt/cursor/artifacts/screenshots/e2e-workflow-*.png`
