@@ -24,10 +24,11 @@ status: scoring-model-2-and-floor-switch-on-branch-odoo
   activity; Odoo connection, live updates, settings and agent skills kept.
   Odoo :8069: the 4 ARIA test applicants and 17 test contacts deleted; Odoo's
   own demo data and the "Senior Python Backend Engineer" job (#7) kept.
-- The owner added an Anthropic key on :3010 (Settings, vault). Anthropic
-  refuses it: "This API key is not scoped to a workspace ... use an API key
-  that is scoped to a workspace". Until he uses a workspace-scoped key, :3010
-  parses briefs without AI and cannot source LinkedIn via web search.
+- :3010 Anthropic key: the first one (last4 wQAA) was refused ("not scoped
+  to a workspace"); the owner replaced it (last4 HwAA, linked to
+  prov_anthropic). Tested 2026-11-25: the DevOps brief parsed by Claude
+  ("Brief parsed"), no upstream error since. The old key row is still in
+  the vault (unused).
 
 ## Done this shift
 
@@ -64,10 +65,8 @@ status: scoring-model-2-and-floor-switch-on-branch-odoo
 
 ## Blockers
 
-- :3010 Claude calls fail with the owner's new key (not workspace-scoped).
-  Fix on his side: Anthropic Console > a workspace > API keys > new key, then
-  replace it in :3010 Settings > Access & Keys. ARIA does not send the
-  `anthropic-workspace-id` header (could be added if he wants org-level keys).
+- None. (ARIA does not send `anthropic-workspace-id`: keys must be
+  workspace-scoped; an org-level key gets "not scoped to a workspace".)
 
 ## Next steps
 
