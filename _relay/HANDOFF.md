@@ -10,7 +10,8 @@ status: odoo-followups-done-awaiting-owner-review
 
 ## Current state
 
-- Local branch `odoo` (from mbe-branch e3fa3f59), not pushed. Shift 470
+- Branch `odoo` (from mbe-branch e3fa3f59) pushed to origin/odoo on
+  2026-11-25 at the owner's request (PR not opened). Shift 470
   commits: 9be60f72 (store background refresh), 6fc19b16 (Odoo live updates,
   server-side confidentiality, erasure), 58979693 (docs + explainer image),
   then this handoff. Gate green on the final tree (typecheck,
