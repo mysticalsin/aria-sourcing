@@ -43,6 +43,7 @@
     "backups",
     "supabase",
     "var",
-    "tmp"
+    "tmp",
+    "e2e"
   ]
 }
