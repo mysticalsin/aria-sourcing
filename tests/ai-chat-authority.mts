@@ -224,8 +224,10 @@ mock.module(moduleUrl("src/lib/sourcing/learning-authority.ts"), {
   },
 });
 const originalFetch = globalThis.fetch;
+let upstreamReply: (() => Response) | null = null;
 globalThis.fetch = (async () => {
   upstreamCalls += 1;
+  if (upstreamReply) return upstreamReply();
   return new Response(JSON.stringify({ choices: [{ message: { content: "provider answer" } }] }), {
     status: 200,
     headers: { "content-type": "application/json" },
@@ -309,6 +311,25 @@ try {
   const localChat = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://127.0.0.1:11434/v1", model: "qwen3:8b" }));
   ok("admin can draft with a keyless local model tag", localChat.status === 200 && (await localChat.json()).ok === true);
   ok("keyless local drafting does not consult the vault", resolverCalls.length === 0 && upstreamCalls === 1);
+  resetCalls();
+
+  // A refused request says why (owner's new Anthropic key, 2026-11-25), redacted.
+  upstreamReply = () =>
+    Response.json(
+      { type: "error", error: { type: "invalid_request_error", message: "This API key is not scoped to a workspace. Key sk-ant-api03-SECRETVALUE123 owner admin@example.com" } },
+      { status: 400 },
+    );
+  const refused = await aiChatRoute.POST(aiChatRequest());
+  const refusedBody = (await refused.json()) as { ok?: boolean; reason?: string };
+  ok(
+    "an upstream refusal reports the provider's error type and message",
+    refusedBody.ok === false && /^Upstream error 400: invalid_request_error: This API key is not scoped to a workspace/.test(refusedBody.reason ?? ""),
+  );
+  ok("the provider's message is redacted (keys, emails)", !/SECRETVALUE|admin@example\.com/.test(refusedBody.reason ?? ""));
+  upstreamReply = () => new Response("<html>bad gateway</html>", { status: 502 });
+  const opaque = (await (await aiChatRoute.POST(aiChatRequest())).json()) as { reason?: string };
+  ok("a non-JSON upstream error stays a bare status", opaque.reason === "Upstream error 502");
+  upstreamReply = null;
   resetCalls();
   const unsafeLocal = await aiChatRoute.POST(aiChatRequest("local", { apiKeyId: undefined, baseUrl: "http://169.254.169.254/v1", model: "qwen3:8b" }));
   ok("local drafting blocks metadata URL before egress", unsafeLocal.status === 400 && upstreamCalls === 0 && resolverCalls.length === 0);

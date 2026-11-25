@@ -109,6 +109,22 @@ const AiChatSchema = z.object({
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
+/** "type: message" from a provider's JSON error body (Anthropic and OpenAI
+ *  shapes), bounded, redacted; "" when there is none. */
+async function upstreamErrorSummary(upstream: Response): Promise<string> {
+  try {
+    const text = (await upstream.text()).slice(0, 4_000);
+    const json = JSON.parse(text) as { error?: unknown; message?: unknown };
+    const err = json.error && typeof json.error === "object" ? (json.error as { type?: unknown; message?: unknown }) : null;
+    const type = typeof err?.type === "string" ? err.type : "";
+    const message =
+      typeof err?.message === "string" ? err.message : typeof json.message === "string" ? json.message : typeof json.error === "string" ? json.error : "";
+    return redactSecrets(redactEmail([type, message].filter(Boolean).join(": "))).slice(0, 240);
+  } catch {
+    return "";
+  }
+}
+
 function logUpstream(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
   // Structured log line for production observability. In Vercel this becomes
   // a regular function log; in self-hosted environments it can be scraped.
@@ -345,8 +361,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, reason: "Upstream redirect blocked (SSRF guard)." });
       }
       if (!upstream.ok) {
-        logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status });
-        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}` });
+        // The provider says why (e.g. Anthropic "invalid_request_error: Your
+        // credit balance is too low"): keep its type and message, redacted and
+        // truncated, so an admin can act on it.
+        const detail = await upstreamErrorSummary(upstream);
+        logUpstream("error", "Cloud provider upstream error", { provider, status: upstream.status, detail });
+        return NextResponse.json({ ok: false, reason: `Upstream error ${upstream.status}${detail ? `: ${detail}` : ""}` });
       }
       const json = await upstream.json().catch(() => null);
       const usage = (json as { usage?: AnthropicUsage } | null)?.usage;
