@@ -9,8 +9,12 @@ const redactedMark = "[redacted]"
 
 var (
 	emailPattern = regexp.MustCompile(`(?i)\b[a-z0-9._%+\-]+@[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}\b`)
-	urlPattern   = regexp.MustCompile(`(?i)(?:https?://|www\.)[^\s<>"']+`)
-	phonePattern = regexp.MustCompile(`\+\d{1,3}(?:[\s.\-]*\d{2,4}){2,4}|\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}`)
+	// Scheme-relative URLs, mailto, and tel are contact data even without https://.
+	urlPattern = regexp.MustCompile(`(?i)(?:https?://|//|www\.|mailto:|tel:)[^\s<>"']+`)
+	// A leading plus needs 8 digits. A national number needs 10, so a date
+	// like 2026-11-25 is left alone. Separators are spaces, dots, hyphens,
+	// and parentheses, which covers +1(415)555-0130 and +33 6 12 34 56 78.
+	phonePattern = regexp.MustCompile(`(?:\+\d(?:[\s().-]*\d){7,}|\(?\d(?:[\s().-]*\d){9,})`)
 )
 
 // Redact applies the contact-data allowlist scrub. Non-contact words are kept.

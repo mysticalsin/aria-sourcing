@@ -50,6 +50,21 @@ func signBody(secret string, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+func verdictForRecommendation(recommendation string) string {
+	switch recommendation {
+	case "strong_hire":
+		return "Strong Qualify"
+	case "hire":
+		return "Qualify"
+	case "lean_hire":
+		return "Borderline"
+	case "no_hire", "strong_no_hire":
+		return "Not Qualified"
+	default:
+		return ""
+	}
+}
+
 func completedBody(id, recommendation string) []byte {
 	payload := map[string]any{
 		"id":     id,
@@ -61,7 +76,7 @@ func completedBody(id, recommendation string) []byte {
 		"overall":        3.5,
 		"transcript_ref": "interviews/iv-synthetic-001",
 		"recommendation": recommendation,
-		"verdict":        "Qualify",
+		"verdict":        verdictForRecommendation(recommendation),
 		"summary":        "Synthetic screening summary.",
 	}
 	b, err := json.Marshal(payload)

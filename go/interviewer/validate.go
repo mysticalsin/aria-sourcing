@@ -2,8 +2,8 @@ package interviewer
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
-	"unicode"
 )
 
 const (
@@ -43,7 +43,8 @@ func validateEligibility(c Candidate, n Need) error {
 		return fmt.Errorf("%w: role questions", ErrValidation)
 	}
 	for _, q := range n.RoleQuestions {
-		if strings.TrimSpace(q) == "" {
+		trimmed := strings.TrimSpace(q)
+		if trimmed == "" || len(trimmed) > maxSummaryLen {
 			return fmt.Errorf("%w: role question", ErrValidation)
 		}
 	}
@@ -64,22 +65,16 @@ func validateID(kind, raw string) error {
 	return nil
 }
 
+// languagePattern is a practical BCP 47 tag: a letter primary subtag, then
+// hyphen-separated alphanumeric subtags. Digit-only values are phone numbers,
+// not languages, and the language field is not redacted before it is sent.
+var languagePattern = regexp.MustCompile(`^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$`)
+
 func validLanguage(raw string) bool {
 	if len(raw) < 2 || len(raw) > maxLanguageLen {
 		return false
 	}
-	for i, r := range raw {
-		if r == '-' {
-			if i == 0 || i == len(raw)-1 {
-				return false
-			}
-			continue
-		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
+	return languagePattern.MatchString(raw)
 }
 
 func trimmedQuestions(in []string) []string {

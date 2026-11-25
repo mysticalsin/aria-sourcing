@@ -56,5 +56,9 @@
 // A transcript is stored only as interviews/{id}, never as transcript text.
 //
 // Timeouts are retried once and then returned as ErrInfra. They do not move
-// the hand-off to Failed and they do not change the stage.
+// the hand-off to Failed and they do not change the stage. Redirects are not
+// followed; the 3xx is ErrRemote and is not retried. Unknown verdicts are
+// rejected even when a recommendation is also present, and a known verdict
+// must name the same recommendation. A missing score is not
+// stored as zero. Overall, when present, stays on the 0–5 scale.
 package interviewer

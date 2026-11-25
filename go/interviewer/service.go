@@ -88,12 +88,12 @@ type screeningRequest struct {
 // and a human approval is on record. The feature flag is checked first.
 // The returned stage is the candidate's stage; it is never changed here.
 func (s *Service) RequestScreening(ctx context.Context, c Candidate, n Need) (Handoff, error) {
-	if ctx == nil {
-		return Handoff{}, fmt.Errorf("%w: nil context", ErrValidation)
-	}
 	refused := Handoff{State: StateNotRequested, Stage: c.Stage}
 	if !s.cfg.Enabled {
 		return refused, ErrDisabled
+	}
+	if ctx == nil {
+		return Handoff{}, fmt.Errorf("%w: nil context", ErrValidation)
 	}
 	if err := ctx.Err(); err != nil {
 		return refused, err
@@ -134,11 +134,11 @@ func (s *Service) RequestScreening(ctx context.Context, c Candidate, n Need) (Ha
 // Poll reads the screening the interviewer already accepted.
 // A timeout leaves the hand-off where it was.
 func (s *Service) Poll(ctx context.Context, current Handoff) (Handoff, error) {
-	if ctx == nil {
-		return current, fmt.Errorf("%w: nil context", ErrValidation)
-	}
 	if !s.cfg.Enabled {
 		return current, ErrDisabled
+	}
+	if ctx == nil {
+		return current, fmt.Errorf("%w: nil context", ErrValidation)
 	}
 	if err := ctx.Err(); err != nil {
 		return current, err
@@ -325,8 +325,11 @@ func (s *Service) call(ctx context.Context, method, id string, payload []byte, i
 func (s *Service) httpClient() *http.Client {
 	return &http.Client{
 		Transport: s.transport,
+		// Return the 3xx itself. Following it would dial the Location host,
+		// and treating the refusal as a transport error made callers retry
+		// an infrastructure failure.
 		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return errNoRedirect
+			return http.ErrUseLastResponse
 		},
 	}
 }
@@ -337,8 +340,6 @@ func (s *Service) logf(format string, args ...any) {
 	}
 	s.log.Printf(format, args...)
 }
-
-var errNoRedirect = fmt.Errorf("%w: redirect", ErrRemote)
 
 func isTimeout(err error) bool {
 	if err == nil {
