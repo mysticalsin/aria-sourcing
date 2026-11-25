@@ -6,6 +6,7 @@ import {
   Send,
   MessageSquare,
   MessageSquareReply,
+  MessagesSquare,
   CalendarDays,
   LineChart,
   Settings,
@@ -51,6 +52,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/fleet", label: "Agent Fleet", icon: Bot, section: "Operate", description: "Multi-agent coordination" },
   { href: "/floor", label: "Ops Floor", icon: Building2, section: "Operate", description: "Live agent floor" },
   { href: "/chat", label: "Chat", icon: MessageSquare, section: "Operate", description: "Per-agent chat" },
+  { href: "/contacts", label: "Contacts", icon: MessagesSquare, section: "Operate", description: "One thread per person" },
   // Analyze — hindsight, metrics & compliance posture
   { href: "/replay", label: "Replay", icon: Rewind, section: "Analyze", description: "Scrub the agents' whole day" },
   { href: "/reports", label: "Reports", icon: LineChart, section: "Analyze", description: "Learning loop" },
