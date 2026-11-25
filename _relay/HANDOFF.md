@@ -1,60 +1,55 @@
 ---
 project: MSourcing / ARIA
-shift: 471
-agent: claude-code
+shift: 472
+agent: cursor
 updated: 2026-11-25
-status: scoring-model-2-and-floor-switch-on-branch-odoo
+status: local-docker-demo-fix-on-branch-from-odoo-7c5e892d
 ---
 
-# Handoff - Shift 471
+# Handoff - Shift 472
 
 ## Current state
 
-- Branch `odoo` (tracks origin/odoo). Shift 471 commit 01fdcedb (scoring
-  model 2 + contact-floor switch), then this handoff; pushed. Gate green
-  (typecheck, typecheck:tests, npm test, eslint on changed files).
-- mbe-branch and the owner's stack (port 3000) untouched: his workspace still
-  shows the old scores until it runs this code (STATE_VERSION 22 rescores on
-  load).
-- Disposable stacks still running (see shift 470 below for credentials):
-  Odoo 20 on :8069, ARIA `odoo` branch on :3010 (rescored by model 2; holds a
-  few "Dora Floor..." test drafts, one approved in dry-run).
+- Work is on `cursor/aria-odoo-local-demo-fix-1242`, branched from `odoo` tip
+  `7c5e892d09036439513227fcc1d404e813549f3a` (tree
+  `c179636ebc8d0cf109c87117c88fc52dee879480`). That tip was not rewritten,
+  rebased, or pushed. `odoo` and `mbe-*` stay where Michaël left them.
+- Local Docker demo is green on this branch: `npm run test:local-demo`
+  (project `aria-acceptance-demo-fix-1242`, ports 3101/54331/54332, Chrome)
+  printed `ok: true` with the stock checks, including `ui-candidate` and
+  `stack-restart`. `npx tsc --noEmit`, `tsc -p tsconfig.tests.json`, `npm test`,
+  and eslint on the touched files passed.
+- Secret scan on the parent history is unchanged and still fails the release
+  gate (fixture noise plus older commits). Not edited this shift.
 
 ## Done this shift
 
-- Owner (FR): scores often under 40, probably a bug; add a Settings switch to
-  stop blocking contact under 70.
-- Diagnosis on the owner's real workspace (read-only, aggregates only; the
-  export was deleted): the 11 web-search LinkedIn profiles scored 22-32;
-  unknown experience/industry/location = 30 each, and 1/7 skills seen scored
-  skills 12 (< 30 for no skill seen).
-- Scoring model 2 (`src/lib/scoring.ts`): unknown = 50 neutral; skills
-  evidence-aware (`skillEvidenceComplete`, `skillsCheckedAt` set by the verify
-  form); `matchSkills` aliases; no nice-to-have cap at 82; location n/a when
-  the brief sets none; accent folding. Same 11 profiles: 50-58.
-- STATE_VERSION 22 migration rescores stored candidates (tombstones untouched;
-  derived star ratings follow).
-- Settings > Approval gate: "Block messages below the minimum score"
-  (`enforceMinScoreToContact`). Off = warning in `rules.ts`, no "Verify fit"
-  for the score alone; batches and autopilot keep their floor.
-- Browser walk on :3010: switch on -> "below the 70 contact floor" (blocked);
-  off -> "Approved: queued for send ... the contact floor is off in Settings".
-- Found and fixed during the walk: the first migration rescored an erasure
-  tombstone and every save failed ("candidate erasure tombstone blocks
-  workspace reimport"); test added.
+- `agents` no longer sets `healthcheck.disable`. Compose 2.40.3 (same error
+  as GitHub run 45581889577) exits `docker compose up --wait` with
+  "has no healthcheck configured" when the probe is off. The service now
+  runs `node -e process.kill(1,0)` and reaches healthy. A one-container
+  repro confirmed both the failure and the healthy probe.
+- `scripts/accept-local-demo.mjs` fills `[id$='-manual-name']` and
+  `[id$='-manual-lawful-basis']` after the Manual tab is selected.
+  `getByLabel("Name")` matches the hidden LinkedIn-tab input as well
+  (Playwright strict mode: linkedin-name and manual-name). Locked in
+  `tests/local-demo-acceptance.mts`.
 
 ## Blockers
 
-- None.
+- Release gate on a PR from this branch will still fail secret scan until
+  the historical findings are allowlisted or removed. Local Docker demo does
+  not depend on that job.
 
 ## Next steps
 
-1. Owner: look at the new scores (on :3010 or after merging); tune
+1. Review the draft PR into `odoo`. Do not push this branch onto `odoo`.
+2. Owner: look at the new scores (on :3010 or after merging); tune
    `UNKNOWN_SCORE` (50) or the weights if the middle feels too high/low.
-2. Owner: decide about the autopilot: an unverified profile showing all
+3. Owner: decide about the autopilot: an unverified profile showing all
    required skills and a matching location can now reach ~75, above the
    autopilot's default minimum (70).
-3. Carried over from 470: ADR 0003 review, DPO on the Odoo erasure rule,
+4. Carried over from 470: ADR 0003 review, DPO on the Odoo erasure rule,
    IT prerequisites, remaining Odoo follow-ups, merge `odoo` into mbe-branch.
 
 ## Decisions made (don't relitigate)
