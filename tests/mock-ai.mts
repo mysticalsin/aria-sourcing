@@ -181,5 +181,24 @@ for (const r of [neg, interested, salaryOnly, qualified, ooo]) {
   ok(`reply: ${r.intent} draftResponse has no em-dash`, !r.draftResponse.includes("—"));
 }
 
+// Explicit skill lines in a pasted brief (owner's DevOps brief, 2026-11-25).
+{
+  const brief = [
+    "From: Claire Martin <claire.martin@example.com>",
+    "We are looking for a Senior DevOps Engineer to join our Cloud Platform team in Paris.",
+    "Location: Paris, France (hybrid, 3 days a week in the office)",
+    "Contract: Full-time, permanent",
+    "Required skills: Kubernetes, Terraform, AWS, Docker, CI/CD, Linux, Python",
+    "Nice to have: Ansible, Prometheus, Grafana, GitLab CI, Linux",
+    "5+ years of experience in DevOps.",
+  ].join("\n");
+  const job = parseEmailAndJD({ email: brief }).jobAnalysis;
+  ok("brief: the Required skills line is the required list", job.requiredSkills.join("|") === "Kubernetes|Terraform|AWS|Docker|CI/CD|Linux|Python");
+  ok("brief: the Nice to have line is read", job.niceToHaveSkills.join("|") === "Ansible|Prometheus|Grafana|GitLab CI");
+  ok("brief: a required skill is never also nice-to-have", !job.niceToHaveSkills.includes("Linux"));
+  const niceOnly = parseEmailAndJD({ email: "We are looking for a Senior Platform Engineer.\nRequired skills: Go\nNice to have: Linux" }).jobAnalysis;
+  ok("brief: a dictionary skill listed as nice-to-have is not promoted to required", !niceOnly.requiredSkills.includes("Linux") && niceOnly.niceToHaveSkills.includes("Linux"));
+}
+
 console.log(`RESULT mock-ai: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

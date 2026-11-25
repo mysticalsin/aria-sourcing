@@ -553,21 +553,29 @@ export function parseEmailAndJD(input: { email: string; jd?: string }): ParsedIn
   const minYearsExperience = yearsMatch.length ? Math.min(...yearsMatch) : null;
   const maxYearsExperience = yearsMatch.length > 1 ? Math.max(...yearsMatch) : null;
 
-  // Skills: an explicit "Required skills:" line (e.g. an Odoo job's skills,
-  // src/lib/integrations/odoo/mapping.ts) first, then dictionary hits.
-  const statedSkills = (text.match(/^[ \t]*required skills[ \t]*:[ \t]*([^\n]{1,600})$/im)?.[1] ?? "")
-    .split(/[,;]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s.length <= 60);
+  // Skills: explicit "Required skills:" and "Nice to have:" lines (e.g. an
+  // Odoo job's skills, src/lib/integrations/odoo/mapping.ts) first, then
+  // dictionary hits. A skill the brief lists as nice-to-have is never
+  // promoted to required by a dictionary hit.
+  const listedLine = (label: RegExp) =>
+    (text.match(label)?.[1] ?? "")
+      .split(/[,;]/)
+      .map((s) => s.trim().replace(/\.$/, ""))
+      .filter((s) => s.length > 0 && s.length <= 60);
+  const statedSkills = listedLine(/^[ \t]*required skills[ \t]*:[ \t]*([^\n]{1,600})$/im);
+  const statedNice = listedLine(/^[ \t]*nice[ -]to[ -]have(?: skills)?[ \t]*:[ \t]*([^\n]{1,600})$/im);
+  const sameSkill = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const unique = (list: string[]) => list.filter((skill, index, all) => all.findIndex((other) => sameSkill(other, skill)) === index);
   const dictionarySkills = SKILL_DICTIONARY.filter((s) =>
     new RegExp(`(^|[^a-z])${escapeRegExp(s)}([^a-z]|$)`, "i").test(text),
-  );
-  const requiredSkills = [...statedSkills, ...dictionarySkills]
-    .filter((skill, index, all) => all.findIndex((other) => other.toLowerCase() === skill.toLowerCase()) === index)
-    .slice(0, 8);
-  const niceToHaveSkills = SKILL_DICTIONARY.filter(
-    (s) => !requiredSkills.includes(s) && new RegExp(`nice to have[^.]*${escapeRegExp(s)}`, "i").test(lower),
-  ).slice(0, 4);
+  ).filter((s) => !statedNice.some((nice) => sameSkill(nice, s)));
+  const requiredSkills = unique([...statedSkills, ...dictionarySkills]).slice(0, 8);
+  const niceToHaveSkills = unique([
+    ...statedNice,
+    ...SKILL_DICTIONARY.filter((s) => new RegExp(`nice to have[^.]*${escapeRegExp(s)}`, "i").test(lower)),
+  ])
+    .filter((s) => !requiredSkills.some((req) => sameSkill(req, s)))
+    .slice(0, 6);
 
   // Equity / company stage
   const equity = /equity|options|esop|stock/i.test(text);
