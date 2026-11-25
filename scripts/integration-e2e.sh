@@ -24,12 +24,12 @@ if docker info >/dev/null 2>&1; then D=docker; else D="sudo env APP_PORT=3010 do
 # sudo drops the variable unless it is passed on the command.
 export APP_PORT=3010
 
-# This VM's legacy filter can drop forwarded bridge packets. The rule runs
-# only in CI or a VM sandbox, and never on a developer Mac.
+# This VM's legacy filter can drop forwarded bridge packets. The bridge rule
+# runs only in CI or a VM sandbox, and never on a developer Mac. The default
+# FORWARD policy is left as the host set it.
 BRIDGE="$(sh "$ROOT/scripts/sandbox-bridge.sh" || true)"
 echo "bridge=$BRIDGE"
 if [ "$BRIDGE" = "apply" ] && command -v iptables-legacy >/dev/null 2>&1; then
-  sudo iptables-legacy -P FORWARD ACCEPT || true
   sudo iptables-legacy -C FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT 2>/dev/null \
     || sudo iptables-legacy -I FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12 -j ACCEPT || true
 else
@@ -43,7 +43,7 @@ fi
 } >"$ART/logs/compose-config.log" 2>&1 || echo "compose-config=fail" >>"$ART/logs/compose-config.log"
 
 # Bring the packaged stack up. A failure is recorded; it does not hide the UI run.
-COMPOSE_PROJECT="aria-int-${STAMP,,}"
+COMPOSE_PROJECT="aria-int-$(printf '%s' "$STAMP" | tr '[:upper:]' '[:lower:]')"
 set +e
 $D compose -p "$COMPOSE_PROJECT" -f "$ROOT/docker-compose.yml" -f "$ROOT/e2e/integration/compose.overlay.yml" up -d --build >"$ART/logs/compose-up.log" 2>&1
 COMPOSE_EXIT=$?

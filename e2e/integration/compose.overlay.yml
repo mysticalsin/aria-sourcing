@@ -18,7 +18,8 @@ services:
   rest:
     mem_limit: 160m
     memswap_limit: 160m
-  gateway:
+  # This stack's API gateway is `kong`. The copied overlay named it `gateway`.
+  kong:
     mem_limit: 96m
     memswap_limit: 96m
   supabase-bootstrap:
@@ -29,6 +30,11 @@ services:
     memswap_limit: 1280m
     environment:
       ARIA_E2E: "1"
+  # Browser sidecar that this compose file starts with the app. Capped so the
+  # merged project stays under 6 GiB.
+  obscura:
+    mem_limit: 1024m
+    memswap_limit: 1024m
 
   odoo-db:
     image: postgres:16-alpine

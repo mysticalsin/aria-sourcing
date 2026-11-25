@@ -1,6 +1,6 @@
--- Disposable cap database for sweep 0. The function body matches
--- supabase/migrations/0013_exact_body_hash.sql. auth.role() is stubbed so a
--- vanilla Postgres can act as service_role. No production data.
+-- Disposable cap database for the A1 sweep. This function is not defined by
+-- supabase/migrations/0013_outreach_approval_race_safety.sql. auth.role() is
+-- stubbed so a vanilla Postgres can act as service_role. No production data.
 
 create schema if not exists auth;
 

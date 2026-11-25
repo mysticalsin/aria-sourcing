@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { assertHarnessUrls, isLoopbackRequestUrl } from "./loopback-url.mjs";
 
 const artifactDir = process.env.ARTIFACT_DIR ?? "e2e-artifacts/local";
 const sink: { calls: number } = { calls: 0 };
@@ -16,11 +17,15 @@ async function shot(page: Page, id: string): Promise<string> {
 
 test("sweep 0 physical journeys", async ({ page }) => {
   test.setTimeout(240_000);
+  assertHarnessUrls({
+    appUrl: process.env.APP_URL ?? "http://127.0.0.1:3000",
+    odooUrl: process.env.ODOO_URL ?? "",
+  });
   mkdirSync(artifactDir, { recursive: true });
   const steps: Step[] = [];
   await page.route("**/api/outreach/send", async (route) => {
     const url = route.request().url();
-    if (!url.includes("127.0.0.1") && !url.includes("localhost")) {
+    if (!isLoopbackRequestUrl(url)) {
       throw new Error("non-loopback send aborted");
     }
     sink.calls += 1;
