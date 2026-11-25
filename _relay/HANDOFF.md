@@ -10,15 +10,24 @@ status: scoring-model-2-and-floor-switch-on-branch-odoo
 
 ## Current state
 
-- Branch `odoo` (tracks origin/odoo). Shift 471 commit 01fdcedb (scoring
-  model 2 + contact-floor switch), then this handoff; pushed. Gate green
+- Branch `odoo` (tracks origin/odoo). Shift 471 commits: 01fdcedb (scoring
+  model 2 + contact-floor switch), b1455f82 (intake reads "Nice to have:"),
+  932f1e31 (AI route reports the provider's refusal), handoffs; pushed. Gate green
   (typecheck, typecheck:tests, npm test, eslint on changed files).
 - mbe-branch and the owner's stack (port 3000) untouched: his workspace still
   shows the old scores until it runs this code (STATE_VERSION 22 rescores on
   load).
-- Disposable stacks still running (see shift 470 below for credentials):
-  Odoo 20 on :8069, ARIA `odoo` branch on :3010 (rescored by model 2; holds a
-  few "Dora Floor..." test drafts, one approved in dry-run).
+- Disposable stacks still running: Odoo 20 on :8069 (admin/admin), ARIA
+  `odoo` branch on :3010 (admin@aria.local / admindemo123), rebuilt at
+  932f1e31. The owner calls :3010 "la version de démo".
+- :3010 cleaned at the owner's request: no campaign, candidate, draft or
+  activity; Odoo connection, live updates, settings and agent skills kept.
+  Odoo :8069: the 4 ARIA test applicants and 17 test contacts deleted; Odoo's
+  own demo data and the "Senior Python Backend Engineer" job (#7) kept.
+- The owner added an Anthropic key on :3010 (Settings, vault). Anthropic
+  refuses it: "This API key is not scoped to a workspace ... use an API key
+  that is scoped to a workspace". Until he uses a workspace-scoped key, :3010
+  parses briefs without AI and cannot source LinkedIn via web search.
 
 ## Done this shift
 
@@ -42,10 +51,23 @@ status: scoring-model-2-and-floor-switch-on-branch-odoo
 - Found and fixed during the walk: the first migration rescored an erasure
   tombstone and every save failed ("candidate erasure tombstone blocks
   workspace reimport"); test added.
+- Demo cleanup (:3010 and :8069), see Current state. Backup of the :3010
+  workspace before cleanup (test data only) in the session scratchpad,
+  temporary.
+- Owner's DevOps campaign brief written (English, "Senior DevOps Engineer",
+  Paris hybrid, given in the conversation, not created: he adds it himself).
+  Checked: the parser without AI extracts title, Senior, Full-time, Hybrid,
+  Paris, EUR 60-75k, 5+ years, 7 required + 4 nice-to-have skills, no
+  warning (needed the "Nice to have:" fix).
+- AI route: a provider refusal now logs and returns its type and message
+  (redacted), which is how the key problem was found.
 
 ## Blockers
 
-- None.
+- :3010 Claude calls fail with the owner's new key (not workspace-scoped).
+  Fix on his side: Anthropic Console > a workspace > API keys > new key, then
+  replace it in :3010 Settings > Access & Keys. ARIA does not send the
+  `anthropic-workspace-id` header (could be added if he wants org-level keys).
 
 ## Next steps
 
