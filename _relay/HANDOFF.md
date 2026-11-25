@@ -10,8 +10,7 @@ status: in-progress
 
 ## Current state
 - Draft PR https://github.com/mysticalsin/aria-sourcing/pull/299 stays draft. Not merged. PR body was not edited.
-- Branch `cursor/a07-rust-router-1aac`. Previous tip `145a54e2cc350ca90650cba70192d2d683194b11`.
-- Fixes are local until the push recorded in `internal/pr-299-qa.md`.
+- Branch `cursor/a07-rust-router-1aac`. Previous tip `145a54e2cc350ca90650cba70192d2d683194b11`. Fix commit `1b0d163593fd7141e121853d57b69ff99061e558` is pushed. This baton commit only records that push.
 - Inherited CI reds (npm audit, image scan, release gate, flyctl, gitleaks, database security) were not changed.
 
 ## Done this shift
