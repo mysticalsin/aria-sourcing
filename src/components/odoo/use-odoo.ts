@@ -2,8 +2,17 @@
 
 import * as React from "react";
 import { WORKSPACE_PULL_EVENT } from "@/lib/store";
+import { ODOO_DISABLED_CODE } from "@/lib/integrations/odoo/feature";
 import { supabaseEnabled } from "@/lib/supabase/config";
-import { jsonBody, odooApi, type OdooApplicantView, type OdooConnectionView, type OdooJobLink, type OdooStageChange } from "./api";
+import {
+  jsonBody,
+  odooApi,
+  type OdooApiResult,
+  type OdooApplicantView,
+  type OdooConnectionView,
+  type OdooJobLink,
+  type OdooStageChange,
+} from "./api";
 
 /* Shared Odoo state for the campaign bar, the candidate drawer and the intake.
    Each piece refetches on the "aria:odoo-changed" window event. */
@@ -30,29 +39,51 @@ function useChangeCounter(): number {
   return n;
 }
 
-let connectionCache: { at: number; value: Promise<boolean> } | null = null;
+type ConfigAnswer = OdooApiResult<{ connection: OdooConnectionView }>;
 
-/** True once Odoo is known to be connected for this workspace (cached 60 s). */
+let configCache: { at: number; value: Promise<ConfigAnswer> } | null = null;
+
+/** GET /config, shared by every Odoo piece of the page for 60 s. */
+function readConfig(refresh: boolean): Promise<ConfigAnswer> {
+  if (refresh || !configCache || Date.now() - configCache.at > 60_000) {
+    configCache = { at: Date.now(), value: odooApi<{ connection: OdooConnectionView }>("/config") };
+  }
+  return configCache.value;
+}
+
+/** True once Odoo is known to be connected for this workspace (cached 60 s).
+ *  Stays false while the server has the integration off (ODOO_ENABLED). */
 export function useOdooConnected(): boolean {
   const changes = useChangeCounter();
   const [connected, setConnected] = React.useState(false);
   React.useEffect(() => {
     if (!supabaseEnabled) return;
     let cancelled = false;
-    if (!connectionCache || Date.now() - connectionCache.at > 60_000 || changes > 0) {
-      connectionCache = {
-        at: Date.now(),
-        value: odooApi<{ connection: OdooConnectionView }>("/config").then((res) => res.ok && res.data.connection.configured),
-      };
-    }
-    void connectionCache.value.then((value) => {
-      if (!cancelled) setConnected(value);
+    void readConfig(changes > 0).then((res) => {
+      if (!cancelled) setConnected(res.ok && res.data.connection.configured);
     });
     return () => {
       cancelled = true;
     };
   }, [changes]);
   return connected;
+}
+
+/** False when the server has the Odoo integration off (ODOO_ENABLED), null
+ *  until known. Without Supabase (demo mode) it stays true when the server
+ *  has it on: Settings > Odoo then says why it cannot connect. */
+export function useOdooEnabled(): boolean | null {
+  const [enabled, setEnabled] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    void readConfig(false).then((res) => {
+      if (!cancelled) setEnabled(res.ok || res.code !== ODOO_DISABLED_CODE);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return enabled;
 }
 
 export interface OdooCampaignState {

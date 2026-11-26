@@ -32,6 +32,7 @@ import { ToolsPanel } from "@/components/settings/tools-panel";
 import { McpServersPanel } from "@/components/settings/mcp-servers-panel";
 import { DustAgentPanel } from "@/components/settings/dust-agent-panel";
 import { OdooPanel } from "@/components/settings/odoo-panel";
+import { useOdooEnabled } from "@/components/odoo/use-odoo";
 import { SchedulesPanel } from "@/components/settings/schedules-panel";
 import { LinkedInSettingsPanel } from "@/components/linkedin/settings-panel";
 import { useHydrated, useSettings, useIntegrations, useActions, useRole } from "@/lib/store";
@@ -62,6 +63,7 @@ import {
   SETTINGS_N_TO_TAB,
   readSettingsOpenSectionSession,
   resolveSettingsOpenSection,
+  settingsDefaultSectionForTab,
   settingsHeaderId,
   settingsNeighborSection,
   settingsPanelId,
@@ -79,12 +81,15 @@ type AccordionCtx = {
   openSection: string | null;
   setOpenSection: (n: string) => void;
   focusSectionHeader: (n: string) => void;
+  /** Sections this server does not show (Odoo "21" while ODOO_ENABLED is off). */
+  hiddenSections: readonly string[];
 };
 
 const SettingsAccordionContext = React.createContext<AccordionCtx>({
   openSection: null,
   setOpenSection: () => {},
   focusSectionHeader: () => {},
+  hiddenSections: [],
 });
 
 const VALID_TABS = new Set([
@@ -123,11 +128,12 @@ function Section({
   children: React.ReactNode;
 }) {
   const activeTab = React.useContext(SettingsTabContext);
-  const { openSection, setOpenSection, focusSectionHeader } =
+  const { openSection, setOpenSection, focusSectionHeader, hiddenSections } =
     React.useContext(SettingsAccordionContext);
   if (SETTINGS_N_TO_TAB[n] && SETTINGS_N_TO_TAB[n] !== activeTab) return null;
+  if (hiddenSections.includes(n)) return null;
 
-  const siblings = settingsSectionsForTab(activeTab);
+  const siblings = settingsSectionsForTab(activeTab, hiddenSections);
   const isSolo = siblings.length <= 1;
   const isOpen = isSolo || openSection === n;
   const panelId = settingsPanelId(n);
@@ -141,7 +147,7 @@ function Section({
     else if (e.key === "End") direction = "last";
     if (!direction) return;
     e.preventDefault();
-    const target = settingsNeighborSection(activeTab, n, direction);
+    const target = settingsNeighborSection(activeTab, n, direction, hiddenSections);
     if (!target) return;
     setOpenSection(target);
     focusSectionHeader(target);
@@ -339,6 +345,13 @@ export default function SettingsPage() {
   const pendingScrollHashRef = React.useRef<string | null>(null);
   const scrollGenerationRef = React.useRef(0);
   const canResetSyntheticDemo = !supabaseEnabled;
+  // Odoo (section 21) shows only once the server says the integration is on.
+  const odooEnabled = useOdooEnabled();
+  const hiddenSections = React.useMemo<readonly string[]>(() => (odooEnabled ? [] : ["21"]), [odooEnabled]);
+  React.useEffect(() => {
+    if (odooEnabled !== false || openSection !== "21") return;
+    setOpenSectionState(settingsDefaultSectionForTab("integrations", hiddenSections));
+  }, [odooEnabled, openSection, hiddenSections]);
 
   const queueHashScroll = React.useCallback((hash: string | null | undefined) => {
     const cleaned = hash?.replace(/^#/, "").trim() || null;
@@ -452,7 +465,7 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, openSection, hydrated]);
+  }, [activeTab, openSection, hydrated, odooEnabled]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -610,7 +623,7 @@ export default function SettingsPage() {
 
           <SettingsTabContext.Provider value={activeTab}>
             <SettingsAccordionContext.Provider
-              value={{ openSection, setOpenSection, focusSectionHeader }}
+              value={{ openSection, setOpenSection, focusSectionHeader, hiddenSections }}
             >
             <div
               className="min-w-0"

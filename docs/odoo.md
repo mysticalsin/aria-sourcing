@@ -42,6 +42,13 @@ stays in ARIA.
 
 ## Requirements
 
+- **`ODOO_ENABLED=true` on the ARIA server** (restart after changing it). The
+  integration is off by default: ARIA then shows no Odoo screen (Settings >
+  Odoo, the campaign bar, the candidate action, the job import), and the
+  `/api/integrations/odoo/*` routes and the webhook answer 404. Turning it off
+  keeps the stored connection and links; turning it back on finds them again.
+  An ARIA erasure still erases the Odoo applicant ARIA created, switch on or
+  off; retrying a pending Odoo erasure needs the switch on.
 - Odoo **19 or later**, Community (open source) or Enterprise, self-hosted.
   ARIA uses Odoo's JSON-2 API (`/json/2/<model>/<method>`); XML-RPC and
   JSON-RPC are deprecated in 19 and scheduled for removal in 20. ARIA refuses
@@ -216,7 +223,7 @@ bash docker/odoo/setup.sh   # Odoo 20 on http://localhost:8069 (admin / admin),
                             # data, API key in docker/odoo/.odoo-api-key
 ```
 
-Run the ARIA server with `ODOO_ALLOW_HTTP=true`, then connect *Settings > Odoo*
+Run the ARIA server with `ODOO_ENABLED=true` and `ODOO_ALLOW_HTTP=true`, then connect *Settings > Odoo*
 to `http://host.docker.internal:8069` (app in Docker) or
 `http://localhost:8069` (`next dev`), database `aria`. For live updates from
 that Odoo container, install Automation Rules in Odoo and use

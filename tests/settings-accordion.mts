@@ -90,5 +90,10 @@ assert.equal(settingsNeighborSection("ai", "15", "last"), "19");
 assert.equal(settingsNeighborSection("integrations", "04", "next"), "20");
 assert.equal(settingsNeighborSection("integrations", "20", "next"), "21");
 assert.equal(settingsNeighborSection("integrations", "21", "next"), "04", "wraps");
+// Odoo off on this server: section 21 is hidden and skipped.
+assert.deepEqual(settingsSectionsForTab("integrations", ["21"]), ["04", "20"]);
+assert.equal(settingsNeighborSection("integrations", "20", "next", ["21"]), "04", "skips the hidden section");
+assert.equal(settingsNeighborSection("integrations", "04", "last", ["21"]), "20");
+assert.equal(settingsDefaultSectionForTab("integrations", ["04"]), "20");
 
 console.log("settings-accordion: ok");

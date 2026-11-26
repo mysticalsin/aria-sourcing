@@ -13,6 +13,7 @@ import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServiceSupabase } from "@/lib/supabase/server";
 import { afterResponse } from "@/lib/integrations/odoo/after-response";
 import { connectionByWebhookHash } from "@/lib/integrations/odoo/authority";
+import { odooEnabled } from "@/lib/integrations/odoo/feature";
 import { applicantIdFromPayload, hashWebhookToken, processOdooWebhook, validWebhookToken } from "@/lib/integrations/odoo/webhook";
 
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ function accepted(): NextResponse {
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  // Integration off (ODOO_ENABLED): a bare 404, nothing read, nothing said.
+  if (!odooEnabled()) return NextResponse.json({ ok: false }, { status: 404, headers: { "Cache-Control": "no-store" } });
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
   if (!supabaseEnabled) return NextResponse.json({ ok: false }, { status: 503 });

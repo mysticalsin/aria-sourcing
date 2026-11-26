@@ -65,12 +65,13 @@ export const SETTINGS_HASH_TO_SECTION: Record<string, string> = {
 
 const SESSION_KEY = "aria.settings.openSection";
 
-export function settingsSectionsForTab(tab: string): string[] {
-  return SETTINGS_SECTION_ORDER.filter((n) => SETTINGS_N_TO_TAB[n] === tab);
+/** `hidden`: sections this server does not show (e.g. "21" while Odoo is off). */
+export function settingsSectionsForTab(tab: string, hidden: readonly string[] = []): string[] {
+  return SETTINGS_SECTION_ORDER.filter((n) => SETTINGS_N_TO_TAB[n] === tab && !hidden.includes(n));
 }
 
-export function settingsDefaultSectionForTab(tab: string): string | null {
-  return settingsSectionsForTab(tab)[0] ?? null;
+export function settingsDefaultSectionForTab(tab: string, hidden: readonly string[] = []): string | null {
+  return settingsSectionsForTab(tab, hidden)[0] ?? null;
 }
 
 export function settingsSectionId(n: string): string {
@@ -138,8 +139,9 @@ export function settingsNeighborSection(
   tab: string,
   current: string,
   direction: "next" | "prev" | "first" | "last",
+  hidden: readonly string[] = [],
 ): string | null {
-  const siblings = settingsSectionsForTab(tab);
+  const siblings = settingsSectionsForTab(tab, hidden);
   if (siblings.length === 0) return null;
   if (direction === "first") return siblings[0] ?? null;
   if (direction === "last") return siblings[siblings.length - 1] ?? null;

@@ -14,6 +14,7 @@ import { prodFailClosed, supabaseEnabled } from "@/lib/supabase/config";
 import { getServerSupabase, getServiceSupabase } from "@/lib/supabase/server";
 import type { Role } from "@/lib/types";
 import { createOdooClient, isOdooError, type FetchLike, type OdooClient } from "./client";
+import { ODOO_DISABLED_CODE, odooEnabled } from "./feature";
 import { HandoffCandidateSchema, StageMapSchema, type HandoffCandidate, type StageMap } from "./mapping";
 
 export type Svc = NonNullable<ReturnType<typeof getServiceSupabase>>;
@@ -30,15 +31,26 @@ export function odooJson(status: number, body: Record<string, unknown>): NextRes
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** The answer of every Odoo route while ODOO_ENABLED is off (./feature.ts). */
+export function odooDisabledResponse(): NextResponse {
+  return odooJson(404, {
+    ok: false,
+    code: ODOO_DISABLED_CODE,
+    error: "The Odoo integration is off on this server. Set ODOO_ENABLED=true and restart ARIA to use it.",
+  });
+}
+
 /**
  * A signed-in ARIA user holding `permission`, with the service client.
  * `mutation`: the request changes something (here or in Odoo), so it must come
  * from a page of this app (Origin = the host the browser addressed).
+ * With ODOO_ENABLED off, every caller gets odooDisabledResponse() first.
  */
 export async function requireOdooUser(
   req: NextRequest,
   options: { permission: Permission; mutation?: boolean },
 ): Promise<{ ok: true; ctx: OdooUserContext } | { ok: false; response: Response }> {
+  if (!odooEnabled()) return { ok: false, response: odooDisabledResponse() };
   const prodBlock = prodFailClosed();
   if (prodBlock) return { ok: false, response: prodBlock };
   if (options.mutation && !isSameOriginRequest(req)) {

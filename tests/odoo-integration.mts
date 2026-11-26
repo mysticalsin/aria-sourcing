@@ -392,6 +392,9 @@ mock.module(url("src/lib/supabase/server.ts"), {
   namedExports: { getServerSupabase: async () => session, getServiceSupabase: () => db, requireAdmin: async () => ({ ok: true, role: "admin" }) },
 });
 
+// The integration is off unless the server opts in (src/lib/integrations/odoo/feature.ts).
+process.env.ODOO_ENABLED = "true";
+
 const client = await import("../src/lib/integrations/odoo/client");
 const mapping = await import("../src/lib/integrations/odoo/mapping");
 const service = await import("../src/lib/integrations/odoo/service");
@@ -1138,6 +1141,53 @@ test("an unreachable Odoo leaves the erasure pending until an admin retries it",
 });
 
 /* ---- Schema ---------------------------------------------------------------- */
+
+test("with ODOO_ENABLED off, every Odoo route and the webhook answer 404 before any read or Odoo call", async () => {
+  await readyForHandoff();
+  assert.equal((await handoff()).status, 200);
+  const { token } = await setUpPush();
+  const applicantId = db.tables.odoo_applicant_links![0]!.applicant_id;
+  const before = JSON.stringify({ tables: db.tables, candidates: db.candidates });
+  const odooCalls = odoo.calls.length;
+  const queued = afterTasks.length;
+  role = "admin";
+  for (const value of [undefined, "", "false", "1", "TRUE"]) {
+    if (value === undefined) delete process.env.ODOO_ENABLED;
+    else process.env.ODOO_ENABLED = value;
+    const answers: Array<[string, Response]> = [
+      ["GET config", await configRoute.GET(request("/api/integrations/odoo/config"))],
+      ["PUT config", await configRoute.PUT(request("/api/integrations/odoo/config", { method: "PUT", body: { baseUrl: ODOO, database: "aria", apiKey: ODOO_KEY } }))],
+      ["DELETE config", await configRoute.DELETE(request("/api/integrations/odoo/config", { method: "DELETE" }))],
+      ["POST check", await checkRoute.POST(request("/api/integrations/odoo/check", { method: "POST" }))],
+      ["GET jobs", await jobsRoute.GET(request("/api/integrations/odoo/jobs"))],
+      ["GET links", await linksRoute.GET(request("/api/integrations/odoo/links"))],
+      ["POST links", await linksRoute.POST(request("/api/integrations/odoo/links", { method: "POST", body: { campaignId: "camp_1", jobId: 7 } }))],
+      ["DELETE links", await linksRoute.DELETE(request("/api/integrations/odoo/links", { method: "DELETE", body: { campaignId: "camp_1" } }))],
+      ["GET applicants", await applicantsRoute.GET(request("/api/integrations/odoo/applicants?campaignId=camp_1"))],
+      ["POST applicants", await handoff()],
+      ["POST sync", await syncRoute.POST(request("/api/integrations/odoo/sync", { method: "POST", body: { campaignId: "camp_1" } }))],
+      ["POST push", await pushRoute.POST(request("/api/integrations/odoo/push", { method: "POST", body: { ariaUrl: "https://aria.example.com/" } }))],
+      ["DELETE push", await pushRoute.DELETE(request("/api/integrations/odoo/push", { method: "DELETE" }))],
+      ["GET erasures", await erasuresRoute.GET(request("/api/integrations/odoo/erasures"))],
+      ["POST erasures", await erasuresRoute.POST(request("/api/integrations/odoo/erasures", { method: "POST", body: { candidateId: "cand_1" } }))],
+    ];
+    for (const [name, res] of answers) {
+      assert.equal(res.status, 404, `${name} with ODOO_ENABLED=${String(value)}`);
+      const body = await json(res);
+      assert.equal(body.code, "odoo_disabled", name);
+      assert.match(String(body.error), /ODOO_ENABLED=true/);
+    }
+    const hook = await ping(token, { _id: applicantId, _model: "hr.applicant" });
+    assert.equal(hook.status, 404);
+    assert.deepEqual(await json(hook), { ok: false }, "the public webhook says nothing");
+  }
+  assert.equal(odoo.calls.length, odooCalls, "no call reached Odoo");
+  assert.equal(afterTasks.length, queued, "no webhook work was queued");
+  assert.equal(JSON.stringify({ tables: db.tables, candidates: db.candidates }), before, "nothing was read into or written to the workspace");
+
+  process.env.ODOO_ENABLED = "true";
+  assert.equal((await configRoute.GET(request("/api/integrations/odoo/config"))).status, 200, "back on after a restart with the switch");
+});
 
 test("the Odoo tables are service-role only with forced RLS, and the candidate read is service-only", () => {
   const sql = readFileSync("supabase/migrations/0010_odoo_integration.sql", "utf8");
