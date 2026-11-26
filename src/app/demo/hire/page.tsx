@@ -133,6 +133,10 @@ export default async function SyntheticHirePage() {
                   <dt className="text-xs font-bold uppercase tracking-wider text-muted">Hire record id</dt>
                   <dd className="mt-1 font-semibold text-ink" data-testid="hire-record-id">{hireRecordId}</dd>
                 </div>
+                <div>
+                  <dt className="text-xs font-bold uppercase tracking-wider text-muted">Employee id</dt>
+                  <dd className="mt-1 font-semibold text-ink" data-testid="employee-id">{demo.employeeId ?? ""}</dd>
+                </div>
               </dl>
               <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted">Write</p>
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-4 text-sm text-ink" data-testid="vacancy-write">{vacancy}</pre>
