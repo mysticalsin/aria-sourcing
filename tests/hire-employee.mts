@@ -126,14 +126,29 @@ ok(
     storedClient.employees.length === 1,
 );
 
+const freshClient = new FakeOdooEmployeeClient();
+const alreadyStored = { id: "42", name: "Fixture Candidate North", odooEmployeeId: 7 };
+const laterHire = await storeHiredEmployee(alreadyStored, "Hired", freshClient);
+ok(
+  "a later hire returns the stored employee id and does not create another",
+  laterHire.employeeId === 7 &&
+    laterHire.candidate === alreadyStored &&
+    laterHire.candidate.odooEmployeeId === 7 &&
+    freshClient.createCount === 0 &&
+    freshClient.findCount === 0 &&
+    freshClient.employees.length === 0,
+);
+
 const offerRecord = { id: "42", name: "Fixture Candidate North" };
+const findsBeforeOffer = storedClient.findCount;
+const createsBeforeOffer = storedClient.createCount;
 const offerStored = await storeHiredEmployee(offerRecord, "Offer", storedClient);
 ok(
   "a stage other than Hired does not store an employee id",
   offerStored.employeeId === null &&
     offerStored.candidate === offerRecord &&
-    storedClient.createCount === 1 &&
-    storedClient.findCount === 2,
+    storedClient.createCount === createsBeforeOffer &&
+    storedClient.findCount === findsBeforeOffer,
 );
 
 const unstored = await storeHiredEmployee(offerRecord, "Hired", null);

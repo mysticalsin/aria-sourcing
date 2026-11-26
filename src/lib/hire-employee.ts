@@ -54,10 +54,14 @@ export type HireEmployeeResult =
   | { ok: true; created: boolean; employee: OdooEmployeeRecord }
   | { ok: false; error: string };
 
+function positiveEmployeeId(id: number | null | undefined): number | null {
+  if (id == null || !Number.isSafeInteger(id) || id <= 0) return null;
+  return id;
+}
+
 function employeeId(record: OdooEmployeeRecord | null | undefined): number | null {
   if (!record || record.model !== "hr.employee") return null;
-  if (!Number.isSafeInteger(record.id) || record.id <= 0) return null;
-  return record.id;
+  return positiveEmployeeId(record.id);
 }
 
 /**
@@ -119,14 +123,21 @@ export function withStoredEmployeeId<T extends HiredCandidateRecord>(candidate: 
 
 /**
  * After a successful hire, the candidate stores the hr.employee id from the
- * injected client. A second hire of the same applicant keeps that id. No
- * client, or any stage other than Hired, leaves the record unchanged.
+ * injected client. A later hire that already stores a positive id returns that
+ * id and does not call create, including when the client is a fresh empty
+ * table. No client, or any stage other than Hired, leaves a candidate with no
+ * stored id unchanged.
  */
 export async function storeHiredEmployee<T extends HiredCandidateRecord>(
   candidate: T,
   stage: CandidateStage,
   client: OdooEmployeeClient | null,
 ): Promise<{ candidate: T; employeeId: number | null }> {
+  const hiredStage = namedHiredStage();
+  const alreadyStored = positiveEmployeeId(candidate.odooEmployeeId);
+  if (hiredStage && stage === hiredStage && alreadyStored != null) {
+    return { candidate, employeeId: alreadyStored };
+  }
   const recorded = await createEmployeeForStage(stage, { applicantId: candidate.id, name: candidate.name }, client);
   return {
     candidate: withStoredEmployeeId(candidate, recorded.employeeId),
