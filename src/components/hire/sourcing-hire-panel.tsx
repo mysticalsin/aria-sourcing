@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import {
+  CommandHireEmployeeId,
+  commandHireEmployeeId,
+} from "@/components/hire/command-hire-employee-id";
+import type { CandidateListRow } from "@/lib/candidate-list-hire";
 import type { SourcingScreen } from "@/lib/sourcing-screen-hire";
 
 export interface SourcingHireCandidate {
@@ -42,10 +47,13 @@ export function SourcingHirePanel({
   screen,
   candidate,
   label,
+  storedHire = null,
 }: {
   screen: SourcingScreen;
   candidate: SourcingHireCandidate | null;
   label: string;
+  /** In-memory hire already stored on the command center candidate. Display only. */
+  storedHire?: CandidateListRow | null;
 }) {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ShownHire | null>(null);
@@ -76,11 +84,12 @@ export function SourcingHirePanel({
     }
   }
 
-  const shown =
+  const employeeId = screen === "command" ? commandHireEmployeeId(storedHire, result) : null;
+  const shownBase =
     result?.transport === "fixture"
       ? {
           ok: result.ok ?? false,
-          transport: "fixture",
+          transport: "fixture" as const,
           linkedIn: result.linkedIn ?? false,
           unset: {
             ok: result.unset?.ok ?? false,
@@ -109,6 +118,7 @@ export function SourcingHirePanel({
             error: result.error,
           }
         : null;
+  const shown = shownBase == null || employeeId == null ? shownBase : { ...shownBase, employeeId };
 
   return (
     <section className="rounded-2xl border border-line bg-surface p-4" data-testid={`sourcing-hire-${screen}`}>
@@ -130,6 +140,7 @@ export function SourcingHirePanel({
           {pending ? "Hiring…" : "Hire into ERP"}
         </Button>
       </div>
+      {screen === "command" ? <CommandHireEmployeeId candidate={storedHire} result={result} /> : null}
       {shown ? (
         <pre
           className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-3 text-sm text-ink"
