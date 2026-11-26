@@ -54,7 +54,7 @@ export interface SourcingScreenHireResult {
   unset?: { ok: boolean; erp: "skipped" | "odoo" | "smart" | "api" | "mcp"; linkedIn: boolean; fetchCount: number };
   connectors?: SourcingScreenFixtureConnector[];
   error?: string;
-  /** Positive hr.employee id from the in-memory client for an API or MCP hire. */
+  /** Positive hr.employee id from the in-memory client when this hire has one. */
   employeeId?: number | null;
 }
 

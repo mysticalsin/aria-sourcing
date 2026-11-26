@@ -15,7 +15,7 @@ import {
   smartHireConnector,
   type HireConnector,
 } from "@/lib/hire-connector";
-import { employeeIdForHiredPerson, namedHiredStage } from "@/lib/hire-employee";
+import { employeeIdForHiredPerson, namedHiredStage, storedEmployeeIdForPerson } from "@/lib/hire-employee";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -186,7 +186,12 @@ export interface SourcingThroughHiredResult {
   linkedIn: boolean;
   steps: SourcingThroughHiredStep[];
   error?: string;
-  /** Positive hr.employee id for a generic HTTPS API or MCP hire. Absent for other connectors. */
+  /**
+   * Positive hr.employee id from the in-memory client.
+   * API and MCP hires allocate it. A successful Odoo hire returns an id already
+   * stored for that person and does not create another row. Absent when nothing
+   * is stored, and on a failed or skipped hire.
+   */
   employeeId?: number | null;
 }
 
@@ -450,7 +455,9 @@ async function runOdooHire(
     error: closed.ok ? undefined : closed.error,
   });
   if (!closed.ok) return { ok: false, erp: "odoo", linkedIn: true, steps, error: closed.error };
-  return { ok: true, erp: "odoo", linkedIn: true, steps };
+  const employeeId = await storedEmployeeIdForPerson(input.applicant.name);
+  if (employeeId == null) return { ok: true, erp: "odoo", linkedIn: true, steps };
+  return { ok: true, erp: "odoo", linkedIn: true, steps, employeeId };
 }
 
 /** SMART, the generic API, and MCP mark the applicant hired. They do not close hr.job. */

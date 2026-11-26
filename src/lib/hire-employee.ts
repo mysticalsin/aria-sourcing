@@ -148,3 +148,20 @@ export class FakeOdooEmployeeClient implements OdooEmployeeClient {
  * A second hire of the same applicant finds the row already stored. No network.
  */
 export const inMemoryEmployeeClient = new FakeOdooEmployeeClient();
+
+/**
+ * Positive hr.employee id already stored for this person.
+ * Reads the shared in-memory client and does not create a row. No network.
+ */
+export async function storedEmployeeIdForPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  let existing: OdooEmployeeRecord | null;
+  try {
+    existing = await inMemoryEmployeeClient.findByApplicant(applicantId);
+  } catch {
+    return null;
+  }
+  if (existing && existing.applicantId !== applicantId) return null;
+  return employeeId(existing);
+}
