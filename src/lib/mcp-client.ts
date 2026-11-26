@@ -188,9 +188,9 @@ export interface SourcingThroughHiredResult {
   error?: string;
   /**
    * Positive hr.employee id from the in-memory client.
-   * API and MCP hires allocate it. A successful Odoo hire returns an id already
-   * stored for that person and does not create another row. Absent when nothing
-   * is stored, and on a failed or skipped hire.
+   * API and MCP hires allocate it. A successful Odoo or SMART hire returns an id
+   * already stored for that person and does not create another row. Absent when
+   * nothing is stored, and on a failed or skipped hire.
    */
   employeeId?: number | null;
 }
@@ -530,6 +530,11 @@ async function runErpHire(
     error: hired.ok ? undefined : hired.error,
   });
   if (!hired.ok) return { ok: false, erp, linkedIn: true, steps, error: hired.error };
+  if (erp === "smart") {
+    const employeeId = await storedEmployeeIdForPerson(input.applicant.name);
+    if (employeeId == null) return { ok: true, erp, linkedIn: true, steps };
+    return { ok: true, erp, linkedIn: true, steps, employeeId };
+  }
   if (erp !== "api" && erp !== "mcp") return { ok: true, erp, linkedIn: true, steps };
   const employeeId = input.stage === namedHiredStage() ? await employeeIdForHiredPerson(input.applicant.name) : null;
   return { ok: true, erp, linkedIn: true, steps, employeeId };
