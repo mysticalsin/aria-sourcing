@@ -243,6 +243,10 @@ ok(
 
 const falseApi = await genericApiHireConnector(apiEnv, (async () => responseWith(200, { result: false })) as typeof fetch).call(call);
 ok("a false generic api result is not a hire", falseApi.ok === false && falseApi.error === "api response missing id");
+const falseStringApi = await genericApiHireConnector(apiEnv, (async () => responseWith(200, { result: "false" })) as typeof fetch).call(call);
+ok("a string false generic api result is not a hire", falseStringApi.ok === false && falseStringApi.error === "api response missing id");
+const nullStringApi = await genericApiHireConnector(apiEnv, (async () => responseWith(200, { id: " null " })) as typeof fetch).call(call);
+ok("a string null generic api id is not a hire", nullStringApi.ok === false && nullStringApi.error === "api response missing id");
 const emptyApi = await genericApiHireConnector(apiEnv, (async () => responseWith(200, {})) as typeof fetch).call(call);
 ok("an empty generic api result is not a hire", emptyApi.ok === false && emptyApi.error === "api response missing id");
 const echoedApi = await genericApiHireConnector(
@@ -331,6 +335,55 @@ const emptyMcp = await mcpToolHireConnector(
   }) as typeof fetch,
 ).call(call);
 ok("an empty mcp tool result is not a hire", emptyMcp.ok === false && emptyMcp.error === "mcp tool returned no record");
+const stringFalseMcp = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "tools/call") {
+      return responseWith(200, { result: { content: [{ type: "text", text: "{\"result\":\"false\"}" }] } });
+    }
+    if (body.method === "notifications/initialized") return responseWith(202, {});
+    return responseWith(200, { result: { serverInfo: { name: "fake-hire" } } });
+  }) as typeof fetch,
+).call(call);
+ok("mcp text that only says false is not a hire", stringFalseMcp.ok === false && stringFalseMcp.error === "mcp tool returned no record");
+
+function sseResponse(events: unknown[], headers?: Record<string, string>) {
+  const body = events.map((event) => `event: message\ndata: ${JSON.stringify(event)}\n\n`).join("");
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream", ...headers } });
+}
+
+const sseMcp = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "initialize") {
+      return sseResponse([{ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "fake-hire" } } }], {
+        "mcp-session-id": "sess-sse",
+      });
+    }
+    if (body.method === "notifications/initialized") return responseWith(202, {});
+    return sseResponse([
+      { jsonrpc: "2.0", method: "notifications/progress", params: { progress: 0 } },
+      { jsonrpc: "2.0", id: "hire-1", result: { content: [{ type: "text", text: JSON.stringify({ id: "mcp-sse" }) }] } },
+    ]);
+  }) as typeof fetch,
+).call(call);
+ok("mcp event-stream responses still return the tool record id", sseMcp.ok === true && sseMcp.ok && sseMcp.id === "mcp-sse");
+
+const sseError = await mcpToolHireConnector(
+  mcpEnv,
+  (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method?: string };
+    if (body.method === "tools/call") {
+      return sseResponse([{ jsonrpc: "2.0", id: "hire-1", result: { isError: true, content: [{ type: "text", text: `denied ${mcpToken}` }] } }]);
+    }
+    if (body.method === "notifications/initialized") return responseWith(202, {});
+    return responseWith(200, { result: { serverInfo: { name: "fake-hire" } } });
+  }) as typeof fetch,
+).call(call);
+ok("mcp event-stream errors do not echo the bearer token", sseError.ok === false && sseError.error.includes("denied") && !sseError.error.includes(mcpToken));
+
 const echoedMcp = await mcpToolHireConnector(
   mcpEnv,
   (async (_url: string, init?: RequestInit) => {
@@ -359,6 +412,32 @@ const mcpLocal = await mcpToolHireConnector(
   mcpUnsafeFetch,
 ).call(call);
 ok("mcp refuses a loopback endpoint", mcpLocal.ok === false && mcpUnsafeCalls === 0);
+
+let mappedCalls = 0;
+const mappedFetch = (async () => {
+  mappedCalls += 1;
+  return responseWith(200, { id: "metadata" });
+}) as typeof fetch;
+for (const url of [
+  "https://[::ffff:127.0.0.1]/",
+  "https://[::ffff:169.254.169.254]/",
+  "https://[::ffff:10.0.0.1]/",
+  "https://[fe90::1]/",
+  "https://[64:ff9b::a9fe:a9fe]/",
+  "https://[2002:a9fe:a9fe::]/",
+]) {
+  const before = mappedCalls;
+  const refused = await genericApiHireConnector(
+    { NODE_ENV: "test", HIRE_API_URL: url, HIRE_API_TOKEN: apiToken },
+    mappedFetch,
+  ).call(call);
+  const mcpRefused = await mcpToolHireConnector(
+    { NODE_ENV: "test", HIRE_MCP_URL: url, HIRE_MCP_TOKEN: mcpToken },
+    mappedFetch,
+  ).call(call);
+  ok(`generic api refuses non-public ${url}`, refused.ok === false && mappedCalls === before);
+  ok(`mcp refuses non-public ${url}`, mcpRefused.ok === false && mappedCalls === before);
+}
 
 let missingConnectorFetches = 0;
 const missingConnectorFetch = (async () => {

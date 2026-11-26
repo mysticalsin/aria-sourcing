@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
-import { fetchPublicUrl } from "../src/lib/api/public-fetch";
+import { _installPublicFetchForTests, fetchPublicUrl } from "../src/lib/api/public-fetch";
 import { clearHireIdempotency, envForHireRequest, hireEnvForRoute, runSourcingThroughHired as runSourcingThroughHiredRaw } from "../src/lib/mcp-client";
 
 async function runSourcingThroughHired(
@@ -353,6 +353,21 @@ const failedApi = await runSourcingThroughHired(input, { ...apiEnv, HIRE_CONNECT
 }) as typeof fetch);
 ok("a false generic api result stops the pipeline before later writes", failedApi.ok === false && failedApi.erp === "api" && stopped === 1);
 
+let stringStopped = 0;
+const stringFalseApi = await runSourcingThroughHired(
+  { ...input, idempotencyKey: "hire-batch-string-false" },
+  { ...apiEnv, HIRE_CONNECTOR: "api" },
+  (async () => {
+    stringStopped += 1;
+    if (stringStopped === 1) return jsonResponse(200, { result: "false" });
+    return jsonResponse(200, { id: "later" });
+  }) as typeof fetch,
+);
+ok(
+  "a string false generic api result stops the pipeline before later writes",
+  stringFalseApi.ok === false && stringFalseApi.erp === "api" && stringStopped === 1,
+);
+
 const aheadCalls: Captured[] = [];
 let aheadId = 10;
 const aheadFetch = (async (url: string, init?: RequestInit) => {
@@ -633,9 +648,8 @@ ok(
 );
 
 // 203.0.113.50 is RFC 5737 TEST-NET-3. The public-URL check accepts it without DNS.
-// global fetch is the in-repo fake, so the route's live transport never opens a socket.
+// The installed fake is the route transport, so this proof never opens a socket.
 const routeFake = createFakeOdooFetch(10);
-const previousFetch = globalThis.fetch;
 const previousEnv = {
   ODOO_URL: process.env.ODOO_URL,
   ODOO_DB: process.env.ODOO_DB,
@@ -650,7 +664,7 @@ process.env.ODOO_USERNAME = "fixture-api";
 process.env.ODOO_API_KEY = "fixture-key";
 delete process.env.ODOO_HIRED_STAGE_ID;
 delete process.env.HIRE_CONNECTOR;
-globalThis.fetch = routeFake.fetch;
+_installPublicFetchForTests(routeFake.fetch);
 let routeStatus = 0;
 let routeBody: { ok?: boolean; erp?: string; linkedIn?: boolean; steps?: { action: string; skipped?: boolean }[] } = {};
 try {
@@ -665,7 +679,7 @@ try {
   routeStatus = response.status;
   routeBody = (await response.json()) as typeof routeBody;
 } finally {
-  globalThis.fetch = previousFetch;
+  _installPublicFetchForTests(null);
   for (const [name, value] of Object.entries(previousEnv)) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;

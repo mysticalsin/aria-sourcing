@@ -113,7 +113,12 @@ const MCP_PROTOCOL = "2024-11-05";
 const MCP_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 function positiveId(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    // "false" and "null" are failed payloads, not record ids.
+    if (!trimmed || trimmed === "false" || trimmed === "null") return null;
+    return trimmed;
+  }
   if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
   return null;
 }
@@ -190,8 +195,44 @@ async function send(
   }
 }
 
+/**
+ * Streamable HTTP may answer with SSE when the client accepts
+ * `text/event-stream`. A progress notification can precede the JSON-RPC
+ * response, so the last data frame that carries `result` or `error` wins.
+ * The raw frame is never copied into an error string.
+ */
+function jsonRpcFromEventStream(text: string): { ok: true; value: unknown } | { ok: false } {
+  let matched: unknown = null;
+  for (const block of text.split(/\r?\n\r?\n/)) {
+    const data: string[] = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith(":") || !line.startsWith("data:")) continue;
+      data.push(line.slice(5).replace(/^ /, ""));
+    }
+    if (!data.length) continue;
+    const raw = data.join("\n").trim();
+    if (!raw || raw === "[DONE]") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: false };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    if ("result" in parsed || "error" in parsed) matched = parsed;
+  }
+  if (matched == null) return { ok: false };
+  return { ok: true, value: matched };
+}
+
 async function readJson(response: Response, secrets: string[]): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   try {
+    const type = (response.headers?.get("content-type") ?? "").toLowerCase();
+    if (type.includes("text/event-stream")) {
+      const parsed = jsonRpcFromEventStream(await response.text());
+      if (!parsed.ok) return { ok: false, error: "upstream event stream had no json-rpc message" };
+      return parsed;
+    }
     return { ok: true, value: await response.json() };
   } catch (err) {
     const message = err instanceof Error ? err.message : "invalid json";
