@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import {
   createEmployeeForStage,
   createEmployeeWhenHired,
   FakeOdooEmployeeClient,
   namedHiredStage,
+  storeHiredEmployee,
   type OdooEmployeeClient,
   type OdooEmployeeRecord,
 } from "../src/lib/hire-employee";
@@ -107,6 +109,41 @@ const hiredAgain = await createEmployeeForStage("Hired", { applicantId: "42", na
 ok(
   "moving to Hired returns the employee id",
   hiredStage.employeeId === 1 && hiredAgain.employeeId === 1 && stageClient.createCount === 1 && stageClient.employees.length === 1,
+);
+
+const storedClient = new FakeOdooEmployeeClient();
+const storedFirst = await storeHiredEmployee({ id: "42", name: "Fixture Candidate North" }, "Hired", storedClient);
+const storedSecond = await storeHiredEmployee(storedFirst.candidate, "Hired", storedClient);
+ok(
+  "a successful hire stores the client's hr.employee id and a second hire keeps it",
+  storedFirst.employeeId === storedClient.employees[0]?.id &&
+    storedFirst.candidate.odooEmployeeId === storedClient.employees[0]?.id &&
+    storedClient.employees[0]?.model === "hr.employee" &&
+    storedClient.employees[0]?.applicantId === "42" &&
+    storedSecond.employeeId === storedFirst.employeeId &&
+    storedSecond.candidate.odooEmployeeId === storedFirst.candidate.odooEmployeeId &&
+    storedClient.createCount === 1 &&
+    storedClient.employees.length === 1,
+);
+
+const offerRecord = { id: "42", name: "Fixture Candidate North" };
+const offerStored = await storeHiredEmployee(offerRecord, "Offer", storedClient);
+ok(
+  "a stage other than Hired does not store an employee id",
+  offerStored.employeeId === null &&
+    offerStored.candidate === offerRecord &&
+    storedClient.createCount === 1 &&
+    storedClient.findCount === 2,
+);
+
+const unstored = await storeHiredEmployee(offerRecord, "Hired", null);
+ok("a hire with no client does not store an employee id", unstored.employeeId === null && unstored.candidate === offerRecord);
+
+const stageWriter = readFileSync(new URL("../src/lib/store.ts", import.meta.url), "utf8");
+const stageFn = stageWriter.slice(stageWriter.indexOf("const setCandidateStage"), stageWriter.indexOf("const setCandidatePhone"));
+ok(
+  "the stage writer stores that employee id on the candidate",
+  stageFn.includes("storeHiredEmployee") && stageFn.includes("withStoredEmployeeId") && stageFn.includes("odooEmployeeId"),
 );
 
 console.log(`RESULT hire-employee: ${pass} passed, ${fail} failed`);
