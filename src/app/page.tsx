@@ -260,6 +260,12 @@ export default function DashboardPage() {
                 }
               : null
           }
+          storedHire={
+            commandCandidate
+              ? { stage: commandCandidate.stage, odooEmployeeId: commandCandidate.odooEmployeeId }
+              : null
+          }
+          onEmployeeId={(candidateId, employeeId) => actions.rememberConnectorEmployee(candidateId, employeeId)}
         />
 
         {runOpen && activeCampaign && (
