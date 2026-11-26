@@ -42,6 +42,7 @@ import { resolveAiProvider } from "./ai/provider";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
+import { storeHiredEmployeeId } from "./candidate-list-hire";
 import { createEmployeeForStage, type OdooEmployeeClient } from "./hire-employee";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
@@ -3591,7 +3592,17 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       // No client means Odoo is not configured: do not call out.
-      return createEmployeeForStage(stage, { applicantId: id, name }, client);
+      // A successful hire writes the returned employee id onto this candidate.
+      return createEmployeeForStage(stage, { applicantId: id, name }, client).then((result) => {
+        const employeeId = result.employeeId;
+        if (employeeId != null) {
+          commit((s) => ({
+            ...s,
+            candidates: s.candidates.map((c) => (c.id === id ? storeHiredEmployeeId(c, employeeId) : c)),
+          }));
+        }
+        return result;
+      });
     },
     [commit],
   );
