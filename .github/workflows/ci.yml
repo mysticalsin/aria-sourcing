@@ -14,6 +14,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # gitleaks diffs HEAD^ on push and <oldest PR commit>^..HEAD on
+          # pull_request. Depth 1 has no parent: push then scans the whole tree
+          # as a new commit, and pull_request dies on an unknown revision.
+          fetch-depth: 0
 
       - name: Setup Node 20
         uses: actions/setup-node@v4

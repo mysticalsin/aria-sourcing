@@ -42,6 +42,7 @@ import { resolveAiProvider } from "./ai/provider";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
+import { createEmployeeForStage, type OdooEmployeeClient } from "./hire-employee";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "./tania";
@@ -444,7 +445,11 @@ export interface HermesActions {
   ) => void;
 
   // candidates / compliance
-  setCandidateStage: (id: string, stage: CandidateStage) => void;
+  setCandidateStage: (
+    id: string,
+    stage: CandidateStage,
+    client?: OdooEmployeeClient | null,
+  ) => Promise<{ employeeId: number | null }>;
   setCandidatePhone: (id: string, phone: string) => void;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */
@@ -3566,9 +3571,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   /* ---- candidate compliance -------------------------------------------- */
 
   const setCandidateStage = useCallback(
-    (id: string, stage: CandidateStage) =>
+    (id: string, stage: CandidateStage, client: OdooEmployeeClient | null = null) => {
+      let name = "";
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === id);
+        if (cand) name = cand.name;
         let next: HermesState = {
           ...s,
           candidates: s.candidates.map((c) =>
@@ -3582,7 +3589,10 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         };
         if (cand) next = recomputeMetrics(next, cand.campaignId);
         return next;
-      }),
+      });
+      // No client means Odoo is not configured: do not call out.
+      return createEmployeeForStage(stage, { applicantId: id, name }, client);
+    },
     [commit],
   );
 
