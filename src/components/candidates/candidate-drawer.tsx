@@ -12,6 +12,7 @@ import {
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
+import { CandidateDrawerEmployeeId } from "@/components/candidates/candidate-drawer-employee";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
@@ -948,6 +949,7 @@ export function CandidateDrawer({
             <Badge tone={toneForStage(c.stage)} size="sm" dot>
               {c.stage}
             </Badge>
+            <CandidateDrawerEmployeeId candidate={c} />
           </div>
           <SourcingHirePanel
             screen="candidate"
