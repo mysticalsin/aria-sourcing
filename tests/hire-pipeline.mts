@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
 import { fetchPublicUrl } from "../src/lib/api/public-fetch";
+import { createEmployeeForStage, FakeOdooEmployeeClient } from "../src/lib/hire-employee";
 import { clearHireIdempotency, envForHireRequest, hireEnvForRoute, runSourcingThroughHired as runSourcingThroughHiredRaw } from "../src/lib/mcp-client";
 
 async function runSourcingThroughHired(
@@ -695,6 +696,135 @@ ok(
 ok(
   "the route proof removed the fixture credentials from the process",
   liveCredentialNames.every((name) => !process.env[name]),
+);
+
+const employeeApiEnv: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  HIRE_CONNECTOR: "api",
+  HIRE_API_URL: "https://hire-api.example.test/",
+  HIRE_API_TOKEN: "fake-api-token",
+};
+const employeeApiCalls: string[] = [];
+const employeeApiFetch = (async (url: string) => {
+  if (!url.startsWith("https://hire-api.example.test/v1/hire/")) throw new Error(`unexpected url ${url}`);
+  employeeApiCalls.push(url);
+  const id = url.endsWith("/hr.applicant") ? "applicant-42" : "job-7";
+  return jsonResponse(200, { id });
+}) as typeof fetch;
+const employeeClient = new FakeOdooEmployeeClient();
+const odooEmployee = await createEmployeeForStage("Hired", { applicantId: "applicant-42", name: "Ada Lovelace" }, employeeClient);
+clearHireIdempotency();
+const apiEmployeeInput = { ...input, idempotencyKey: "employee-api-1" };
+const apiWithEmployee = await runSourcingThroughHiredRaw(apiEmployeeInput, employeeApiEnv, employeeApiFetch, employeeClient);
+const apiFetchesAfterFirst = employeeApiCalls.length;
+const apiWithEmployeeAgain = await runSourcingThroughHiredRaw(apiEmployeeInput, employeeApiEnv, employeeApiFetch, employeeClient);
+ok(
+  "a generic api hire records the employee id the Odoo path already stored",
+  odooEmployee.employeeId === 1 &&
+    apiWithEmployee.ok === true &&
+    apiWithEmployee.erp === "api" &&
+    apiWithEmployee.employeeId === odooEmployee.employeeId &&
+    apiWithEmployeeAgain.employeeId === odooEmployee.employeeId &&
+    employeeClient.createCount === 1 &&
+    employeeClient.employees.length === 1 &&
+    employeeClient.employees[0]?.applicantId === "applicant-42" &&
+    employeeClient.employees[0]?.name === "Ada Lovelace" &&
+    apiFetchesAfterFirst === 4 &&
+    employeeApiCalls.length === 4,
+);
+
+const employeeMcpCalls: string[] = [];
+const employeeMcpFetch = (async (url: string, init?: RequestInit) => {
+  if (url !== "https://hire-mcp.example.test/mcp") throw new Error(`unexpected url ${url}`);
+  employeeMcpCalls.push(url);
+  const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; params?: { arguments?: { model?: string } } };
+  if (body.method === "initialize") return jsonResponse(200, { result: { serverInfo: { name: "fake-hire" } } }, { "mcp-session-id": "employee-sess" });
+  if (body.method === "notifications/initialized") return jsonResponse(202, {});
+  const id = body.params?.arguments?.model === "hr.applicant" ? "applicant-43" : "job-9";
+  return jsonResponse(200, { result: { structuredContent: { id } } });
+}) as typeof fetch;
+const mcpEmployeeClient = new FakeOdooEmployeeClient();
+const odooMcpEmployee = await createEmployeeForStage("Hired", { applicantId: "applicant-43", name: "Ada Lovelace" }, mcpEmployeeClient);
+clearHireIdempotency();
+const mcpWithEmployee = await runSourcingThroughHiredRaw(
+  { ...input, idempotencyKey: "employee-mcp-1" },
+  {
+    NODE_ENV: "test",
+    HIRE_CONNECTOR: "mcp",
+    HIRE_MCP_URL: "https://hire-mcp.example.test/mcp",
+    HIRE_MCP_TOKEN: "fake-mcp-token",
+    HIRE_MCP_TOOL: "hire",
+  },
+  employeeMcpFetch,
+  mcpEmployeeClient,
+);
+ok(
+  "an mcp hire records the employee id the Odoo path already stored",
+  odooMcpEmployee.employeeId === 1 &&
+    mcpWithEmployee.ok === true &&
+    mcpWithEmployee.erp === "mcp" &&
+    mcpWithEmployee.employeeId === odooMcpEmployee.employeeId &&
+    mcpEmployeeClient.createCount === 1 &&
+    mcpEmployeeClient.findCount === 2 &&
+    employeeMcpCalls.length === 12 &&
+    employeeMcpCalls.every((url) => url === "https://hire-mcp.example.test/mcp"),
+);
+
+clearHireIdempotency();
+const apiWithoutClient = await runSourcingThroughHiredRaw(
+  { ...input, idempotencyKey: "employee-api-none" },
+  employeeApiEnv,
+  employeeApiFetch,
+  null,
+);
+ok(
+  "a generic api hire with no employee client records a null id",
+  apiWithoutClient.ok === true && apiWithoutClient.employeeId === null && employeeClient.createCount === 1,
+);
+
+const missedEmployeeClient = new FakeOdooEmployeeClient();
+clearHireIdempotency();
+const missedEmployee = await runSourcingThroughHiredRaw(
+  { ...input, idempotencyKey: "employee-api-miss" },
+  employeeApiEnv,
+  (async () => jsonResponse(200, { result: false })) as typeof fetch,
+  missedEmployeeClient,
+);
+ok(
+  "a failed generic api hire does not record an employee",
+  missedEmployee.ok === false &&
+    missedEmployee.employeeId === undefined &&
+    missedEmployeeClient.findCount === 0 &&
+    missedEmployeeClient.createCount === 0,
+);
+
+const offerEmployeeClient = new FakeOdooEmployeeClient();
+clearHireIdempotency();
+const offerHire = await runSourcingThroughHiredRaw(
+  { ...input, stage: "Offer", idempotencyKey: "employee-api-offer" },
+  employeeApiEnv,
+  employeeApiFetch,
+  offerEmployeeClient,
+);
+ok(
+  "a generic api hire that is not the Hired stage records no employee",
+  offerHire.ok === true && offerHire.employeeId === null && offerEmployeeClient.findCount === 0 && offerEmployeeClient.createCount === 0,
+);
+
+const smartEmployeeClient = new FakeOdooEmployeeClient();
+clearHireIdempotency();
+const smartEmployee = await runSourcingThroughHiredRaw(
+  { ...input, idempotencyKey: "employee-smart-1" },
+  { NODE_ENV: "test", HIRE_CONNECTOR: "smart", SMART_URL: "https://smart.example.test/", SMART_TOKEN: "smart-token" },
+  (async (url: string) => {
+    if (!url.startsWith("https://smart.example.test/api/hire/")) throw new Error(`unexpected url ${url}`);
+    return jsonResponse(200, { id: "smart-1" });
+  }) as typeof fetch,
+  smartEmployeeClient,
+);
+ok(
+  "a SMART hire does not record an employee id",
+  smartEmployee.ok === true && smartEmployee.erp === "smart" && smartEmployee.employeeId === undefined && smartEmployeeClient.createCount === 0,
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
