@@ -20,6 +20,7 @@ import { CandidateTable } from "@/components/candidates/candidate-table";
 import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
+import { inMemoryEmployeeClient } from "@/lib/hire-employee";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
 import { CANDIDATE_STAGES, SOURCE_PLATFORMS, type Candidate, type CandidateStage } from "@/lib/types";
 import { pluralize } from "@/lib/utils";
@@ -235,7 +236,7 @@ function CandidatesView() {
     const ids = Array.from(visibleSelectedIds);
     if (ids.length === 0) return;
     ids.forEach((id) => {
-      actions.setCandidateStage(id, bulkStage);
+      actions.setCandidateStage(id, bulkStage, bulkStage === "Hired" ? inMemoryEmployeeClient : null);
       if (bulkStage === "Rejected" && bulkReason.trim()) {
         actions.setRejectionReason(id, bulkReason.trim());
       }
