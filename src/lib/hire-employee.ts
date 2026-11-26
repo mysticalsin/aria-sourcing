@@ -125,3 +125,9 @@ export class FakeOdooEmployeeClient implements OdooEmployeeClient {
     return row;
   }
 }
+
+/**
+ * One hr.employee table for the candidate drawer and the bulk hire control.
+ * A second hire of the same applicant finds the row already stored. No network.
+ */
+export const inMemoryEmployeeClient = new FakeOdooEmployeeClient();

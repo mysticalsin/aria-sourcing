@@ -15,6 +15,7 @@ import { FitRadar } from "@/components/charts/fit-radar";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
+import { inMemoryEmployeeClient } from "@/lib/hire-employee";
 import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
@@ -489,7 +490,7 @@ export function CandidateDrawer({
   };
 
   const handleSetStage = (stage: CandidateStage) => {
-    actions.setCandidateStage(c.id, stage);
+    actions.setCandidateStage(c.id, stage, stage === "Hired" ? inMemoryEmployeeClient : null);
     toast({
       title: `Stage updated: ${stage}`,
       description:
