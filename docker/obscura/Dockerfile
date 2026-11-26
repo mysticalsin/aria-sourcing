@@ -32,9 +32,26 @@ RUN git init -q . \
 # Cache the verified upstream V8 archive across BuildKit builds. Restricted
 # builders can supply their own non-secret, checksum-verified mirror instead
 # of relying on public GitHub release egress.
+# The pinned Obscura commit uses v8 137.3.0. Seed that archive before cargo:
+# rusty_v8 tries one Python fetch, then one curl, and CI often loses that
+# single GitHub Releases request. The filename matches rusty_v8's cache key.
 ARG RUSTY_V8_MIRROR
 RUN --mount=type=cache,id=aria-obscura-rusty-v8,target=/usr/local/cargo/.rusty_v8,sharing=locked \
     if [ -n "${RUSTY_V8_MIRROR:-}" ]; then export RUSTY_V8_MIRROR; fi; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64) triple=x86_64-unknown-linux-gnu ;; \
+      aarch64|arm64) triple=aarch64-unknown-linux-gnu ;; \
+      *) echo "unsupported V8 arch: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    base="${RUSTY_V8_MIRROR:-https://github.com/denoland/rusty_v8/releases/download}"; \
+    url="${base}/v137.3.0/librusty_v8_release_${triple}.a.gz"; \
+    key="$(printf '%s' "$url" | tr -c 'A-Za-z0-9' '_')"; \
+    dest="/usr/local/cargo/.rusty_v8/${key}"; \
+    if [ ! -s "$dest" ]; then \
+      curl -L --fail --retry 5 --retry-all-errors --retry-delay 5 -o "${dest}.partial" "$url"; \
+      mv "${dest}.partial" "$dest"; \
+    fi; \
     cargo build --release --bin obscura --bin obscura-worker
 
 FROM gcr.io/distroless/cc-debian12
