@@ -17,6 +17,7 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
+import { ShortlistEmployeeId } from "@/components/tania/shortlist-employee-id";
 import { useActions, useCampaigns, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
 import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import { hasPendingDraft } from "@/lib/recommendations";
@@ -472,6 +473,7 @@ function SilverMedalistCard({
 
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-ink">{c.name}</p>
+        <ShortlistEmployeeId candidate={c} />
         <p className="truncate text-xs text-muted">
           {c.currentTitle}
           {c.currentCompany ? ` · ${c.currentCompany}` : ""}
@@ -539,6 +541,7 @@ function WarmRow({
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-ink">{c.name}</p>
+        <ShortlistEmployeeId candidate={c} />
         <p className="truncate text-xs text-muted">
           {c.currentTitle}
           {c.currentCompany ? ` · ${c.currentCompany}` : ""}

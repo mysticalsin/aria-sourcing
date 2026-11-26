@@ -260,6 +260,11 @@ export default function DashboardPage() {
                 }
               : null
           }
+          storedHire={
+            commandCandidate
+              ? { stage: commandCandidate.stage, odooEmployeeId: commandCandidate.odooEmployeeId }
+              : null
+          }
         />
 
         {runOpen && activeCampaign && (
