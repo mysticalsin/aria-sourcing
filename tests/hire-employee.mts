@@ -1,4 +1,11 @@
-import { createEmployeeWhenHired, FakeOdooEmployeeClient, type OdooEmployeeClient, type OdooEmployeeRecord } from "../src/lib/hire-employee";
+import {
+  createEmployeeForStage,
+  createEmployeeWhenHired,
+  FakeOdooEmployeeClient,
+  namedHiredStage,
+  type OdooEmployeeClient,
+  type OdooEmployeeRecord,
+} from "../src/lib/hire-employee";
 
 let pass = 0;
 let fail = 0;
@@ -82,6 +89,25 @@ const emptyId: OdooEmployeeClient = {
 };
 const noRecord = await createEmployeeWhenHired(emptyId, hired);
 ok("a create that returns no employee id fails", noRecord.ok === false && noRecord.error === "odoo employee create returned no record");
+
+ok("this branch already names the hired stage", namedHiredStage() === "Hired");
+
+const stageClient = new FakeOdooEmployeeClient();
+const offer = await createEmployeeForStage("Offer", { applicantId: "42", name: "Fixture Candidate North" }, stageClient);
+ok(
+  "a stage other than Hired does not call the client",
+  offer.employeeId === null && stageClient.findCount === 0 && stageClient.createCount === 0,
+);
+
+const unconfigured = await createEmployeeForStage("Hired", { applicantId: "42", name: "Fixture Candidate North" }, null);
+ok("an unconfigured Odoo client is not called", unconfigured.employeeId === null && stageClient.findCount === 0 && stageClient.createCount === 0);
+
+const hiredStage = await createEmployeeForStage("Hired", { applicantId: "42", name: "Fixture Candidate North" }, stageClient);
+const hiredAgain = await createEmployeeForStage("Hired", { applicantId: "42", name: "Fixture Candidate North" }, stageClient);
+ok(
+  "moving to Hired returns the employee id",
+  hiredStage.employeeId === 1 && hiredAgain.employeeId === 1 && stageClient.createCount === 1 && stageClient.employees.length === 1,
+);
 
 console.log(`RESULT hire-employee: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

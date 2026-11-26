@@ -1,8 +1,36 @@
+import { CANDIDATE_STAGES, type CandidateStage } from "./types";
+
 /**
  * Create the Odoo hr.employee row for an applicant who has just been hired.
- * A stage change on its own does not do this. Callers pass a client; tests use
- * the in-memory fake and never open a socket.
+ * Callers pass a client. A missing client means Odoo is not configured, and
+ * nothing is called. Tests use the in-memory fake and never open a socket.
  */
+
+/** The hired stage this branch already names, taken from the stage list. */
+export function namedHiredStage(): CandidateStage | null {
+  return CANDIDATE_STAGES.find((stage) => stage === "Hired") ?? null;
+}
+
+/**
+ * Stage writer entry. Creates an employee only when the new stage is the
+ * hired stage and a client was injected. Any other stage, or no client,
+ * leaves the client untouched.
+ */
+export async function createEmployeeForStage(
+  stage: CandidateStage,
+  applicant: { applicantId: string; name: string },
+  client: OdooEmployeeClient | null,
+): Promise<{ employeeId: number | null }> {
+  const hiredStage = namedHiredStage();
+  if (!hiredStage || stage !== hiredStage || client == null) return { employeeId: null };
+  const result = await createEmployeeWhenHired(client, {
+    applicantId: applicant.applicantId,
+    name: applicant.name,
+    hired: true,
+  });
+  if (!result.ok) return { employeeId: null };
+  return { employeeId: result.employee.id };
+}
 
 export interface HiredApplicant {
   applicantId: string;
