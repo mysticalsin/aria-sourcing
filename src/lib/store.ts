@@ -42,7 +42,7 @@ import { resolveAiProvider } from "./ai/provider";
 import { emit } from "./agent-events";
 import { buildSeedState, defaultGuardrails, defaultLlmProviders, defaultSavedModels, defaultSettings, defaultTools, seedInterviewers, STATE_VERSION } from "./seed";
 import { computeCampaignMetrics, firstInterviewElapsedHours, globalKpis, type GlobalKpis } from "./metrics";
-import { createEmployeeForStage, type OdooEmployeeClient } from "./hire-employee";
+import { storeHiredEmployee, withStoredEmployeeId, type OdooEmployeeClient } from "./hire-employee";
 import { deriveRecommendations, deriveFollowUpsDue, type Recommendation, type FollowUpDueItem } from "./recommendations";
 import { scoreCandidate } from "./scoring";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "./tania";
@@ -3572,10 +3572,11 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
 
   const setCandidateStage = useCallback(
     (id: string, stage: CandidateStage, client: OdooEmployeeClient | null = null) => {
-      let name = "";
+      // The name has to be read before the stage commit. The employee id is
+      // written onto the candidate after the injected client returns it.
+      const existing = current().candidates.find((c) => c.id === id);
       commit((s) => {
         const cand = s.candidates.find((c) => c.id === id);
-        if (cand) name = cand.name;
         let next: HermesState = {
           ...s,
           candidates: s.candidates.map((c) =>
@@ -3591,9 +3592,21 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       // No client means Odoo is not configured: do not call out.
-      return createEmployeeForStage(stage, { applicantId: id, name }, client);
+      return storeHiredEmployee(
+        { id, name: existing?.name ?? "", odooEmployeeId: existing?.odooEmployeeId },
+        stage,
+        client,
+      ).then((stored) => {
+        if (stored.employeeId != null) {
+          commit((s) => ({
+            ...s,
+            candidates: s.candidates.map((c) => (c.id === id ? withStoredEmployeeId(c, stored.employeeId) : c)),
+          }));
+        }
+        return { employeeId: stored.employeeId };
+      });
     },
-    [commit],
+    [commit, current],
   );
 
   const setCandidatePhone = useCallback(
