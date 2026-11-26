@@ -15,6 +15,7 @@ import {
   smartHireConnector,
   type HireConnector,
 } from "@/lib/hire-connector";
+import { employeeIdForHiredPerson, namedHiredStage } from "@/lib/hire-employee";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -185,6 +186,8 @@ export interface SourcingThroughHiredResult {
   linkedIn: boolean;
   steps: SourcingThroughHiredStep[];
   error?: string;
+  /** Positive hr.employee id for a generic HTTPS API or MCP hire. Absent for other connectors. */
+  employeeId?: number | null;
 }
 
 type HireFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -520,5 +523,7 @@ async function runErpHire(
     error: hired.ok ? undefined : hired.error,
   });
   if (!hired.ok) return { ok: false, erp, linkedIn: true, steps, error: hired.error };
-  return { ok: true, erp, linkedIn: true, steps };
+  if (erp !== "api" && erp !== "mcp") return { ok: true, erp, linkedIn: true, steps };
+  const employeeId = input.stage === namedHiredStage() ? await employeeIdForHiredPerson(input.applicant.name) : null;
+  return { ok: true, erp, linkedIn: true, steps, employeeId };
 }

@@ -100,6 +100,23 @@ export async function createEmployeeWhenHired(
   return { ok: true, created: true, employee: created };
 }
 
+/**
+ * One positive hr.employee id for a hired person.
+ * A generic HTTPS API hire and an MCP hire of the same name share this client.
+ * A second hire returns the row already stored. No network.
+ */
+export async function employeeIdForHiredPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  const result = await createEmployeeWhenHired(inMemoryEmployeeClient, {
+    applicantId,
+    name: applicantId,
+    hired: true,
+  });
+  if (!result.ok) return null;
+  return result.employee.id;
+}
+
 /** In-memory hr.employee table. No network. */
 export class FakeOdooEmployeeClient implements OdooEmployeeClient {
   readonly employees: OdooEmployeeRecord[] = [];

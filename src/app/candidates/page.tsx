@@ -379,6 +379,7 @@ function CandidatesView() {
                 }
               : null
           }
+          onEmployeeId={(candidateId, employeeId) => actions.rememberConnectorEmployee(candidateId, employeeId)}
         />
       </div>
 

@@ -960,6 +960,7 @@ export function CandidateDrawer({
               email: c.email,
               jobName: campaign?.title ?? c.currentTitle,
             }}
+            onEmployeeId={(candidateId, employeeId) => actions.rememberConnectorEmployee(candidateId, employeeId)}
           />
           <div className="flex flex-wrap gap-2">
             {STAGE_ACTIONS.map((stage) => (

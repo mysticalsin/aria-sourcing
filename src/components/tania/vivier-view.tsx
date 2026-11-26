@@ -189,6 +189,7 @@ export function VivierView() {
                   }
                 : null
             }
+            onEmployeeId={(candidateId, employeeId) => actions.rememberConnectorEmployee(candidateId, employeeId)}
           />
         </div>
         {pool.length === 0 ? (

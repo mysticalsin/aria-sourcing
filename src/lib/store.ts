@@ -451,6 +451,8 @@ export interface HermesActions {
     stage: CandidateStage,
     client?: OdooEmployeeClient | null,
   ) => Promise<{ employeeId: number | null }>;
+  /** Store the employee id returned by a generic HTTPS API or MCP hire. */
+  rememberConnectorEmployee: (id: string, employeeId: number | null) => void;
   setCandidatePhone: (id: string, phone: string) => void;
   /** Appends a free-text recruiter note (newest first). Audit-worthy — writes
    *  an Activity, not just a UI notification. No-ops on blank text. */
@@ -3607,6 +3609,26 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  const rememberConnectorEmployee = useCallback(
+    (id: string, employeeId: number | null) => {
+      if (typeof employeeId !== "number" || !Number.isSafeInteger(employeeId) || employeeId <= 0) return;
+      commit((s) => {
+        const cand = s.candidates.find((c) => c.id === id);
+        if (!cand) return s;
+        const hired = cand.stage === "Hired" ? cand : { ...cand, ...withStage(cand, "Hired") };
+        const nextCandidate = storeHiredEmployeeId(hired, employeeId);
+        if (nextCandidate === cand) return s;
+        let next: HermesState = {
+          ...s,
+          candidates: s.candidates.map((c) => (c.id === id ? nextCandidate : c)),
+        };
+        if (cand.stage !== "Hired") next = recomputeMetrics(next, cand.campaignId);
+        return next;
+      });
+    },
+    [commit],
+  );
+
   const setCandidatePhone = useCallback(
     (id: string, phone: string) =>
       commit((s) => ({
@@ -6119,6 +6141,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       generateReport,
       setSkillUpdateStatus,
       setCandidateStage,
+      rememberConnectorEmployee,
       setCandidatePhone,
       addCandidateNote,
       setRejectionReason,
@@ -6215,7 +6238,7 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
       sourceNextBatch, addCandidateFromGithub, addCandidateManual, startSillageMapping, checkSillageMapping, sourceFromApollo, enrichApolloCandidate, sourceFromSeamless, startSeamlessResearch, checkSeamlessResearch, runSourcingAgent, generateOutreachFor, generateOutreachLive, updateOutreach, regenerateOutreach,
       approveOutreach, confirmManualSend, sendApprovedOutreach, rejectOutreach, draftFollowUpFor, draftRecontactFor, classifyAndStoreReply, markReplyHandled,
       applyReplyAction, draftReplyResponse, createBookingFor, updateBooking, generateReport,
-      setSkillUpdateStatus, setCandidateStage, setCandidatePhone, addCandidateNote, setRejectionReason,
+      setSkillUpdateStatus, setCandidateStage, rememberConnectorEmployee, setCandidatePhone, addCandidateNote, setRejectionReason,
       setCandidateRating, setCandidateLeadSource, toggleVivier, savePrequal, setPrequalOutcome, addInterview, updateInterview,
       advanceChatboxSubmission, setChatboxSubmissionStatus, addChatboxSubmission,
       suppressCandidate, markDoNotContact, restoreCandidateContact,

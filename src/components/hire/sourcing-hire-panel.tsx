@@ -48,18 +48,22 @@ export function SourcingHirePanel({
   candidate,
   label,
   storedHire = null,
+  onEmployeeId,
 }: {
   screen: SourcingScreen;
   candidate: SourcingHireCandidate | null;
   label: string;
   /** In-memory hire already stored on the command center candidate. Display only. */
   storedHire?: CandidateListRow | null;
+  /** Called with the positive hr.employee id a generic API or MCP hire returned. */
+  onEmployeeId?: (candidateId: string, employeeId: number) => void;
 }) {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ShownHire | null>(null);
 
   async function run() {
     if (!candidate || pending) return;
+    const candidateId = candidate.id;
     setPending(true);
     setResult(null);
     try {
@@ -75,8 +79,12 @@ export function SourcingHirePanel({
           stage: "Hired",
         }),
       });
-      const json = (await response.json()) as ShownHire;
+      const json = (await response.json()) as ShownHire & { employeeId?: unknown };
       setResult(json);
+      const returnedId = json.employeeId;
+      if (typeof returnedId === "number" && Number.isSafeInteger(returnedId) && returnedId > 0) {
+        onEmployeeId?.(candidateId, returnedId);
+      }
     } catch {
       setResult({ ok: false, erp: "skipped", error: "Hire request failed." });
     } finally {
