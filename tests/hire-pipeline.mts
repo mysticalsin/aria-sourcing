@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
 import { fetchPublicUrl } from "../src/lib/api/public-fetch";
+import { FakeOdooEmployeeClient } from "../src/lib/hire-employee";
 import { clearHireIdempotency, envForHireRequest, hireEnvForRoute, runSourcingThroughHired as runSourcingThroughHiredRaw } from "../src/lib/mcp-client";
 
 async function runSourcingThroughHired(
@@ -695,6 +696,76 @@ ok(
 ok(
   "the route proof removed the fixture credentials from the process",
   liveCredentialNames.every((name) => !process.env[name]),
+);
+
+const sharedEmployee = new FakeOdooEmployeeClient();
+const sharedApplicant = { name: "Ada Lovelace", email: "ada@example.test" };
+const sharedApiEnv: NodeJS.ProcessEnv = {
+  NODE_ENV: "test",
+  HIRE_CONNECTOR: "api",
+  HIRE_API_URL: "https://hire-api.example.test/",
+  HIRE_API_TOKEN: "fake-api-token",
+};
+const sharedApiFetch = (async (url: string) => {
+  if (!url.startsWith("https://hire-api.example.test/v1/hire/")) throw new Error(`unexpected url ${url}`);
+  const id = url.endsWith("/hr.applicant") ? "api-applicant-7" : "api-job-3";
+  return jsonResponse(200, { id });
+}) as typeof fetch;
+const sharedMcpFetch = (async (url: string, init?: RequestInit) => {
+  if (url !== "https://hire-mcp.example.test/mcp") throw new Error(`unexpected url ${url}`);
+  const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; params?: { arguments?: { model?: string } } };
+  if (body.method === "initialize") return jsonResponse(200, { result: { serverInfo: { name: "fake-hire" } } }, { "mcp-session-id": "shared-sess" });
+  if (body.method === "notifications/initialized") return jsonResponse(202, {});
+  const id = body.params?.arguments?.model === "hr.applicant" ? "mcp-applicant-9" : "mcp-job-4";
+  return jsonResponse(200, { result: { structuredContent: { id } } });
+}) as typeof fetch;
+clearHireIdempotency();
+const sharedApiHired = await runSourcingThroughHiredRaw(
+  { ...input, applicant: sharedApplicant, idempotencyKey: "shared-employee-api" },
+  sharedApiEnv,
+  sharedApiFetch,
+  sharedEmployee,
+);
+clearHireIdempotency();
+const sharedMcpHired = await runSourcingThroughHiredRaw(
+  { ...input, applicant: sharedApplicant, idempotencyKey: "shared-employee-mcp" },
+  {
+    NODE_ENV: "test",
+    HIRE_CONNECTOR: "mcp",
+    HIRE_MCP_URL: "https://hire-mcp.example.test/mcp",
+    HIRE_MCP_TOKEN: "fake-mcp-token",
+    HIRE_MCP_TOOL: "hire",
+  },
+  sharedMcpFetch,
+  sharedEmployee,
+);
+clearHireIdempotency();
+const sharedApiHiredAgain = await runSourcingThroughHiredRaw(
+  { ...input, applicant: sharedApplicant, idempotencyKey: "shared-employee-api-again" },
+  sharedApiEnv,
+  sharedApiFetch,
+  sharedEmployee,
+);
+const sharedApiApplicantId = sharedApiHired.steps.find((step) => step.action === "applicant")?.id;
+const sharedMcpApplicantId = sharedMcpHired.steps.find((step) => step.action === "applicant")?.id;
+ok(
+  "an http api hire and an mcp hire return the same employee id for one applicant",
+  sharedApiHired.ok === true &&
+    sharedApiHired.erp === "api" &&
+    sharedMcpHired.ok === true &&
+    sharedMcpHired.erp === "mcp" &&
+    sharedApiApplicantId === "api-applicant-7" &&
+    sharedMcpApplicantId === "mcp-applicant-9" &&
+    sharedApiHired.employeeId === 1 &&
+    sharedMcpHired.employeeId === sharedApiHired.employeeId &&
+    sharedApiHiredAgain.ok === true &&
+    sharedApiHiredAgain.employeeId === sharedApiHired.employeeId &&
+    sharedEmployee.createCount === 1 &&
+    sharedEmployee.employees.length === 1 &&
+    sharedEmployee.employees[0]?.name === "Ada Lovelace" &&
+    sharedEmployee.employees[0]?.applicantId.includes("Ada Lovelace") === true &&
+    sharedEmployee.employees[0]?.applicantId.includes("ada@example.test") === true &&
+    sharedEmployee.findCount === 3,
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);
