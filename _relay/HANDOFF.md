@@ -11,9 +11,10 @@ status: odoo-merged-into-mbe-branch-behind-ODOO_ENABLED
 ## Current state
 
 - Branch `mbe-branch` checked out. `odoo` was fast-forwarded into it (no
-  merge commit): both were at 931e5bba (ODOO_ENABLED switch) on origin;
-  mbe-branch then gets this handoff commit. `odoo` is fully contained in
-  mbe-branch.
+  merge commit) at 931e5bba (ODOO_ENABLED switch), then deleted (local and
+  origin, 0 commits outside mbe-branch). Older remote branches with "odoo"
+  in their name (cursor/*, twa-odoo, cleanup/*) are other tools' work,
+  untouched.
 - mbe-branch now carries: the Odoo integration (ADR 0003, migrations 0010 and
   0011), scoring model 2 + contact-floor switch (STATE_VERSION 22 rescore),
   intake "Nice to have:" line, AI provider refusal reason, idle workspace
@@ -52,23 +53,21 @@ status: odoo-merged-into-mbe-branch-behind-ODOO_ENABLED
 
 ## Next steps
 
-1. Owner: keep or delete the `odoo` branch. Recommendation given: delete it
-   (local and origin) since mbe-branch contains it, optionally after a tag
-   (e.g. `odoo-integration-v1` on 931e5bba). Not done without his yes.
-2. Owner: rebuild his :3000 stack from mbe-branch when convenient to get the
+1. Owner: rebuild his :3000 stack from mbe-branch when convenient to get the
    new scoring and the fixes (Odoo stays off there).
-3. Owner: look at the new scores; tune `UNKNOWN_SCORE` (50) or the weights.
-4. Owner: autopilot threshold vs. scoring model 2 (unverified profiles can
+2. Owner: look at the new scores; tune `UNKNOWN_SCORE` (50) or the weights.
+3. Owner: autopilot threshold vs. scoring model 2 (unverified profiles can
    now reach ~75, above the default minimum 70).
-5. Carried over: ADR 0003 review, DPO on the Odoo erasure rule, IT
+4. Carried over: ADR 0003 review, DPO on the Odoo erasure rule, IT
    prerequisites, remaining Odoo follow-ups (.scratch/odoo-integration/spec.md).
 
 ## Decisions made (don't relitigate)
 
 - Owner 2026-11-26 (shift 472): `odoo` merged into mbe-branch (fast-forward)
   with the `ODOO_ENABLED` server switch, OFF by default, while the choice of
-  Odoo is still open. Odoo work now happens on mbe-branch. Whether to delete
-  the `odoo` branch: owner's call, still open (see Next steps 1).
+  Odoo is still open. Odoo work now happens on mbe-branch. The `odoo` branch
+  was then deleted, local and origin, no tag (owner, same day). Do not
+  recreate a long-lived Odoo branch.
 - Owner 2026-11-12 (shift 466): the presentation shows the "POC live". Pages
   that need an integration this install does not run are left out of the
   navigation, not deleted: `OUT_OF_POC_SCOPE` in `src/components/app/nav.ts`
