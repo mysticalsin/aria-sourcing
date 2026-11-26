@@ -17,12 +17,12 @@ import {
   formatTimeAgo,
   initialsFrom,
   scoreTone,
-  toneForStage,
   type Tone,
 } from "@/lib/utils";
 import { applyConfidentiality, hasOutreachPurpose } from "@/lib/confidential";
 import { deriveLeadSource, deriveStarRating, DEFAULT_STAR_THRESHOLDS } from "@/lib/tania";
 import { SourceBadge, StarBadge } from "@/components/tania/badges";
+import { CandidateListHireStatus } from "@/components/candidates/candidate-list-hire";
 import { ProvenanceChip } from "@/components/candidates/consent-passport";
 import type { Candidate, ComplianceFlags } from "@/lib/types";
 import { Ban, Bookmark, Download, EyeOff, Lock, MailX, UserX, Users } from "lucide-react";
@@ -227,9 +227,7 @@ export function CandidateTable({
                 </div>
               </TD>
               <TD>
-                <Badge tone={toneForStage(c.stage)} size="sm" dot>
-                  {c.stage}
-                </Badge>
+                <CandidateListHireStatus candidate={c} />
               </TD>
               <TD>
                 <span className="whitespace-nowrap text-sm text-muted tabular-nums">
