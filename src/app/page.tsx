@@ -25,6 +25,7 @@ import { TaniaSummary } from "@/components/dashboard/tania-summary";
 import { CampaignCard } from "@/components/campaigns/campaign-card";
 import { ActivityTimeline } from "@/components/shared/activity-timeline";
 import { AgentRunStream } from "@/components/run/agent-run-stream";
+import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import {
   useActions,
   useActiveCampaign,
@@ -69,6 +70,10 @@ export default function DashboardPage() {
   const activeCampaign = useActiveCampaign();
 
   const activeCampaigns = campaigns.filter((c) => !["Filled", "Paused"].includes(c.status));
+  const commandCandidate =
+    (activeCampaign ? candidates.find((c) => c.campaignId === activeCampaign.id) : undefined) ??
+    candidates[0] ??
+    null;
   const funnel = React.useMemo(() => funnelForCandidates(candidates), [candidates]);
 
   // "Watch Aria Work" panel — remounted (via runToken as its key) on every
@@ -241,6 +246,21 @@ export default function DashboardPage() {
             </div>
           </div>
         </Card>
+
+        <SourcingHirePanel
+          screen="command"
+          label="Command center hire"
+          candidate={
+            commandCandidate
+              ? {
+                  id: commandCandidate.id,
+                  name: commandCandidate.name,
+                  email: commandCandidate.email,
+                  jobName: activeCampaign?.title ?? commandCandidate.currentTitle,
+                }
+              : null
+          }
+        />
 
         {runOpen && activeCampaign && (
           <AgentRunStream

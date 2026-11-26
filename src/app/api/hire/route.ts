@@ -1,20 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getServerSupabase } from "@/lib/supabase/server";
-import { supabaseEnabled, prodFailClosed } from "@/lib/supabase/config";
+import { supabaseEnabled, prodFailClosed, demoLoginEnabled, DEMO_COOKIE_NAME } from "@/lib/supabase/config";
+import { demoAuthConfigured, verifyDemoToken } from "@/lib/demo-auth";
 import { validateBody } from "@/lib/api/validate";
 import { can } from "@/lib/rbac";
 import type { Role } from "@/lib/types";
 import { checkRateLimit, rateLimitKey, tooManyRequests } from "@/lib/rate-limit";
-import { envForHireRequest, runSourcingThroughHired } from "@/lib/hire-connector";
+import { hireEnvForRoute, runSourcingThroughHired } from "@/lib/mcp-client";
 
 export const runtime = "nodejs";
 
 /**
  * Move one sourced applicant from job opening through hire.
- * Odoo JSON-RPC, SMART, a generic HTTPS API, or an MCP hire tool — whichever
- * is configured. With none configured, LinkedIn sourcing still completes and
- * no upstream request is sent. Demo mode strips connector credentials first.
+ * When Odoo, SMART, the generic HTTPS API, or MCP runtime credentials are
+ * complete, this calls that connector for real. The default transport is the
+ * public HTTPS fetch. The synthetic page does not use this route.
+ * With none configured, LinkedIn sourcing still completes and no upstream
+ * request is sent.
  */
 const HireSchema = z.object({
   idempotencyKey: z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/),
@@ -29,9 +32,29 @@ const HireSchema = z.object({
   stage: z.string().min(1).max(80),
 });
 
+function publicDemoHireDenied(req: NextRequest): Response | null {
+  if (supabaseEnabled || !demoLoginEnabled) return null;
+  if (demoAuthConfigured() && verifyDemoToken(req.cookies.get(DEMO_COOKIE_NAME)?.value)) return null;
+  return NextResponse.json({ ok: false, error: "Sign in to hire." }, { status: 401 });
+}
+
+function liveOriginDenied(req: NextRequest): Response | null {
+  if (!supabaseEnabled) return null;
+  const origin = req.headers.get("origin");
+  if (origin === req.nextUrl.origin) return null;
+  return NextResponse.json(
+    { ok: false, code: "CROSS_ORIGIN_REQUEST", error: "Cross-origin hire is not allowed." },
+    { status: 403 },
+  );
+}
+
 export async function POST(req: NextRequest) {
   const prodBlock = prodFailClosed();
   if (prodBlock) return prodBlock;
+  const demoBlock = publicDemoHireDenied(req);
+  if (demoBlock) return demoBlock;
+  const originBlock = liveOriginDenied(req);
+  if (originBlock) return originBlock;
 
   const rl = checkRateLimit(rateLimitKey(req, "hire"), { windowMs: 60_000, max: 10 });
   if (!rl.ok) return tooManyRequests(rl.retryAfterSec);
@@ -52,6 +75,6 @@ export async function POST(req: NextRequest) {
   const validated = await validateBody(req, HireSchema, { maxBytes: 8_000 });
   if (!validated.ok) return validated.response;
 
-  const result = await runSourcingThroughHired(validated.data, envForHireRequest(process.env, supabaseEnabled));
+  const result = await runSourcingThroughHired(validated.data, hireEnvForRoute(process.env, supabaseEnabled));
   return NextResponse.json(result, { status: result.ok ? 200 : 502 });
 }

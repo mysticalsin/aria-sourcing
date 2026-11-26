@@ -17,7 +17,8 @@ import {
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { StarBadge, SourceBadge } from "@/components/tania/badges";
-import { useActions, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
+import { useActions, useCampaigns, useHydrated, useOutreach, useSettings, useVivier } from "@/lib/store";
+import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import { hasPendingDraft } from "@/lib/recommendations";
 import {
   DEFAULT_STAR_THRESHOLDS,
@@ -50,6 +51,7 @@ type SourceFilter = LeadSource | "all";
 export function VivierView() {
   const hydrated = useHydrated();
   const pool = useVivier();
+  const campaigns = useCampaigns();
   const outreach = useOutreach();
   const settings = useSettings();
   const actions = useActions();
@@ -170,6 +172,24 @@ export function VivierView() {
       />
 
       <HydrationGate hydrated={hydrated} fallback={<VivierFallback />}>
+        <div className="mb-6">
+          <SourcingHirePanel
+            screen="shortlist"
+            label="Shortlist hire"
+            candidate={
+              derived.filtered[0]
+                ? {
+                    id: derived.filtered[0].id,
+                    name: derived.filtered[0].name,
+                    email: derived.filtered[0].email,
+                    jobName:
+                      campaigns.find((campaign) => campaign.id === derived.filtered[0].campaignId)?.title ??
+                      derived.filtered[0].currentTitle,
+                  }
+                : null
+            }
+          />
+        </div>
         {pool.length === 0 ? (
           <EmptyState
             icon={<Sparkles className="h-6 w-6" aria-hidden />}

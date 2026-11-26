@@ -297,6 +297,23 @@ const nodeTransport: PublicFetchTransport = async ({
 // bypassed.
 export const _testOnlyNodeTransport: PublicFetchTransport = nodeTransport;
 
+type InstalledPublicFetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+const INSTALLED_FETCH = "__ariaInstalledPublicFetch";
+
+/** The route proof installs a fake here. Unset in production, so live calls stay pinned. */
+function installSlot(): Record<string, InstalledPublicFetch | null | undefined> {
+  return globalThis as unknown as Record<string, InstalledPublicFetch | null | undefined>;
+}
+
+export function _installPublicFetchForTests(fetchImpl: InstalledPublicFetch | null): void {
+  installSlot()[INSTALLED_FETCH] = fetchImpl;
+}
+
+function installedPublicFetch(): InstalledPublicFetch | null {
+  return installSlot()[INSTALLED_FETCH] ?? null;
+}
+
 /**
  * Resolve, classify, and pin one public HTTPS request to the exact validated IP.
  * Redirects are never followed; every hop must be a fresh call and fresh pin.
@@ -307,6 +324,12 @@ export async function fetchPublicUrl(
   dependencies: PublicFetchDependencies = {},
 ): Promise<Response> {
   const url = validateUrl(input, init);
+  const installed = installedPublicFetch();
+  if (installed && !dependencies.resolver && !dependencies.transport) {
+    await resolveTarget(url, systemResolver);
+    const redirect = init.redirect === "error" || init.redirect === "manual" ? init.redirect : "manual";
+    return installed(url.toString(), { ...init, redirect });
+  }
   const timeoutMs = bounded(init.timeoutMs, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const deadlineAt = Date.now() + timeoutMs;
   const controller = new AbortController();
