@@ -100,6 +100,40 @@ export async function createEmployeeWhenHired(
   return { ok: true, created: true, employee: created };
 }
 
+/** Candidate fields this hire can read and update. */
+export interface HiredCandidateRecord {
+  id: string;
+  name: string;
+  /** hr.employee id from the injected client. Absent until a successful hire stores one. */
+  odooEmployeeId?: number;
+}
+
+/**
+ * Copy a positive hr.employee id onto the candidate. A missing id leaves the
+ * record as it was, including an id already stored by an earlier hire.
+ */
+export function withStoredEmployeeId<T extends HiredCandidateRecord>(candidate: T, hiredEmployeeId: number | null): T {
+  if (hiredEmployeeId == null) return candidate;
+  return { ...candidate, odooEmployeeId: hiredEmployeeId };
+}
+
+/**
+ * After a successful hire, the candidate stores the hr.employee id from the
+ * injected client. A second hire of the same applicant keeps that id. No
+ * client, or any stage other than Hired, leaves the record unchanged.
+ */
+export async function storeHiredEmployee<T extends HiredCandidateRecord>(
+  candidate: T,
+  stage: CandidateStage,
+  client: OdooEmployeeClient | null,
+): Promise<{ candidate: T; employeeId: number | null }> {
+  const recorded = await createEmployeeForStage(stage, { applicantId: candidate.id, name: candidate.name }, client);
+  return {
+    candidate: withStoredEmployeeId(candidate, recorded.employeeId),
+    employeeId: recorded.employeeId,
+  };
+}
+
 /** In-memory hr.employee table. No network. */
 export class FakeOdooEmployeeClient implements OdooEmployeeClient {
   readonly employees: OdooEmployeeRecord[] = [];

@@ -310,6 +310,8 @@ export interface Candidate {
   industryExperience: string[];
   recentActivity: string;
   stage: CandidateStage;
+  /** Odoo hr.employee id stored after a successful hire. Absent until the injected client returns one. */
+  odooEmployeeId?: number;
   /** Historical high-water-mark funnel rank (see STAGE_RANK in metrics.ts) —
    *  the furthest the candidate ever progressed, even if `stage` later moved
    *  to a terminal/negative state (Rejected, Suppressed). Absent = derive
