@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { createFakeOdooFetch, odooExecuteResponse } from "../src/lib/fake-odoo";
 import { fetchPublicUrl } from "../src/lib/api/public-fetch";
+import { FakeOdooEmployeeClient } from "../src/lib/hire-employee";
 import { clearHireIdempotency, envForHireRequest, hireEnvForRoute, runSourcingThroughHired as runSourcingThroughHiredRaw } from "../src/lib/mcp-client";
 
 async function runSourcingThroughHired(
@@ -12,7 +13,7 @@ async function runSourcingThroughHired(
   clearHireIdempotency();
   return runSourcingThroughHiredRaw(input, env, fetchImpl);
 }
-import { runSyntheticHireDemo } from "../src/lib/synthetic-hire-demo";
+import { runSyntheticHireDemo, SYNTHETIC_HIRE_FIXTURE, SYNTHETIC_ODOO_ENV } from "../src/lib/synthetic-hire-demo";
 
 let pass = 0;
 let fail = 0;
@@ -485,6 +486,13 @@ ok(
   "synthetic demo talks only to the in-repo fake Odoo",
   synthetic.odooHosts.length > 0 && synthetic.odooHosts.every((url) => url === "https://odoo.example.test/jsonrpc"),
 );
+const syntheticApplicantId = synthetic.hired.steps.find((step) => step.action === "applicant")?.id;
+ok(
+  "synthetic odoo hire result includes the employee id created for that applicant",
+  synthetic.hired.employeeId === 1 &&
+    syntheticApplicantId === "12" &&
+    synthetic.odooHosts.length === 6,
+);
 ok(
   "unset connector on the synthetic fixture returns erp skipped and linkedIn true",
   synthetic.unset.ok === true &&
@@ -695,6 +703,86 @@ ok(
 ok(
   "the route proof removed the fixture credentials from the process",
   liveCredentialNames.every((name) => !process.env[name]),
+);
+
+clearHireIdempotency();
+const sharedEmployees = new FakeOdooEmployeeClient();
+const firstSynthetic = await runSyntheticHireDemo(sharedEmployees);
+const secondSynthetic = await runSyntheticHireDemo(sharedEmployees);
+const hiredApplicantId = firstSynthetic.hired.steps.find((step) => step.action === "applicant")?.id;
+ok(
+  "a second synthetic odoo hire returns the same employee id",
+  firstSynthetic.hired.ok === true &&
+    firstSynthetic.hired.erp === "odoo" &&
+    firstSynthetic.hired.employeeId === 1 &&
+    secondSynthetic.hired.employeeId === 1 &&
+    secondSynthetic.hired.ok === true &&
+    sharedEmployees.createCount === 1 &&
+    sharedEmployees.findCount === 2 &&
+    sharedEmployees.employees.length === 1 &&
+    sharedEmployees.employees[0]?.model === "hr.employee" &&
+    sharedEmployees.employees[0]?.applicantId === hiredApplicantId &&
+    sharedEmployees.employees[0]?.name === "Fixture Candidate North" &&
+    firstSynthetic.odooHosts.every((url) => url === "https://odoo.example.test/jsonrpc") &&
+    secondSynthetic.odooHosts.every((url) => url === "https://odoo.example.test/jsonrpc"),
+);
+
+clearHireIdempotency();
+const replayClient = new FakeOdooEmployeeClient();
+const replayFake = createFakeOdooFetch();
+const replayInput = { ...SYNTHETIC_HIRE_FIXTURE, idempotencyKey: "synthetic-employee-replay" };
+const replayFirst = await runSourcingThroughHiredRaw(replayInput, SYNTHETIC_ODOO_ENV, replayFake.fetch, replayClient);
+const replaySecond = await runSourcingThroughHiredRaw(replayInput, SYNTHETIC_ODOO_ENV, replayFake.fetch, replayClient);
+const replayApplicantId = replayFirst.steps.find((step) => step.action === "applicant")?.id;
+ok(
+  "a repeated in-memory odoo hire keeps that employee id and does not fetch again",
+  replayFirst.ok === true &&
+    replayFirst.erp === "odoo" &&
+    replayFirst.employeeId === 1 &&
+    replaySecond.employeeId === replayFirst.employeeId &&
+    replaySecond.ok === true &&
+    replayClient.createCount === 1 &&
+    replayClient.findCount === 2 &&
+    replayClient.employees.length === 1 &&
+    replayClient.employees[0]?.applicantId === replayApplicantId &&
+    replayFake.calls.length === 6 &&
+    replayFake.calls.every((call) => call.url === "https://odoo.example.test/jsonrpc"),
+);
+
+const failedEmployees = new FakeOdooEmployeeClient();
+let failedPosts = 0;
+const failedOdoo = await runSourcingThroughHiredRaw(
+  { ...SYNTHETIC_HIRE_FIXTURE, idempotencyKey: "synthetic-employee-fail" },
+  SYNTHETIC_ODOO_ENV,
+  (async () => {
+    failedPosts += 1;
+    if (failedPosts === 1) return jsonResponse(200, { result: 7 });
+    return jsonResponse(500, {});
+  }) as typeof fetch,
+  failedEmployees,
+);
+ok(
+  "a failed synthetic odoo hire does not create an employee",
+  failedOdoo.ok === false &&
+    failedOdoo.employeeId === undefined &&
+    failedEmployees.createCount === 0 &&
+    failedEmployees.findCount === 0 &&
+    failedPosts === 2,
+);
+
+const bareFake = createFakeOdooFetch();
+const bareOdoo = await runSourcingThroughHiredRaw(
+  { ...SYNTHETIC_HIRE_FIXTURE, idempotencyKey: "synthetic-employee-none" },
+  SYNTHETIC_ODOO_ENV,
+  bareFake.fetch,
+);
+ok(
+  "an odoo hire without an injected client omits the employee id",
+  bareOdoo.ok === true &&
+    bareOdoo.erp === "odoo" &&
+    bareOdoo.employeeId === undefined &&
+    bareFake.calls.length === 6 &&
+    bareFake.calls.every((call) => call.url === "https://odoo.example.test/jsonrpc"),
 );
 
 console.log(`RESULT hire-pipeline: ${pass} passed, ${fail} failed`);

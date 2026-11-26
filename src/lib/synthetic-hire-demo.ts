@@ -1,4 +1,5 @@
 import { createFakeOdooFetch, type RecordedOdooCall } from "@/lib/fake-odoo";
+import { FakeOdooEmployeeClient, type OdooEmployeeClient } from "@/lib/hire-employee";
 import { runSourcingThroughHired, type SourcingThroughHiredResult, type SourcingThroughHiredStep } from "@/lib/mcp-client";
 
 /**
@@ -138,7 +139,9 @@ function shownConnector(
   };
 }
 
-export async function runSyntheticHireDemo(): Promise<SyntheticHireDemo> {
+export async function runSyntheticHireDemo(
+  employeeClient: OdooEmployeeClient | null = new FakeOdooEmployeeClient(),
+): Promise<SyntheticHireDemo> {
   let unsetFetches = 0;
   const unset = await runSourcingThroughHired(
     SYNTHETIC_HIRE_FIXTURE,
@@ -150,7 +153,7 @@ export async function runSyntheticHireDemo(): Promise<SyntheticHireDemo> {
   );
 
   const odoo = createFakeOdooFetch();
-  const hired = await runSourcingThroughHired(SYNTHETIC_HIRE_FIXTURE, SYNTHETIC_ODOO_ENV, odoo.fetch);
+  const hired = await runSourcingThroughHired(SYNTHETIC_HIRE_FIXTURE, SYNTHETIC_ODOO_ENV, odoo.fetch, employeeClient);
   const vacancy = rpcBodies(odoo.calls).find(
     (body) => body.params?.method === "execute_kw" && body.params.args?.[3] === "hr.job" && body.params.args?.[4] === "write",
   );

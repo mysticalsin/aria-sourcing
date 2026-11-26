@@ -15,6 +15,7 @@ import {
   smartHireConnector,
   type HireConnector,
 } from "@/lib/hire-connector";
+import { createEmployeeForStage, namedHiredStage, type OdooEmployeeClient } from "@/lib/hire-employee";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -185,6 +186,8 @@ export interface SourcingThroughHiredResult {
   linkedIn: boolean;
   steps: SourcingThroughHiredStep[];
   error?: string;
+  /** hr.employee id from the injected client. Set only after a successful Odoo hire that received one. */
+  employeeId?: number | null;
 }
 
 type HireFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -328,11 +331,14 @@ function selectHireConnector(env: NodeJS.ProcessEnv): HireErpKind | "skipped" | 
  * HTTPS API, then MCP. When none are configured, LinkedIn sourcing still
  * completes and no upstream request is sent. The default fetch is the live
  * public HTTPS transport. Tests and the synthetic demo pass a local fake.
+ * A successful Odoo hire records the employee id when the caller injects a
+ * client. No client leaves that id off the result and calls nothing.
  */
 export async function runSourcingThroughHired(
   input: SourcingThroughHiredInput,
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: HireFetch = fetchPublicUrl,
+  employeeClient: OdooEmployeeClient | null = null,
 ): Promise<SourcingThroughHiredResult> {
   const linkedIn = linkedInSourcingRunsWithoutErp(env);
   if (!linkedIn) {
@@ -344,8 +350,29 @@ export async function runSourcingThroughHired(
   const endpoint =
     selected === "odoo" ? env.ODOO_URL : selected === "smart" ? env.SMART_URL : selected === "api" ? env.HIRE_API_URL : env.HIRE_MCP_URL;
   const connector = memoHire(connectorFor(selected, env, fetchImpl), `${selected}|${(endpoint ?? "").trim().replace(/\/+$/, "")}`);
-  if (selected === "odoo") return runOdooHire(connector, input, env);
+  if (selected === "odoo") {
+    const hired = await runOdooHire(connector, input, env);
+    if (!hired.ok || employeeClient == null) return hired;
+    return { ...hired, employeeId: await employeeIdForHiredApplicant(input, hired, employeeClient) };
+  }
   return runErpHire(selected, connector, input);
+}
+
+/**
+ * Employee id for the applicant this Odoo hire created.
+ * The client is the one the caller injected. Nothing here opens a socket.
+ */
+async function employeeIdForHiredApplicant(
+  input: SourcingThroughHiredInput,
+  hired: SourcingThroughHiredResult,
+  client: OdooEmployeeClient,
+): Promise<number | null> {
+  const stage = namedHiredStage();
+  if (!stage || input.stage !== stage) return null;
+  const applicantId = hired.steps.find((step) => step.action === "applicant" && step.ok)?.id;
+  if (!applicantId) return null;
+  const recorded = await createEmployeeForStage(stage, { applicantId, name: input.applicant.name }, client);
+  return recorded.employeeId;
 }
 
 function hiredStageId(env: NodeJS.ProcessEnv): number | null {
