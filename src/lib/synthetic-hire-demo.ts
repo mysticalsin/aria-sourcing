@@ -1,4 +1,5 @@
 import { createFakeOdooFetch, type RecordedOdooCall } from "@/lib/fake-odoo";
+import { createEmployeeForStage, FakeOdooEmployeeClient } from "@/lib/hire-employee";
 import { runSourcingThroughHired, type SourcingThroughHiredResult, type SourcingThroughHiredStep } from "@/lib/mcp-client";
 
 /**
@@ -59,6 +60,8 @@ export interface SyntheticHireDemo {
   hrJobStateSent: boolean;
   connectors: SyntheticConnectorDemo[];
   odooHosts: string[];
+  /** hr.employee id from the in-memory fake after a successful Odoo hire, otherwise null. */
+  employeeId: number | null;
 }
 
 function jsonResponse(status: number, body: unknown, headers?: Record<string, string>): Response {
@@ -151,6 +154,7 @@ export async function runSyntheticHireDemo(): Promise<SyntheticHireDemo> {
 
   const odoo = createFakeOdooFetch();
   const hired = await runSourcingThroughHired(SYNTHETIC_HIRE_FIXTURE, SYNTHETIC_ODOO_ENV, odoo.fetch);
+  const employeeId = await employeeIdFromOdooHire(hired);
   const vacancy = rpcBodies(odoo.calls).find(
     (body) => body.params?.method === "execute_kw" && body.params.args?.[3] === "hr.job" && body.params.args?.[4] === "write",
   );
@@ -230,5 +234,22 @@ export async function runSyntheticHireDemo(): Promise<SyntheticHireDemo> {
       shownConnector("mcp", "MCP", mcp, mcpHosts),
     ],
     odooHosts: odoo.calls.map((call) => call.url),
+    employeeId,
   };
+}
+
+/**
+ * Employee id for a successful Odoo hire. The client is the in-memory fake.
+ * A hire that did not succeed returns null and does not call the client.
+ */
+async function employeeIdFromOdooHire(hired: SourcingThroughHiredResult): Promise<number | null> {
+  if (!hired.ok || hired.erp !== "odoo") return null;
+  const applicantId = hired.steps.find((step) => step.action === "applicant" && step.model === "hr.applicant" && step.ok)?.id;
+  if (!applicantId) return null;
+  const recorded = await createEmployeeForStage(
+    SYNTHETIC_HIRE_FIXTURE.stage,
+    { applicantId, name: SYNTHETIC_HIRE_FIXTURE.applicant.name },
+    new FakeOdooEmployeeClient(),
+  );
+  return recorded.employeeId;
 }

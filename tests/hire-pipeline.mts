@@ -537,6 +537,16 @@ ok(
     linkedInUrlCount('fetch("https://api.linkedin.com/v2/me")') === 1 &&
     linkedInUrlCount('fetch("https://linkedin.com.evil.test/in/fixture")') === 0,
 );
+const syntheticApplicantId = synthetic.hired.steps.find((step) => step.action === "applicant" && step.model === "hr.applicant")?.id;
+ok(
+  "the synthetic hire screen shows the employee id from a successful Odoo hire",
+  synthetic.hired.ok === true &&
+    synthetic.hired.erp === "odoo" &&
+    syntheticApplicantId === "12" &&
+    synthetic.employeeId === 1 &&
+    demoPage.includes("Employee id") &&
+    demoPage.includes('data-testid="employee-id">{demo.employeeId ?? ""}'),
+);
 
 const runtimeOdoo: NodeJS.ProcessEnv = {
   NODE_ENV: "test",
