@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CandidateListHireStatus } from "../src/components/candidates/candidate-list-hire";
 import { candidateListHire, storeHiredEmployeeId } from "../src/lib/candidate-list-hire";
-import { createEmployeeForStage, FakeOdooEmployeeClient, type OdooEmployeeClient } from "../src/lib/hire-employee";
+import { createEmployeeForStage, FakeOdooEmployeeClient, inMemoryEmployeeClient, type OdooEmployeeClient } from "../src/lib/hire-employee";
 
 let pass = 0;
 let fail = 0;
@@ -153,6 +153,48 @@ ok(
   /createEmployeeForStage\(stage, \{ applicantId: id, name \}, client\)[\s\S]*storeHiredEmployeeId\(c, employeeId\)/.test(stageFn) &&
     !stageFn.includes("fetch(") &&
     !/\bhttps?:\/\//.test(stageFn),
+);
+
+const drawer = readFileSync(new URL("../src/components/candidates/candidate-drawer.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../src/app/candidates/page.tsx", import.meta.url), "utf8");
+const employeeLib = readFileSync(new URL("../src/lib/hire-employee.ts", import.meta.url), "utf8");
+const drawerFn = drawer.slice(drawer.indexOf("const handleSetStage"), drawer.indexOf("const handleAddNote"));
+const bulkFn = page.slice(page.indexOf("function handleBulkStageApply"), page.indexOf("async function handleBulkDraftOutreach"));
+ok(
+  "the drawer Hired button and bulk Apply Hired pass the shared in-memory employee client",
+  /export const inMemoryEmployeeClient = new FakeOdooEmployeeClient\(\)/.test(employeeLib) &&
+    !employeeLib.includes("fetch(") &&
+    !/\bhttps?:\/\//.test(employeeLib) &&
+    drawerFn.includes('stage === "Hired" ? inMemoryEmployeeClient : null') &&
+    drawerFn.includes("setCandidateStage(c.id, stage, stage === \"Hired\" ? inMemoryEmployeeClient : null)") &&
+    bulkFn.includes('bulkStage === "Hired" ? inMemoryEmployeeClient : null') &&
+    bulkFn.includes("setCandidateStage(id, bulkStage, bulkStage === \"Hired\" ? inMemoryEmployeeClient : null)") &&
+    !drawerFn.includes("fetch(") &&
+    !bulkFn.includes("fetch(") &&
+    !/\bhttps?:\/\//.test(drawerFn) &&
+    !/\bhttps?:\/\//.test(bulkFn),
+);
+
+const screenFirst = await createEmployeeForStage(
+  "Hired",
+  { applicantId: "screen-42", name: "Fixture Candidate North" },
+  inMemoryEmployeeClient,
+);
+const screenAgain = await createEmployeeForStage(
+  "Hired",
+  { applicantId: "screen-42", name: "Fixture Candidate North" },
+  inMemoryEmployeeClient,
+);
+const screenSaved = storeHiredEmployeeId({ stage: "Hired" }, screenFirst.employeeId);
+const screenSavedAgain = storeHiredEmployeeId(screenSaved, screenAgain.employeeId);
+ok(
+  "a second hire through the shared screen client keeps the one employee id the list shows",
+  screenFirst.employeeId === 1 &&
+    screenAgain.employeeId === 1 &&
+    inMemoryEmployeeClient.createCount === 1 &&
+    inMemoryEmployeeClient.employees.length === 1 &&
+    screenSavedAgain === screenSaved &&
+    screenSavedAgain.odooEmployeeId === 1,
 );
 
 console.log(`RESULT candidate-list-hire: ${pass} passed, ${fail} failed`);
