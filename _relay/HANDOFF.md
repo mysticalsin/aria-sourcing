@@ -1,57 +1,53 @@
 ---
 project: MSourcing / ARIA
-shift: 2
-agent: claude-code
-updated: 2026-07-09 22:40
+shift: 3
+agent: cursor
+updated: 2026-11-24 14:20 -03
 status: in-progress
 ---
 
-# Handoff — ARIA enterprise-ready (sourcing agents + Flowise Studio)
+# Handoff — live Odoo hire path on vercel-demo
 
 ## Current state
-- Branch `vercel-demo`, HEAD `c53127f`, pushed to origin (push confirmed this shift).
-- Full gate green: `npx tsc --noEmit` clean, `npm test` 55/55 suites, 0 failures (was 42-45/45 at last handoff; +10 suites landed this shift: approval-persistence, providers, email-unsubscribe, linkedin-policy, flowise-policy, dispatch-outbound expanded, motion-foundation, login-page, aria-live, aria-command-console-state, compliance-suppression).
-- **A second, concurrent process was writing to this same worktree live during this shift** (not me — files appeared/changed mid-session: whatsapp-policy.ts, outreach-approval.ts, email-unsubscribe.ts, linkedin-policy.ts, flowise-policy.ts, browser-tools.ts stealth removal, store.ts suppression flow, UX/motion files). I absorbed and committed all of it in 8 reviewed, tested, atomic commits rather than one blob. If you're the next session and see more uncommitted drift, the same process may still be running — re-survey `git status` fresh before trusting any plan, mine included.
-- Goal state: `_agent_state/mantu-goal/goal-2026-07-08-aria-enterprise-ready.json` — m1-m3, m5 DONE; m6/m7 code-complete pending env + external services (unchanged this shift, not re-verified).
+- Branch `cursor/odoo-live-hire-path-9db8`, based on `vercel-demo` at `f2d0d3d07bdb8eb2bcb1e0d0bbd85e1cf99f9e7e`.
+- Previous tip `754399f584e1943fd658c380daad03df101aad22` is still the hire feature. GitHub job `Typecheck / Lint / Test / Build` failed only at `npm audit --audit-level=high` after typecheck, lint, test, Obscura, and build succeeded.
+  - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408975864/job/138497299679
+  - https://github.com/mysticalsin/aria-sourcing/actions/runs/45408933103/job/138497144231
+- That audit was 13 high + 2 critical, inherited from the `vercel-demo` lock. `next@16.2.9` was inside `9.3.4-canary.0 - 16.4.4`. `zod@3.25.76` is `<4.6.6` (GHSA-mrhx-c7xc-m3w5) and has no 3.x fix.
+- Audit fix commit `2c3b87fcb9543dcdd4325e068d83a3319fb55e46` resolves `next@16.4.6`, `zod@4.6.7` (override `"zod": "$zod"`), `@dust-tt/client@1.2.11`, `postcss@8.5.23`, `sharp@0.35.5`. Declared floors: `next@^16.4.6`, `zod@^4.6.7`, `@dust-tt/client@^1.2.11`, `postcss@^8.5.23`, `ip-address@^10.7.6`. The branch tip is the handoff note on top of that commit.
+- Local `npm audit --audit-level=high` exits 0 (`found 0 vulnerabilities`), including `npm ci` with npm 10.8.2 and npm 10.9.9. `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build` (Next.js 16.4.6, 58 pages) exited 0. Hire suites stayed `tests/hire-connector.mts` 62 passed, `tests/hire-pipeline.mts` 46 passed.
+- `/demo/hire` was not re-rendered this shift. Hire connector behavior was not edited. No `ODOO_*` values were set and no live Odoo host was called.
+- Draft PR https://github.com/mysticalsin/aria-sourcing/pull/319 only. Not merged. Not deployed. PRs 313, 317, and 318 were not updated.
+- CI on `eb685e91` is green for both `Typecheck / Lint / Test / Build` jobs.
+- With the four Odoo variables set to the existing fixture placeholders, `hireEnvForRoute` plus `runSourcingThroughHired` and `POST /api/hire` both complete sourcing through hired on the in-repo fake. The route proof stubs `fetch` and uses the RFC 5737 documentation address `203.0.113.50`, so no DNS lookup and no socket run. The fixture values are removed before the test exits.
+- Search (`/candidates`), shortlist (`/vivier`), the candidate drawer, and the command center (`/`) call `hireFromSourcingScreen`. With no live connector they run fixture SMART, the generic HTTPS API, and MCP on in-process stubs and keep unset skipped. A complete runtime connector uses the live public HTTPS path. `POST /api/hire` is unchanged.
+- `tests/sourcing-screen-hire.mts` no longer contains the `linkedin.com` substring. It proves fixture hosts, the stubbed `203.0.113.50` live path, and that a private URL is refused before fetch.
+- Edge pass on this branch: a repeated or overlapping hire reuses a successful step instead of creating another `hr.job`. A create result of `true` is not a job id and does not create an applicant. Whitespace-only `ODOO_*` values are unset and make no request. A null JSON-RPC body or a non-string `error.message` returns a failed result. `ODOO_HIRED_STAGE_ID` of `0`, a negative, or a non-integer stays skipped. HTTP 4xx/5xx, a rejected timeout, an MCP tool error, and a redirect toward a private host were already safe. No live host was called.
 
-## Done this shift (8 commits, oldest to newest)
-1. `14df41e` — Outreach approval lifecycle + WhatsApp delivery hardening: `outreach-approval.ts` (revocable approval-hash persistence), `whatsapp-policy.ts` (phone consent/DNC as a real invariant), `dispatch-outbound.ts` extended to enforce consent + template-vs-free-form-window + live seat + atomic claim, `autopilot.ts` now separates delivery/read receipts from inbound text. Migrations 0008-0011. New `/api/outreach/revoke`.
-2. `5479439` — `rules.ts`: hard-block SMS (no consent policy exists yet for that channel), require candidate phone for WhatsApp.
-3. `bca0f92` — CAN-SPAM/GDPR one-click email unsubscribe: `email-unsubscribe.ts`, `/api/unsubscribe/[token]` + `/unsubscribe` page (public, no-store/no-referrer/noindex), `providers.ts` now hard-requires `unsubscribeUrl` before any live send. Migration 0012.
-4. `4e6f619` — LinkedIn policy (`linkedin-policy.ts`, rate/cadence guardrails, always draft-gated) + Flowise proxy hardening (API key never reaches the browser; `agents/specs` route no longer echoes `FLOWISE_PUBLIC_URL`).
-5. `870e58a` — Browser tool: removed `--features stealth`/`--allow-private-network` and the `type`/`fill`/`press_key`/`select_option`/`evaluate` actions entirely. Read-only research verbs only (click/scroll/wait/back/forward). Honest bot UA.
-6. `4146f2f` — Negative-reply auto-suppression: `applyReplyAction` persists DNC across email+phone server-side and revokes in-flight approvals for that candidate before marking them suppressed client-side.
-7. `3ccb766` — Wire `compliance-suppression.mts` into the test gate; fix a Rules-of-Hooks violation in `GlassBoxPanel` (useState after an early return).
-8. `c53127f` — Premium UX pass: `use-prefers-reduced-motion.ts` + shared motion foundation for `ui/{button,card,progress,tabs}`; `aria-command-console-state.ts` + `aria-live-policy.ts` extract demo state out of component bodies.
-
-Also fixed this shift (pre-dating the commits above): OneDrive File Provider jammed on 11 files → `ETIMEDOUT` on every read, crashed `security-audit.mts`. Fix: `killall OneDrive` + reopen; all content recovered intact, nothing lost.
+## Done this shift
+- Moved the lock and the direct floors so the blocking audit can pass without a hire behavior change.
+- `@dust-tt/client` 1.2.6 bundled `@modelcontextprotocol/sdk@1.26.0`, which `npm audit fix` cannot rewrite. 1.2.11 is the published client whose SDK range is `^1.32.1`.
 
 ## Blockers
-- none currently open. If `ETIMEDOUT` reads reappear on any file, restart OneDrive first before assuming a code bug.
+- A real Odoo call is blocked because `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, and `ODOO_API_KEY` are absent from the process environment and from `.env`, `.env.local`, `.env.production`, and `.env.development`. No host was guessed and none was called.
+- `ODOO_HIRED_STAGE_ID` is also absent. With the four variables set, job create, applicant create, and the vacancy close run. The hired-stage write stays skipped until that id is a positive integer.
+- The live transport still refuses non-https, loopback, private, and metadata hosts.
+- `@dust-tt/client@1.2.11` declares `engines.node >=24.16.0`. CI uses Node 20. `npm ci` warns `EBADENGINE` and continues. `tests/dust.mts` passed under Node v20.20.2 (28 passed).
 
-## Next steps (in order)
-1. **Verify Vercel deployment of `c53127f` reaches READY** — a push just completed at handoff time; status not yet confirmed by a human or a re-run of this session. Read the Vercel build log if it fails.
-2. Apply migrations 0007-0012 to the production Supabase project (none of tonight's 0008-0012 have been applied anywhere yet — code-complete, not deployed-complete).
-3. Set the new required Vercel env vars: `CRON_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `OUTREACH_UNSUBSCRIBE_BASE_URL`, `DATA_ENCRYPTION_KEY`, `FLOWISE_URL`, `FLOWISE_API_KEY` (see `.env.production.example`, updated this shift with generation instructions for each).
-4. Deploy Flowise sidecar (Railway/Fly Docker, 2vCPU/4GB, dedicated Postgres schema) — code-side proxy is ready and hardened, nothing is provisioned yet.
-5. WhatsApp Business: submit outreach templates for approval early; subscribe the webhook URL in the Meta App dashboard.
-6. m8 per-user isolation E2E, m9 admin dashboard real metrics, m12 acceptance run per outcome_criterion — none started this shift.
-7. Run `production-readiness/DEPLOYMENT_RUNBOOK.md`'s unsubscribe + approval smoke tests against a real deploy before any live send volume.
+## Next steps
+1. Leave the pull request a draft. Do not merge it and do not deploy it.
+2. A real Odoo call waits on the four runtime variables. Do not invent them.
+3. CI on `eb685e91` is green. A later proof commit needs its own check run.
 
 ## Decisions made (don't relitigate)
-- Merge into goal-2026-07-08-aria-enterprise-ready; deadline 2026-07-31.
-- SANA = Sonnet. Flowise = sidecar + proxy (API key server-side only). deer-flow = TS-native port, no LangGraph.js, DB-row resume.
-- Autopilot GATED: per-spec opt-in, canary re-armed on every activation, commitments always queued, email+WhatsApp auto-send only inside guardrails, LinkedIn always draft-gated.
-- SMS is fully disabled (both at the approval-rule layer and the dispatcher layer) until it gets its own consent/opt-out/suppression policy — do not re-enable by just removing the block, build the policy first.
-- Human-likeness: agent narration lives in agent_events (no send path); only 'candidate_reply'/'approved_template' types reach wire; gate is block-only at send.
-- Browser tool is read-only research only — no stealth, no private-network access, no page-content mutation, no arbitrary eval. Do not re-add those without a fresh security review.
-- Official WhatsApp API only. Out of scope: candidate PII in tests, native mobile, billing.
-- Untracked floor3d/linkedin-policy(old copy)/trend-spark files predate this shift and remain unimported by HEAD — left untracked, not this session's concern.
-- **Confirmed 2026-07-09: this project is worked concurrently by Codex CLI in the same worktree** (identified from live uncommitted file drift during shift 2, confirmed by Tony). Division of labor now formalized in `AGENTS.md`: Claude Code builds/integrates/tests/commits/deploys; Codex audits and may also write code — findings go to `_relay/codex-findings.md`. Full autopilot both sides, no permission-asking for normal iteration.
+- Synthetic `/demo/hire` never sends runtime credentials. It uses the in-repo fake.
+- Live hire runs only when the connector env is complete. Private, loopback, and metadata hosts are refused.
+- Vacancy close never sends `hr.job.state`.
+- No secrets in git or in `_relay/`.
+- The audit gate stays blocking. Zod is 4.6.7 for the whole tree because `@dust-tt/client@1.2.11` still declares `zod@^3.23.8` and the advisory starts at 4.6.6.
+- Do not `npm audit fix --force`.
 
 ## Watch out
-- OneDrive eviction can break ANY local tooling mid-run; `killall OneDrive` + reopen fixed it once tonight, may recur.
-- **A concurrent writer touched this worktree throughout this shift.** Re-run `git status` and `npm test` fresh before trusting any stale plan — including the one in this file — the instant you suspect drift.
-- `claim_and_record` RPC: dispatcher passes spec_id as `p_campaign_id` — intentional.
-- Gate is deliberately block-only in send route; drafts are humanized at compose time. Don't "fix" by mutating approved text.
-- `.claude/scheduled_tasks.lock` changes every session (PID/session-id lock) — deliberately left uncommitted, don't fold it into feature commits.
+- `POST /api/hire` will call the configured public HTTPS Odoo when all four variables are set, including when Supabase is off.
+- The existing MCP probe in `src/lib/mcp-client.ts` still uses its own fetch. The hire path uses `fetchPublicUrl`.
+- `@dust-tt/client@1.2.11` prints an engine warning on Node 20 and Node 22. The Dust tests passed on both.

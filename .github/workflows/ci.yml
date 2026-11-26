@@ -69,6 +69,15 @@ jobs:
       - name: Audit (high-severity, blocking)
         run: npm audit --audit-level=high
 
+      # actions/checkout defaults to depth 1. gitleaks then asks git for
+      # <base>^..<head>, and that parent is not in the shallow clone, so the
+      # scan exits 1 before it reads a diff. Unshallow only for this step.
+      - name: Fetch history for the secret scan
+        run: |
+          if git rev-parse --is-shallow-repository | grep -qx true; then
+            git fetch --prune --unshallow origin
+          fi
+
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:

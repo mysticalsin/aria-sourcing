@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 import { PageHeader, HydrationGate } from "@/components/app/page-header";
 import { CandidateTable } from "@/components/candidates/candidate-table";
+import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
 import { CandidateDrawer } from "@/components/candidates/candidate-drawer";
 import { SourcingFeed } from "@/components/tania/sourcing-feed";
 import { useActions, useActiveCampaign, useCandidates, useHydrated } from "@/lib/store";
@@ -362,6 +363,23 @@ function CandidatesView() {
           </Field>
         </CardBody>
       </Card>
+
+      <div className="mb-6">
+        <SourcingHirePanel
+          screen="search"
+          label="Search hire"
+          candidate={
+            filtered[0]
+              ? {
+                  id: filtered[0].id,
+                  name: filtered[0].name,
+                  email: filtered[0].email,
+                  jobName: activeCampaign?.title ?? filtered[0].currentTitle,
+                }
+              : null
+          }
+        />
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
