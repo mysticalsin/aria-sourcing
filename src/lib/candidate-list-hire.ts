@@ -15,9 +15,19 @@ export interface CandidateListHire {
   employeeId: number | null;
 }
 
-function storedEmployeeId(value: number | undefined): number | null {
+function storedEmployeeId(value: number | null | undefined): number | null {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
   return value;
+}
+
+/**
+ * Copy a successful hire's hr.employee id onto the candidate.
+ * A missing or invalid id leaves the row unchanged. No network.
+ */
+export function storeHiredEmployeeId<T extends CandidateListRow>(row: T, employeeId: number | null): T {
+  const stored = storedEmployeeId(employeeId);
+  if (stored == null || row.odooEmployeeId === stored) return row;
+  return { ...row, odooEmployeeId: stored };
 }
 
 /**
