@@ -54,6 +54,8 @@ export interface SourcingScreenHireResult {
   unset?: { ok: boolean; erp: "skipped" | "odoo" | "smart" | "api" | "mcp"; linkedIn: boolean; fetchCount: number };
   connectors?: SourcingScreenFixtureConnector[];
   error?: string;
+  /** Positive hr.employee id from the in-memory client when this hire has one. */
+  employeeId?: number | null;
 }
 
 type HireFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -178,6 +180,8 @@ async function hireWithFixtureConnectors(
   ];
   const allHired = connectors.every((connector) => connector.hired);
   const unsetSkipped = unset.ok === true && unset.erp === "skipped" && unset.linkedIn === true && unsetFetches === 0;
+  const employeeId =
+    api.ok && mcp.ok && typeof api.employeeId === "number" && api.employeeId === mcp.employeeId ? api.employeeId : null;
 
   return {
     ok: allHired && unsetSkipped,
@@ -189,6 +193,7 @@ async function hireWithFixtureConnectors(
     vacancyClose: null,
     vacancyKwargs: null,
     hrJobStateSent: false,
+    employeeId,
     unset: {
       ok: unset.ok,
       erp: unset.erp,
@@ -238,6 +243,7 @@ export async function hireFromSourcingScreen(
     vacancyClose: null,
     vacancyKwargs: null,
     hrJobStateSent: false,
+    ...(typeof hired.employeeId === "number" ? { employeeId: hired.employeeId } : {}),
     error: hired.error,
   };
 }

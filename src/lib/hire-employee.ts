@@ -100,6 +100,23 @@ export async function createEmployeeWhenHired(
   return { ok: true, created: true, employee: created };
 }
 
+/**
+ * One positive hr.employee id for a hired person.
+ * A generic HTTPS API hire and an MCP hire of the same name share this client.
+ * A second hire returns the row already stored. No network.
+ */
+export async function employeeIdForHiredPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  const result = await createEmployeeWhenHired(inMemoryEmployeeClient, {
+    applicantId,
+    name: applicantId,
+    hired: true,
+  });
+  if (!result.ok) return null;
+  return result.employee.id;
+}
+
 /** In-memory hr.employee table. No network. */
 export class FakeOdooEmployeeClient implements OdooEmployeeClient {
   readonly employees: OdooEmployeeRecord[] = [];
@@ -124,4 +141,27 @@ export class FakeOdooEmployeeClient implements OdooEmployeeClient {
     this.employees.push(row);
     return row;
   }
+}
+
+/**
+ * One hr.employee table for the candidate drawer and the bulk hire control.
+ * A second hire of the same applicant finds the row already stored. No network.
+ */
+export const inMemoryEmployeeClient = new FakeOdooEmployeeClient();
+
+/**
+ * Positive hr.employee id already stored for this person.
+ * Reads the shared in-memory client and does not create a row. No network.
+ */
+export async function storedEmployeeIdForPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  let existing: OdooEmployeeRecord | null;
+  try {
+    existing = await inMemoryEmployeeClient.findByApplicant(applicantId);
+  } catch {
+    return null;
+  }
+  if (existing && existing.applicantId !== applicantId) return null;
+  return employeeId(existing);
 }
