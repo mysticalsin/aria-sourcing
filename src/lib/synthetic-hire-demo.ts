@@ -29,6 +29,14 @@ export interface SyntheticConnectorDemo {
   linkedIn: boolean;
   hired: boolean;
   hosts: string[];
+  /** Positive hr.employee id this hire returned. Null when this hire had none stored. */
+  employeeId: number | null;
+}
+
+/** A positive hr.employee id already on a hire result. Anything else is not shown. */
+export function syntheticHireEmployeeId(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+  return value;
 }
 
 export interface SyntheticHireDemo {
@@ -135,6 +143,7 @@ function shownConnector(
     linkedIn: result.linkedIn,
     hired: result.ok && result.linkedIn && result.erp === erp && closed,
     hosts,
+    employeeId: syntheticHireEmployeeId(result.employeeId),
   };
 }
 

@@ -23,6 +23,8 @@ export async function createEmployeeForStage(
 ): Promise<{ employeeId: number | null }> {
   const hiredStage = namedHiredStage();
   if (!hiredStage || stage !== hiredStage || client == null) return { employeeId: null };
+  const stored = await sharedStoredEmployeeId(client, applicant.name);
+  if (stored != null) return { employeeId: stored };
   const result = await createEmployeeWhenHired(client, {
     applicantId: applicant.applicantId,
     name: applicant.name,
@@ -100,6 +102,25 @@ export async function createEmployeeWhenHired(
   return { ok: true, created: true, employee: created };
 }
 
+/**
+ * One positive hr.employee id for a hired person.
+ * A generic HTTPS API hire and an MCP hire of the same name share this client.
+ * A second hire, including a stage hire that already stored this person, returns that row. No network.
+ */
+export async function employeeIdForHiredPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  const stored = await storedEmployeeIdForPerson(applicantId);
+  if (stored != null) return stored;
+  const result = await createEmployeeWhenHired(inMemoryEmployeeClient, {
+    applicantId,
+    name: applicantId,
+    hired: true,
+  });
+  if (!result.ok) return null;
+  return result.employee.id;
+}
+
 /** In-memory hr.employee table. No network. */
 export class FakeOdooEmployeeClient implements OdooEmployeeClient {
   readonly employees: OdooEmployeeRecord[] = [];
@@ -124,4 +145,37 @@ export class FakeOdooEmployeeClient implements OdooEmployeeClient {
     this.employees.push(row);
     return row;
   }
+}
+
+/**
+ * One hr.employee table for the candidate drawer and the bulk hire control.
+ * A second hire of the same applicant finds the row already stored. No network.
+ */
+export const inMemoryEmployeeClient = new FakeOdooEmployeeClient();
+
+/**
+ * Positive hr.employee id already stored for this person.
+ * Reads the shared in-memory client and does not create a row. No network.
+ */
+export async function storedEmployeeIdForPerson(name: string): Promise<number | null> {
+  const applicantId = name.trim();
+  if (!applicantId) return null;
+  let existing: OdooEmployeeRecord | null;
+  try {
+    existing = await inMemoryEmployeeClient.findByApplicant(applicantId);
+  } catch {
+    return null;
+  }
+  if (!existing) {
+    // A stage hire stores the row under the candidate id. The name is the same person.
+    existing = inMemoryEmployeeClient.employees.find((row) => row.name === applicantId) ?? null;
+  }
+  if (existing && existing.applicantId !== applicantId && existing.name !== applicantId) return null;
+  return employeeId(existing);
+}
+
+/** Id already stored on the shared client for this person. Any other client is left alone. */
+function sharedStoredEmployeeId(client: OdooEmployeeClient, name: string): Promise<number | null> {
+  if (client !== inMemoryEmployeeClient) return Promise.resolve(null);
+  return storedEmployeeIdForPerson(name);
 }
