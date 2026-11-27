@@ -12,9 +12,11 @@ import {
 } from "@/components/ui";
 import { ScoreGauge } from "@/components/charts/score-gauge";
 import { FitRadar } from "@/components/charts/fit-radar";
+import { CandidateDrawerEmployeeId } from "@/components/candidates/candidate-drawer-employee";
 import { ScoreBreakdown } from "@/components/candidates/score-breakdown";
 import { ConsentPassport } from "@/components/candidates/consent-passport";
 import { SourcingHirePanel } from "@/components/hire/sourcing-hire-panel";
+import { inMemoryEmployeeClient } from "@/lib/hire-employee";
 import { useActions, useCampaign, useCandidate, useOutreach, useSettings } from "@/lib/store";
 import {
   downloadText,
@@ -489,7 +491,7 @@ export function CandidateDrawer({
   };
 
   const handleSetStage = (stage: CandidateStage) => {
-    actions.setCandidateStage(c.id, stage);
+    actions.setCandidateStage(c.id, stage, stage === "Hired" ? inMemoryEmployeeClient : null);
     toast({
       title: `Stage updated: ${stage}`,
       description:
@@ -947,6 +949,7 @@ export function CandidateDrawer({
             <Badge tone={toneForStage(c.stage)} size="sm" dot>
               {c.stage}
             </Badge>
+            <CandidateDrawerEmployeeId candidate={c} />
           </div>
           <SourcingHirePanel
             screen="candidate"
@@ -957,6 +960,7 @@ export function CandidateDrawer({
               email: c.email,
               jobName: campaign?.title ?? c.currentTitle,
             }}
+            onEmployeeId={(candidateId, employeeId) => actions.rememberConnectorEmployee(candidateId, employeeId)}
           />
           <div className="flex flex-wrap gap-2">
             {STAGE_ACTIONS.map((stage) => (
