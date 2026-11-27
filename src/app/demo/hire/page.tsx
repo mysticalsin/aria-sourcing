@@ -1,6 +1,6 @@
 import { Badge, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { PageHeader } from "@/components/app/page-header";
-import { runSyntheticHireDemo } from "@/lib/synthetic-hire-demo";
+import { runSyntheticHireDemo, syntheticHireEmployeeId } from "@/lib/synthetic-hire-demo";
 
 export const metadata = {
   title: "Synthetic hire",
@@ -51,6 +51,7 @@ export default async function SyntheticHirePage() {
     2,
   );
   const hireRecordId = demo.hired.steps.find((step) => step.action === "hire")?.id ?? "";
+  const odooEmployeeId = syntheticHireEmployeeId(demo.hired.employeeId);
 
   return (
     <div className="animate-fade-in mx-auto flex max-w-3xl flex-col gap-8">
@@ -105,6 +106,11 @@ export default async function SyntheticHirePage() {
             <p className="mb-4 text-sm text-muted" data-testid="odoo-result">
               Connector <span data-testid="selected-connector">{demo.hired.erp}</span> selected. Result: {demo.hired.ok ? "ok" : "failed"} · erp {demo.hired.erp} · linkedIn {String(demo.hired.linkedIn)}
             </p>
+            {odooEmployeeId != null ? (
+              <p className="mb-4 text-xs font-medium tabular-nums text-ink-soft" data-testid="odoo-employee-id">
+                Employee {odooEmployeeId}
+              </p>
+            ) : null}
             <ol className="flex flex-col gap-3">
               {demo.hired.steps.map((step) => (
                 <li key={`${step.action}-${step.method}`} data-testid={`odoo-step-${step.action}`} className="rounded-xl bg-ink/[0.03] px-4 py-3">
@@ -215,6 +221,11 @@ export default async function SyntheticHirePage() {
                   <p className="mt-1 text-sm text-muted">
                     erp {item.erp} · ok {String(item.ok)} · linkedIn {String(item.linkedIn)}
                   </p>
+                  {item.employeeId != null ? (
+                    <p className="mt-1 text-xs font-medium tabular-nums text-ink-soft" data-testid={`connector-${item.erp}-employee`}>
+                      Employee {item.employeeId}
+                    </p>
+                  ) : null}
                   <HostLines hosts={item.hosts} testId={`connector-${item.erp}-hosts`} className="mt-1 text-sm text-muted" />
                 </li>
               ))}
